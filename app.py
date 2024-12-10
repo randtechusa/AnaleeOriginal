@@ -48,7 +48,7 @@ def init_app():
     """Initialize the Flask application"""
     db.init_app(app)
     login_manager.init_app(app)
-    login_manager.login_view = 'login'
+    login_manager.login_view = 'main.login'
     
     with app.app_context():
         try:
