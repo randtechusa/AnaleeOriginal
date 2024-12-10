@@ -65,19 +65,19 @@
                     <table class="table table-striped">
                         <thead>
                             <tr>
-                                <th>Number</th>
-                                <th>Name</th>
-                                <th>Type</th>
+                                <th>Link</th>
+                                <th>Account Name</th>
                                 <th>Category</th>
+                                <th>Sub Category</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for account in accounts %}
                             <tr>
-                                <td>{{ account.account_number }}</td>
+                                <td>{{ account.link }}</td>
                                 <td>{{ account.name }}</td>
-                                <td>{{ account.type }}</td>
                                 <td>{{ account.category }}</td>
+                                <td>{{ account.sub_category }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>

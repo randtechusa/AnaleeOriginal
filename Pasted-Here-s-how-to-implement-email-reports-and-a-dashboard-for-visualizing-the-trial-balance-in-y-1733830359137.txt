@@ -1,0 +1,231 @@
+Here’s how to implement **email reports** and **a dashboard for visualizing the trial balance** in your application.
+
+---
+
+## **1. Adding Email Reports**
+
+Emailing the trial balance to the user involves:
+1. **Configuring an email service** (e.g., SMTP).
+2. **Generating the trial balance as an attachment**.
+3. **Sending the email with the attachment**.
+
+---
+
+### **Step 1: Install Dependencies**
+Install `Flask-Mail` for email functionality:
+```bash
+pip install Flask-Mail
+```
+
+---
+
+### **Step 2: Configure Flask-Mail**
+Update `config.py` to include email settings:
+```python
+class Config:
+    SECRET_KEY = 'your_secret_key'
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///analee.db'
+
+    # Flask-Mail settings
+    MAIL_SERVER = 'smtp.gmail.com'
+    MAIL_PORT = 587
+    MAIL_USE_TLS = True
+    MAIL_USERNAME = 'your_email@gmail.com'  # Replace with your email
+    MAIL_PASSWORD = 'your_email_password'  # Use an app-specific password
+```
+
+---
+
+### **Step 3: Initialize Flask-Mail**
+Update the `__init__.py` file:
+```python
+from flask_mail import Mail
+
+mail = Mail()
+
+def create_app():
+    app = Flask(__name__)
+    app.config.from_object('config.Config')
+
+    mail.init_app(app)
+
+    return app
+```
+
+---
+
+### **Step 4: Generate and Email the Trial Balance**
+Add a route for emailing the trial balance in `routes.py`:
+```python
+from flask_mail import Message
+from . import mail
+import os
+
+@main_bp.route('/email_trial_balance', methods=['GET'])
+@login_required
+def email_trial_balance():
+    # Fetch user's transactions grouped by 'Analysis'
+    data = BankStatement.query.filter_by(user_id=current_user.id).all()
+
+    # Prepare trial balance data
+    trial_balance = {}
+    for row in data:
+        if row.analysis:
+            if row.analysis not in trial_balance:
+                trial_balance[row.analysis] = 0
+            trial_balance[row.analysis] += row.amount
+
+    # Convert to DataFrame for export
+    trial_balance_df = pd.DataFrame.from_dict(
+        trial_balance, orient='index', columns=['Total']
+    ).reset_index().rename(columns={'index': 'Account'})
+
+    # Save as Excel
+    output_file = 'trial_balance.xlsx'
+    trial_balance_df.to_excel(output_file, index=False)
+
+    # Send the email
+    msg = Message(
+        subject='Your Trial Balance Report',
+        sender='your_email@gmail.com',
+        recipients=[current_user.email],
+    )
+    msg.body = "Please find your trial balance attached."
+    with open(output_file, 'rb') as f:
+        msg.attach(output_file, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', f.read())
+
+    mail.send(msg)
+
+    # Remove the file after sending
+    os.remove(output_file)
+
+    flash('Trial balance emailed successfully!', 'success')
+    return redirect(url_for('main.trial_balance'))
+```
+
+---
+
+### **Step 5: Add Email Button to Trial Balance Page**
+Modify `trial_balance.html`:
+```html
+<form action="{{ url_for('main.email_trial_balance') }}" method="get">
+    <button type="submit">Email Trial Balance</button>
+</form>
+```
+
+---
+
+## **2. Integrating a Dashboard for Trial Balance Visualization**
+
+A dashboard visualizes data for better insights. For trial balance, charts are a great way to represent account totals.
+
+---
+
+### **Step 1: Install Chart.js**
+Include **Chart.js** in your project by adding the following script in the `base.html` template:
+```html
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+```
+
+---
+
+### **Step 2: Create a Dashboard Route**
+Add a route to prepare data for visualization in `routes.py`:
+```python
+@main_bp.route('/dashboard', methods=['GET'])
+@login_required
+def dashboard():
+    # Fetch user's transactions grouped by 'Analysis'
+    data = BankStatement.query.filter_by(user_id=current_user.id).all()
+
+    # Prepare trial balance data
+    trial_balance = {}
+    for row in data:
+        if row.analysis:
+            if row.analysis not in trial_balance:
+                trial_balance[row.analysis] = 0
+            trial_balance[row.analysis] += row.amount
+
+    return render_template('dashboard.html', trial_balance=trial_balance)
+```
+
+---
+
+### **Step 3: Create Dashboard Template (`dashboard.html`)**
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Dashboard</title>
+</head>
+<body>
+    <h2>Trial Balance Dashboard</h2>
+    <canvas id="trialBalanceChart"></canvas>
+
+    <script>
+        // Prepare data for Chart.js
+        const labels = {{ trial_balance.keys() | safe }};
+        const data = {{ trial_balance.values() | safe }};
+
+        const ctx = document.getElementById('trialBalanceChart').getContext('2d');
+        const trialBalanceChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Trial Balance',
+                    data: data,
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+```
+
+---
+
+### **Step 4: Add Dashboard to Navigation**
+Update the `base.html` navigation:
+```html
+<nav>
+    <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('main.trial_balance') }}">Trial Balance</a>
+    <a href="{{ url_for('main.logout') }}">Logout</a>
+</nav>
+```
+
+---
+
+## **Testing Steps**
+1. **Email Report**:
+   - Ensure the user’s email is correctly configured.
+   - Generate a trial balance and email it using the "Email Trial Balance" button.
+
+2. **Dashboard Visualization**:
+   - Navigate to the dashboard page.
+   - Verify that the bar chart accurately represents account totals.
+
+---
+
+## **Enhancements**
+1. **Email Scheduler**:
+   - Use a scheduling library like `APScheduler` to send reports automatically at set intervals.
+   
+2. **Additional Visualizations**:
+   - Add pie charts, line graphs, or trends for monthly expenses.
+
+3. **Interactive Charts**:
+   - Make charts interactive by allowing users to click on an account and view detailed transactions.
+
+Would you like help implementing scheduled emails or interactive chart features? Then say '[Click here to access our prompt library!](https://ko-fi.com/s/277d07bae3)'

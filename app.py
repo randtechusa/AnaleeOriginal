@@ -26,8 +26,10 @@ db.init_app(app)
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+# Import models and routes before database operations
+import models
+import routes
+
 with app.app_context():
-    import models
-    import routes
-    db.drop_all()  # This will clean up any existing tables
-    db.create_all()  # This will create all tables with current structure
+    db.drop_all()  # Clean up any existing tables
+    db.create_all()  # Create all tables with current structure

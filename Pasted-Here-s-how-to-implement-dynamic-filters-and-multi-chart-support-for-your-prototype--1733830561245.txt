@@ -1,0 +1,215 @@
+Here’s how to implement **dynamic filters** and **multi-chart support** for your prototype.
+
+---
+
+## **1. Adding Dynamic Filters**
+
+### Purpose
+Allow users to filter transactions and trial balance data by date range or account type.
+
+---
+
+### **Step 1: Update Dashboard Route**
+Modify the `dashboard` route in `routes.py` to handle date range filtering:
+```python
+from datetime import datetime
+
+@main_bp.route('/dashboard', methods=['GET', 'POST'])
+@login_required
+def dashboard():
+    start_date = request.form.get('start_date', '1900-01-01')
+    end_date = request.form.get('end_date', datetime.today().strftime('%Y-%m-%d'))
+
+    # Fetch filtered transactions
+    data = BankStatement.query.filter(
+        BankStatement.user_id == current_user.id,
+        BankStatement.date >= start_date,
+        BankStatement.date <= end_date
+    ).all()
+
+    # Prepare trial balance data
+    trial_balance = {}
+    for row in data:
+        if row.analysis:
+            trial_balance[row.analysis] = trial_balance.get(row.analysis, 0) + row.amount
+
+    return render_template('dashboard.html', trial_balance=trial_balance, start_date=start_date, end_date=end_date)
+```
+
+---
+
+### **Step 2: Update Dashboard Template**
+Add a date filter form to `dashboard.html`:
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h2>Interactive Dashboard</h2>
+    <form method="POST">
+        <label for="start_date">Start Date:</label>
+        <input type="date" name="start_date" value="{{ start_date }}">
+        <label for="end_date">End Date:</label>
+        <input type="date" name="end_date" value="{{ end_date }}">
+        <button type="submit">Filter</button>
+    </form>
+    <canvas id="trialBalanceChart"></canvas>
+
+    <script>
+        const labels = {{ trial_balance.keys() | safe }};
+        const data = {{ trial_balance.values() | safe }};
+
+        const ctx = document.getElementById('trialBalanceChart').getContext('2d');
+        const trialBalanceChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Trial Balance',
+                    data: data,
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+```
+
+---
+
+### **Step 3: Test Dynamic Filters**
+1. Navigate to the dashboard.
+2. Use the date pickers to filter transactions by a specific range.
+3. Verify that the trial balance updates based on the selected range.
+
+---
+
+## **2. Multi-Chart Support**
+
+### Purpose
+Provide additional visualizations, such as pie charts, line charts, or area charts.
+
+---
+
+### **Step 1: Add Pie Chart Support**
+Modify the dashboard template to include a pie chart:
+```html
+<h3>Trial Balance Distribution</h3>
+<canvas id="trialBalancePieChart"></canvas>
+
+<script>
+    const pieCtx = document.getElementById('trialBalancePieChart').getContext('2d');
+    const trialBalancePieChart = new Chart(pieCtx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.2)',
+                    'rgba(54, 162, 235, 0.2)',
+                    'rgba(255, 206, 86, 0.2)',
+                    'rgba(75, 192, 192, 0.2)',
+                    'rgba(153, 102, 255, 0.2)',
+                    'rgba(255, 159, 64, 0.2)'
+                ],
+                borderColor: [
+                    'rgba(255, 99, 132, 1)',
+                    'rgba(54, 162, 235, 1)',
+                    'rgba(255, 206, 86, 1)',
+                    'rgba(75, 192, 192, 1)',
+                    'rgba(153, 102, 255, 1)',
+                    'rgba(255, 159, 64, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true
+        }
+    });
+</script>
+```
+
+---
+
+### **Step 2: Add Line Chart Support**
+For trend analysis, add a line chart displaying cumulative totals over time:
+```html
+<h3>Trial Balance Over Time</h3>
+<canvas id="trialBalanceLineChart"></canvas>
+
+<script>
+    // Prepare time-series data
+    const lineLabels = {{ trial_balance.keys() | safe }};
+    const lineData = {{ trial_balance.values() | safe }};
+
+    const lineCtx = document.getElementById('trialBalanceLineChart').getContext('2d');
+    const trialBalanceLineChart = new Chart(lineCtx, {
+        type: 'line',
+        data: {
+            labels: lineLabels,
+            datasets: [{
+                label: 'Cumulative Total',
+                data: lineData,
+                fill: false,
+                borderColor: 'rgba(75, 192, 192, 1)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Accounts'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Amount'
+                    },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+</script>
+```
+
+---
+
+### **Step 3: Test Multi-Charts**
+1. Refresh the dashboard to view all three charts:
+   - Bar chart for account totals.
+   - Pie chart for distribution.
+   - Line chart for trends.
+2. Ensure charts update dynamically based on filters.
+
+---
+
+### **Enhancements**
+1. **Drill-Down Visualizations**:
+   - Clicking a chart segment navigates to detailed transactions for that account.
+
+2. **Advanced Filters**:
+   - Add dropdowns to filter by account type, transaction amount ranges, or categories.
+
+3. **Dynamic Chart Switching**:
+   - Allow users to toggle between chart types (bar, pie, line) for better customization.
+
+Would you like further assistance implementing drill-down visualizations or advanced filters? Then say '[Click here to access our prompt library!](https://ko-fi.com/s/277d07bae3)'
