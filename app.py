@@ -29,4 +29,5 @@ login_manager.login_view = 'login'
 with app.app_context():
     import models
     import routes
-    db.create_all()
+    db.drop_all()  # This will clean up any existing tables
+    db.create_all()  # This will create all tables with current structure
