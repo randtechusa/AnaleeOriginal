@@ -127,19 +127,41 @@ def analyze():
 @login_required
 def settings():
     if request.method == 'POST':
-        account_name = request.form['account_name']
-        account_type = request.form['account_type']
+        if 'file' in request.files:
+            file = request.files['file']
+            if file and file.filename.endswith('.xlsx'):
+                try:
+                    df = pd.read_excel(file)
+                    for _, row in df.iterrows():
+                        account = Account(
+                            account_number=str(row['Account Number']),
+                            name=row['Account Name'],
+                            type=row['Type'],
+                            category=row.get('Category', ''),
+                            description=row.get('Description', ''),
+                            user_id=current_user.id
+                        )
+                        db.session.add(account)
+                    db.session.commit()
+                    flash('Chart of Accounts imported successfully')
+                except Exception as e:
+                    flash(f'Error importing Chart of Accounts: {str(e)}')
+                    
+        else:
+            # Handle manual account addition
+            account = Account(
+                account_number=request.form['account_number'],
+                name=request.form['account_name'],
+                type=request.form['account_type'],
+                category=request.form.get('category', ''),
+                description=request.form.get('description', ''),
+                user_id=current_user.id
+            )
+            db.session.add(account)
+            db.session.commit()
+            flash('Account added successfully')
         
-        account = Account(
-            name=account_name,
-            type=account_type,
-            user_id=current_user.id
-        )
-        db.session.add(account)
-        db.session.commit()
-        flash('Account added successfully')
-        
-    accounts = Account.query.filter_by(user_id=current_user.id).all()
+    accounts = Account.query.filter_by(user_id=current_user.id).order_by(Account.account_number).all()
     return render_template('settings.html', accounts=accounts)
 
 @app.route('/logout')
