@@ -7,10 +7,10 @@
         
         <form method="POST" enctype="multipart/form-data">
             <div class="mb-3">
-                <label for="file" class="form-label">CSV File</label>
-                <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
+                <label for="file" class="form-label">Transaction File</label>
+                <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
                 <div class="form-text">
-                    File should contain columns: Date, Description, Amount
+                    Accepts CSV or Excel files with columns: Date, Description, Amount
                 </div>
             </div>
             <button type="submit" class="btn btn-primary">Upload</button>
