@@ -131,17 +131,33 @@ def settings():
             file = request.files['file']
             if file and file.filename.endswith('.xlsx'):
                 try:
+                    # Read Excel file and print columns for debugging
                     df = pd.read_excel(file)
+                    print(f"Available columns: {df.columns.tolist()}")
+                    
+                    # Map column names (adjust these based on actual Excel structure)
+                    column_mapping = {
+                        'Number': 'account_number',
+                        'Name': 'name',
+                        'Type': 'type',
+                        'Category': 'category',
+                        'Description': 'description'
+                    }
+                    
+                    # Rename columns to match our expected format
+                    df = df.rename(columns=column_mapping)
+                    
                     for _, row in df.iterrows():
                         account = Account(
-                            account_number=str(row['Account Number']),
-                            name=row['Account Name'],
-                            type=row['Type'],
-                            category=row.get('Category', ''),
-                            description=row.get('Description', ''),
+                            account_number=str(row['account_number']),
+                            name=row['name'],
+                            type=row['type'],
+                            category=row.get('category', ''),
+                            description=row.get('description', ''),
                             user_id=current_user.id
                         )
                         db.session.add(account)
+                    
                     db.session.commit()
                     flash('Chart of Accounts imported successfully')
                 except Exception as e:
