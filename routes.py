@@ -40,17 +40,22 @@ def register():
     if request.method == 'POST':
         if User.query.count() > 0:
             flash('Registration is closed - single user system')
-            return redirect(url_for('login'))
+            return redirect(url_for('main.login'))
 
         user = User(
             username=request.form['username'],
             email=request.form['email'],
             password_hash=generate_password_hash(request.form['password'])
         )
-        db.session.add(user)
-        db.session.commit()
-        flash('Registration successful')
-        return redirect(url_for('login'))
+        try:
+            db.session.add(user)
+            db.session.commit()
+            flash('Registration successful')
+            return redirect(url_for('main.login'))
+        except Exception as e:
+            logger.error(f'Error during registration: {str(e)}')
+            db.session.rollback()
+            flash('Registration failed. Please try again.')
     return render_template('register.html')
 
 @main.route('/settings', methods=['GET', 'POST'])
@@ -77,7 +82,7 @@ def settings():
                     missing_columns = [col for col in required_columns if col not in df.columns]
                     if missing_columns:
                         flash(f'Missing required columns: {", ".join(missing_columns)}')
-                        return redirect(url_for('settings'))
+                        return redirect(url_for('main.settings'))
                     
                     # Process each row
                     for _, row in df.iterrows():
@@ -140,7 +145,7 @@ def settings():
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for('login'))
+    return redirect(url_for('main.login'))
 
 @main.route('/account/<int:account_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -155,9 +160,14 @@ def edit_account(account_id):
         account.name = request.form['name']
         account.category = request.form['category']
         account.sub_category = request.form.get('sub_category', '')
-        db.session.commit()
-        flash('Account updated successfully')
-        return redirect(url_for('main.settings'))
+        try:
+            db.session.commit()
+            flash('Account updated successfully')
+            return redirect(url_for('main.settings'))
+        except Exception as e:
+            logger.error(f'Error updating account: {str(e)}')
+            flash(f'Error updating account: {str(e)}')
+            db.session.rollback()
 
     return render_template('edit_account.html', account=account)
 
@@ -169,21 +179,23 @@ def delete_account(account_id):
         flash('Access denied')
         return redirect(url_for('main.settings'))
 
-    db.session.delete(account)
-    db.session.commit()
-    flash('Account deleted successfully')
+    try:
+        db.session.delete(account)
+        db.session.commit()
+        flash('Account deleted successfully')
+    except Exception as e:
+        logger.error(f'Error deleting account: {str(e)}')
+        flash(f'Error deleting account: {str(e)}')
+        db.session.rollback()
     return redirect(url_for('main.settings'))
-
-@main.route('/dashboard')
-@login_required
-def dashboard():
-    # Simple dashboard showing account summary
-    accounts = Account.query.filter_by(user_id=current_user.id).all()
-    return render_template('dashboard.html', accounts=accounts)
 
 @main.route('/analyze')
 @login_required
 def analyze():
-    # Get only account links and names for dropdown
-    accounts = Account.query.with_entities(Account.link, Account.name).filter_by(user_id=current_user.id).all()
+    accounts = Account.query.filter_by(user_id=current_user.id).all()
     return render_template('analyze.html', accounts=accounts)
+
+@main.route('/upload')
+@login_required
+def upload():
+    return render_template('upload.html')
