@@ -60,24 +60,46 @@ def settings():
             if file and file.filename.endswith('.xlsx'):
                 try:
                     df = pd.read_excel(file)
-                    required_columns = ['Link', 'Account Name', 'Category']
+                    required_columns = ['Links', 'Category', 'Account Name']
                     if not all(col in df.columns for col in required_columns):
-                        flash('Excel file must contain Link, Account Name, and Category columns')
+                        flash('Excel file must contain Links, Category, and Account Name columns')
                         return redirect(url_for('settings'))
                     
+                    # Log the DataFrame structure for debugging
+                    logger.debug(f"DataFrame columns: {df.columns.tolist()}")
+                    logger.debug(f"First row: {df.iloc[0].to_dict()}")
+                    
                     for _, row in df.iterrows():
-                        account = Account(
-                            link=row['Link'],
-                            name=row['Account Name'],
-                            category=row['Category'],
-                            sub_category=row.get('Sub Category', ''),
+                        # Check if account with this link already exists
+                        existing_account = Account.query.filter_by(
+                            link=row['Links'],
                             user_id=current_user.id
-                        )
-                        db.session.add(account)
+                        ).first()
+                        
+                        if existing_account:
+                            logger.info(f"Updating existing account: {row['Links']}")
+                            existing_account.name = row['Account Name']
+                            existing_account.category = row['Category']
+                            existing_account.sub_category = row.get('Sub Category', '')
+                            existing_account.account_code = row.get('Accounts', '')
+                        else:
+                            logger.info(f"Creating new account: {row['Links']}")
+                            account = Account(
+                                link=row['Links'],
+                                name=row['Account Name'],
+                                category=row['Category'],
+                                sub_category=row.get('Sub Category', ''),
+                                account_code=row.get('Accounts', ''),
+                                user_id=current_user.id
+                            )
+                            db.session.add(account)
+                    
                     db.session.commit()
                     flash('Chart of Accounts imported successfully')
+                    logger.info('Chart of Accounts import completed successfully')
                 except Exception as e:
                     logger.error(f'Error importing chart of accounts: {str(e)}')
+                    logger.exception("Full stack trace:")
                     flash(f'Error importing chart of accounts: {str(e)}')
                     db.session.rollback()
             else:

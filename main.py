@@ -12,7 +12,14 @@ logger = logging.getLogger(__name__)
 if __name__ == "__main__":
     try:
         logger.info("Starting Flask application...")
-        app.run(host="0.0.0.0", port=5000, debug=True)
+        # Ensure we bind to 0.0.0.0 so the app is accessible
+        app.run(
+            host="0.0.0.0",
+            port=5000,
+            debug=True,
+            use_reloader=True
+        )
     except Exception as e:
         logger.error(f"Failed to start Flask application: {str(e)}")
+        logger.exception("Full stack trace:")
         raise
