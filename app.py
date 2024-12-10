@@ -3,7 +3,6 @@ import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
-from sqlalchemy.orm import DeclarativeBase
 
 # Configure logging
 logging.basicConfig(
@@ -37,17 +36,10 @@ app.config.update(
     }
 )
 
-# Initialize database
-class Base(DeclarativeBase):
-    pass
-
-db = SQLAlchemy(model_class=Base)
-db.init_app(app)
-
-# Initialize login manager
-login_manager = LoginManager()
+# Initialize Flask extensions
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
 login_manager.login_view = 'login'
-login_manager.init_app(app)
 
 logger.info(f"Database URL configured (masked): {database_url.split('@')[0]}@****")
 
@@ -58,13 +50,8 @@ def load_user(user_id):
 
 try:
     with app.app_context():
-        # Import and initialize models
-        logger.info("Initializing models...")
+        # Import models and routes after db initialization
         import models
-        models.init_models(db)
-        
-        # Import routes after models are ready
-        logger.info("Importing routes...")
         import routes
         
         # Create database tables
