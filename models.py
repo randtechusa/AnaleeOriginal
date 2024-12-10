@@ -28,7 +28,11 @@ class Transaction(db.Model):
 
 class Account(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    account_number = db.Column(db.String(20), unique=True, nullable=False)
     name = db.Column(db.String(100), nullable=False)
-    type = db.Column(db.String(50), nullable=False)
+    type = db.Column(db.String(50), nullable=False)  # Asset, Liability, Equity, Revenue, Expense
+    category = db.Column(db.String(100))  # Sub-classification
+    description = db.Column(db.String(200))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     transactions = db.relationship('Transaction', backref='account', lazy=True)
+    is_active = db.Column(db.Boolean, default=True)
