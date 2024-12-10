@@ -189,6 +189,23 @@ def delete_account(account_id):
         db.session.rollback()
     return redirect(url_for('main.settings'))
 
+@main.route('/dashboard')
+@login_required
+def dashboard():
+    transactions = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).limit(5)
+    total_income = sum(t.amount for t in Transaction.query.filter(
+        Transaction.user_id == current_user.id,
+        Transaction.amount > 0
+    ).all())
+    total_expenses = abs(sum(t.amount for t in Transaction.query.filter(
+        Transaction.user_id == current_user.id,
+        Transaction.amount < 0
+    ).all()))
+    return render_template('dashboard.html',
+                         transactions=transactions,
+                         total_income=total_income,
+                         total_expenses=total_expenses)
+
 @main.route('/analyze')
 @login_required
 def analyze():
