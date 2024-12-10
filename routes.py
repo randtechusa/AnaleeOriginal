@@ -75,8 +75,12 @@ def upload():
             return redirect(request.url)
             
         try:
-            content = file.stream.read().decode('utf-8')
-            df = pd.read_csv(StringIO(content))
+            # Handle both CSV and Excel files
+            if file.filename.endswith('.csv'):
+                content = file.stream.read().decode('utf-8')
+                df = pd.read_csv(StringIO(content))
+            else:
+                df = pd.read_excel(file)
             
             for _, row in df.iterrows():
                 description = row['Description']
