@@ -3,6 +3,7 @@ import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
+from flask_migrate import Migrate
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -42,25 +43,32 @@ app.config.update(
 
 # Initialize Flask extensions
 db = SQLAlchemy()
+migrate = Migrate()
 login_manager = LoginManager()
 
 def init_app():
     """Initialize the Flask application"""
     db.init_app(app)
+    migrate.init_app(app, db)
     login_manager.init_app(app)
     login_manager.login_view = 'main.login'
     
     with app.app_context():
         try:
-            # Import models and create tables
+            # Import models
             from models import User, Account, Transaction
-            logger.info("Creating database tables...")
-            db.create_all()
-            logger.info("Database tables created successfully")
             
             # Register blueprints
             from routes import main as main_blueprint
             app.register_blueprint(main_blueprint)
+            
+            # Initialize database if needed
+            try:
+                db.create_all()
+                logger.info("Database tables verified successfully")
+            except Exception as db_error:
+                logger.warning(f"Database initialization note: {str(db_error)}")
+                
             logger.info("Routes initialized successfully")
             
         except Exception as e:
