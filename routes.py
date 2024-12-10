@@ -135,13 +135,13 @@ def settings():
                     df = pd.read_excel(file)
                     print(f"Available columns: {df.columns.tolist()}")
                     
-                    # Map column names (adjust these based on actual Excel structure)
+                    # Map column names based on Excel structure
                     column_mapping = {
-                        'Number': 'account_number',
-                        'Name': 'name',
-                        'Type': 'type',
+                        'Links': 'link',
                         'Category': 'category',
-                        'Description': 'description'
+                        'Sub Category': 'sub_category',
+                        'Accounts': 'account_code',
+                        'Account Name': 'name'
                     }
                     
                     # Rename columns to match our expected format
@@ -149,11 +149,11 @@ def settings():
                     
                     for _, row in df.iterrows():
                         account = Account(
-                            account_number=str(row['account_number']),
+                            link=str(row['link']),
+                            category=row['category'],
+                            sub_category=row.get('sub_category', ''),
+                            account_code=str(row.get('account_code', '')),
                             name=row['name'],
-                            type=row['type'],
-                            category=row.get('category', ''),
-                            description=row.get('description', ''),
                             user_id=current_user.id
                         )
                         db.session.add(account)

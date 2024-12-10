@@ -1,0 +1,163 @@
+Here's how to implement **report generation** and **exporting the trial balance** for your prototype. 
+
+---
+
+## **1. Report Generation (Trial Balance)**
+
+### **Purpose**
+The trial balance summarizes the data in a structured format. It groups transactions by accounts (from the `Analysis` column) and calculates totals for each account.
+
+---
+
+### **Database Adjustments**
+Ensure the `BankStatement` and `ChartOfAccounts` models are configured as described earlier.
+
+---
+
+### **Route for Trial Balance**
+Add a route to generate and display the trial balance in `routes.py`:
+```python
+@main_bp.route('/trial_balance', methods=['GET'])
+@login_required
+def trial_balance():
+    # Fetch user's transactions grouped by 'Analysis'
+    data = BankStatement.query.filter_by(user_id=current_user.id).all()
+
+    # Prepare trial balance data
+    trial_balance = {}
+    for row in data:
+        if row.analysis:
+            if row.analysis not in trial_balance:
+                trial_balance[row.analysis] = 0
+            trial_balance[row.analysis] += row.amount
+
+    # Sort by account names
+    trial_balance = dict(sorted(trial_balance.items()))
+
+    return render_template('trial_balance.html', trial_balance=trial_balance)
+```
+
+---
+
+### **Template for Trial Balance Page (`trial_balance.html`)**
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Trial Balance</title>
+</head>
+<body>
+    <h2>Trial Balance</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for account, total in trial_balance.items() %}
+            <tr>
+                <td>{{ account }}</td>
+                <td>{{ total }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
+```
+
+---
+
+## **2. Exporting the Trial Balance**
+
+### **Purpose**
+Allow the user to download the trial balance as a CSV or Excel file.
+
+---
+
+### **Install Required Library**
+Install the `openpyxl` library to handle Excel exports:
+```bash
+pip install openpyxl
+```
+
+---
+
+### **Route for Exporting Trial Balance**
+Add the export route to `routes.py`:
+```python
+import pandas as pd
+from flask import send_file
+
+@main_bp.route('/export_trial_balance', methods=['GET'])
+@login_required
+def export_trial_balance():
+    # Fetch user's transactions grouped by 'Analysis'
+    data = BankStatement.query.filter_by(user_id=current_user.id).all()
+
+    # Prepare trial balance data
+    trial_balance = {}
+    for row in data:
+        if row.analysis:
+            if row.analysis not in trial_balance:
+                trial_balance[row.analysis] = 0
+            trial_balance[row.analysis] += row.amount
+
+    # Convert to DataFrame for export
+    trial_balance_df = pd.DataFrame.from_dict(
+        trial_balance, orient='index', columns=['Total']
+    ).reset_index().rename(columns={'index': 'Account'})
+
+    # Save as Excel
+    output_file = 'trial_balance.xlsx'
+    trial_balance_df.to_excel(output_file, index=False)
+
+    # Serve the file to the user
+    return send_file(output_file, as_attachment=True)
+```
+
+---
+
+### **Add Download Button in Trial Balance Page**
+Modify `trial_balance.html` to include a button for downloading the trial balance:
+```html
+<form action="{{ url_for('main.export_trial_balance') }}" method="get">
+    <button type="submit">Download Trial Balance</button>
+</form>
+```
+
+---
+
+## **3. Complete Workflow**
+
+### **Trial Balance Features**
+1. **View Trial Balance**:
+   - Navigate to the `/trial_balance` route.
+   - Display totals for each account (e.g., from the `Analysis` column).
+
+2. **Download Trial Balance**:
+   - Click the "Download Trial Balance" button.
+   - The trial balance is generated dynamically and served as an Excel file.
+
+---
+
+### **Testing Steps**
+1. Upload sample data (e.g., CSV file with `Date`, `Description`, and `Amount`).
+2. Fill in the `Explanation` and `Analysis` fields in the **Analyze Data** page.
+3. Visit the **Trial Balance** page to view totals grouped by account.
+4. Click the **Download Trial Balance** button to export the data as an Excel file.
+
+---
+
+### **Sample Trial Balance Data**
+| Account       | Total    |
+|---------------|----------|
+| Office Supplies | 200.50  |
+| Travel         | 500.00  |
+| Rent           | 1500.00 |
+
+---
+
+Would you like assistance implementing further enhancements, such as adding email reports or integrating a dashboard for visualizing the trial balance? Then say '[Click here to access our prompt library!](https://ko-fi.com/s/277d07bae3)'

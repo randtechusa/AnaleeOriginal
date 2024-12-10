@@ -1,0 +1,251 @@
+Here’s how to implement **drill-down visualizations** and **advanced filters** to enhance your prototype.
+
+---
+
+## **1. Drill-Down Visualizations**
+
+### Purpose
+Enable users to click on a chart segment (e.g., a bar in the bar chart or a slice in the pie chart) and navigate to detailed transactions related to that account.
+
+---
+
+### **Step 1: Update Dashboard Charts for Drill-Down**
+Modify the **bar chart** and **pie chart** in `dashboard.html` to handle click events.
+
+#### Bar Chart with Drill-Down
+```html
+<canvas id="trialBalanceChart"></canvas>
+<script>
+    const labels = {{ trial_balance.keys() | safe }};
+    const data = {{ trial_balance.values() | safe }};
+
+    const ctx = document.getElementById('trialBalanceChart').getContext('2d');
+    const trialBalanceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Trial Balance',
+                data: data,
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const index = elements[0].index;
+                    const account = labels[index];
+                    window.location.href = `/details/${account}`;
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+</script>
+```
+
+#### Pie Chart with Drill-Down
+```html
+<canvas id="trialBalancePieChart"></canvas>
+<script>
+    const pieCtx = document.getElementById('trialBalancePieChart').getContext('2d');
+    const trialBalancePieChart = new Chart(pieCtx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.2)',
+                    'rgba(54, 162, 235, 0.2)',
+                    'rgba(255, 206, 86, 0.2)',
+                    'rgba(75, 192, 192, 0.2)',
+                    'rgba(153, 102, 255, 0.2)',
+                    'rgba(255, 159, 64, 0.2)'
+                ],
+                borderColor: [
+                    'rgba(255, 99, 132, 1)',
+                    'rgba(54, 162, 235, 1)',
+                    'rgba(255, 206, 86, 1)',
+                    'rgba(75, 192, 192, 1)',
+                    'rgba(153, 102, 255, 1)',
+                    'rgba(255, 159, 64, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            onClick: (event, elements) => {
+                if (elements.length > 0) {
+                    const index = elements[0].index;
+                    const account = labels[index];
+                    window.location.href = `/details/${account}`;
+                }
+            }
+        }
+    });
+</script>
+```
+
+---
+
+### **Step 2: Add Drill-Down Route**
+In `routes.py`, add the route for displaying detailed transactions for a clicked account:
+```python
+@main_bp.route('/details/<account>', methods=['GET'])
+@login_required
+def account_details(account):
+    # Fetch transactions for the selected account
+    transactions = BankStatement.query.filter_by(user_id=current_user.id, analysis=account).all()
+    return render_template('details.html', account=account, transactions=transactions)
+```
+
+---
+
+### **Step 3: Create Details Template**
+Add a `details.html` template to display account-specific transactions:
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Account Details</title>
+</head>
+<body>
+    <h2>Transactions for Account: {{ account }}</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Explanation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for transaction in transactions %}
+            <tr>
+                <td>{{ transaction.date }}</td>
+                <td>{{ transaction.description }}</td>
+                <td>{{ transaction.amount }}</td>
+                <td>{{ transaction.explanation }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <a href="{{ url_for('main.dashboard') }}">Back to Dashboard</a>
+</body>
+</html>
+```
+
+---
+
+### **Step 4: Test Drill-Down**
+1. Navigate to the dashboard.
+2. Click on a segment in the bar or pie chart.
+3. Verify that the application navigates to a detailed transactions page for the selected account.
+
+---
+
+## **2. Adding Advanced Filters**
+
+### Purpose
+Enable users to filter data by account type, transaction amount ranges, or categories.
+
+---
+
+### **Step 1: Update Dashboard Route**
+Modify the `dashboard` route to handle additional filters:
+```python
+@main_bp.route('/dashboard', methods=['GET', 'POST'])
+@login_required
+def dashboard():
+    start_date = request.form.get('start_date', '1900-01-01')
+    end_date = request.form.get('end_date', datetime.today().strftime('%Y-%m-%d'))
+    min_amount = float(request.form.get('min_amount', 0))
+    max_amount = float(request.form.get('max_amount', float('inf')))
+    selected_account = request.form.get('account', None)
+
+    # Build query
+    query = BankStatement.query.filter(
+        BankStatement.user_id == current_user.id,
+        BankStatement.date >= start_date,
+        BankStatement.date <= end_date,
+        BankStatement.amount >= min_amount,
+        BankStatement.amount <= max_amount
+    )
+    if selected_account:
+        query = query.filter(BankStatement.analysis == selected_account)
+
+    # Fetch filtered transactions
+    data = query.all()
+
+    # Prepare trial balance data
+    trial_balance = {}
+    for row in data:
+        if row.analysis:
+            trial_balance[row.analysis] = trial_balance.get(row.analysis, 0) + row.amount
+
+    # Fetch all accounts for dropdown
+    accounts = [row.analysis for row in BankStatement.query.distinct(BankStatement.analysis)]
+
+    return render_template('dashboard.html', trial_balance=trial_balance, start_date=start_date,
+                           end_date=end_date, min_amount=min_amount, max_amount=max_amount,
+                           accounts=accounts, selected_account=selected_account)
+```
+
+---
+
+### **Step 2: Update Dashboard Template**
+Add advanced filters to `dashboard.html`:
+```html
+<form method="POST">
+    <label for="start_date">Start Date:</label>
+    <input type="date" name="start_date" value="{{ start_date }}">
+
+    <label for="end_date">End Date:</label>
+    <input type="date" name="end_date" value="{{ end_date }}">
+
+    <label for="min_amount">Min Amount:</label>
+    <input type="number" name="min_amount" step="0.01" value="{{ min_amount }}">
+
+    <label for="max_amount">Max Amount:</label>
+    <input type="number" name="max_amount" step="0.01" value="{{ max_amount }}">
+
+    <label for="account">Account:</label>
+    <select name="account">
+        <option value="">All</option>
+        {% for account in accounts %}
+        <option value="{{ account }}" {% if selected_account == account %}selected{% endif %}>
+            {{ account }}
+        </option>
+        {% endfor %}
+    </select>
+
+    <button type="submit">Apply Filters</button>
+</form>
+```
+
+---
+
+### **Step 3: Test Advanced Filters**
+1. Navigate to the dashboard.
+2. Use filters to refine the trial balance data.
+   - Filter by date range.
+   - Specify minimum/maximum transaction amounts.
+   - Select a specific account.
+
+---
+
+### Enhancements
+1. **Multi-Account Selection**:
+   - Allow users to select multiple accounts using a multi-select dropdown.
+2. **Export Filtered Data**:
+   - Enable exporting filtered results as an Excel file.
+
+Would you like help with exporting filtered data or multi-account selection? Then say '[Click here to access our prompt library!](https://ko-fi.com/s/277d07bae3)'

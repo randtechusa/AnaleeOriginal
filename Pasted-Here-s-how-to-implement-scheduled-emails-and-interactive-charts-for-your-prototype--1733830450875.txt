@@ -1,0 +1,225 @@
+Here's how to implement **scheduled emails** and **interactive charts** for your prototype.
+
+---
+
+## **1. Scheduled Emails**
+
+### Purpose
+Automatically email the trial balance report to the user at a set interval (e.g., daily, weekly).
+
+---
+
+### **Step 1: Install APScheduler**
+Install the **APScheduler** library for scheduling tasks:
+```bash
+pip install APScheduler
+```
+
+---
+
+### **Step 2: Configure APScheduler**
+In your `__init__.py`, configure APScheduler for your Flask app:
+```python
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from flask_mail import Message
+import os
+
+def send_scheduled_email(app):
+    with app.app_context():
+        from .models import BankStatement
+        import pandas as pd
+
+        # Fetch data for trial balance
+        user = User.query.first()  # Assuming a single-user application
+        data = BankStatement.query.filter_by(user_id=user.id).all()
+        trial_balance = {}
+        for row in data:
+            if row.analysis:
+                trial_balance[row.analysis] = trial_balance.get(row.analysis, 0) + row.amount
+
+        # Create trial balance file
+        trial_balance_df = pd.DataFrame.from_dict(
+            trial_balance, orient='index', columns=['Total']
+        ).reset_index().rename(columns={'index': 'Account'})
+        output_file = 'scheduled_trial_balance.xlsx'
+        trial_balance_df.to_excel(output_file, index=False)
+
+        # Send email
+        msg = Message(
+            subject="Your Scheduled Trial Balance Report",
+            sender="your_email@gmail.com",
+            recipients=[user.email],
+        )
+        msg.body = "Please find your scheduled trial balance report attached."
+        with open(output_file, 'rb') as f:
+            msg.attach(output_file, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', f.read())
+        mail.send(msg)
+
+        # Clean up file
+        os.remove(output_file)
+
+def configure_scheduler(app):
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        func=lambda: send_scheduled_email(app),
+        trigger=IntervalTrigger(hours=24),  # Adjust interval as needed
+        id='email_job',
+        replace_existing=True
+    )
+    scheduler.start()
+```
+
+---
+
+### **Step 3: Initialize Scheduler**
+Modify `create_app()` in `__init__.py`:
+```python
+def create_app():
+    app = Flask(__name__)
+    app.config.from_object('config.Config')
+
+    db.init_app(app)
+    mail.init_app(app)
+
+    # Initialize the scheduler
+    configure_scheduler(app)
+
+    return app
+```
+
+---
+
+### **Step 4: Test Scheduled Emails**
+- Run the app and verify emails are sent automatically at the specified interval (e.g., daily).
+- Ensure your email credentials in `config.py` are correct.
+
+---
+
+## **2. Interactive Charts**
+
+Interactive charts allow users to explore data dynamically. Clicking a bar or point in the chart can display detailed transactions.
+
+---
+
+### **Step 1: Update Dashboard Template**
+Modify `dashboard.html` to make the chart interactive using **Chart.js**:
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h2>Interactive Trial Balance Dashboard</h2>
+    <canvas id="trialBalanceChart"></canvas>
+
+    <script>
+        const labels = {{ trial_balance.keys() | safe }};
+        const data = {{ trial_balance.values() | safe }};
+
+        const ctx = document.getElementById('trialBalanceChart').getContext('2d');
+        const trialBalanceChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Trial Balance',
+                    data: data,
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                onClick: (event, elements) => {
+                    if (elements.length > 0) {
+                        const index = elements[0].index;
+                        const account = labels[index];
+                        window.location.href = `/details/${account}`;
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+```
+
+---
+
+### **Step 2: Add a Route for Detailed Transactions**
+Add a route to fetch and display transactions for a specific account in `routes.py`:
+```python
+@main_bp.route('/details/<account>', methods=['GET'])
+@login_required
+def account_details(account):
+    # Fetch transactions for the selected account
+    transactions = BankStatement.query.filter_by(user_id=current_user.id, analysis=account).all()
+    return render_template('details.html', account=account, transactions=transactions)
+```
+
+---
+
+### **Step 3: Create Details Template (`details.html`)**
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Account Details</title>
+</head>
+<body>
+    <h2>Transactions for Account: {{ account }}</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Explanation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for transaction in transactions %}
+            <tr>
+                <td>{{ transaction.date }}</td>
+                <td>{{ transaction.description }}</td>
+                <td>{{ transaction.amount }}</td>
+                <td>{{ transaction.explanation }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <a href="{{ url_for('main.dashboard') }}">Back to Dashboard</a>
+</body>
+</html>
+```
+
+---
+
+### **Step 4: Test Interactive Charts**
+1. **Dashboard**:
+   - View the bar chart on the dashboard.
+   - Click on a bar to navigate to detailed transactions for the corresponding account.
+2. **Details Page**:
+   - Verify transactions for the selected account are displayed correctly.
+
+---
+
+## **Enhancements**
+1. **Dynamic Date Range Filtering**:
+   - Add dropdowns or date pickers to filter transactions displayed on the dashboard.
+
+2. **Multi-Chart Options**:
+   - Incorporate pie charts, line charts, or area charts for different views of the trial balance.
+
+3. **Email Frequency Customization**:
+   - Allow users to set their own email schedule (daily, weekly, monthly).
+
+Would you like help adding dynamic filters or multi-chart support? Then say '[Click here to access our prompt library!](https://ko-fi.com/s/277d07bae3)'
