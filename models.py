@@ -24,6 +24,7 @@ class Transaction(db.Model):
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
     ai_category = db.Column(db.String(50))
     ai_confidence = db.Column(db.Float)
+    ai_explanation = db.Column(db.String(200))  # Store AI's explanation for the categorization
 
 class Account(db.Model):
     id = db.Column(db.Integer, primary_key=True)

@@ -83,7 +83,7 @@ def upload():
                 amount = float(row['Amount'])
                 date = pd.to_datetime(row['Date'])
                 
-                category, confidence = categorize_transaction(description)
+                category, confidence, explanation = categorize_transaction(description)
                 
                 transaction = Transaction(
                     date=date,
@@ -91,7 +91,8 @@ def upload():
                     amount=amount,
                     user_id=current_user.id,
                     ai_category=category,
-                    ai_confidence=confidence
+                    ai_confidence=confidence,
+                    ai_explanation=explanation
                 )
                 db.session.add(transaction)
             
