@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-body">
+        <h2 class="card-title mb-4">Trial Balance</h2>
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Account</th>
+                        <th class="text-end">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for account, amount in trial_balance.items() %}
+                    <tr>
+                        <td>{{ account }}</td>
+                        <td class="text-end {{ 'text-success' if amount > 0 else 'text-danger' }}">
+                            ${{ "%.2f"|format(amount|abs) }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th>Total</th>
+                        <th class="text-end {{ 'text-success' if trial_balance.values()|sum > 0 else 'text-danger' }}">
+                            ${{ "%.2f"|format(trial_balance.values()|sum|abs) }}
+                        </th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

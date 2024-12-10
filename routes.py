@@ -216,3 +216,14 @@ def analyze():
 @login_required
 def upload():
     return render_template('upload.html')
+
+@main.route('/output')
+@login_required
+def output():
+    transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+    trial_balance = {}
+    for transaction in transactions:
+        if transaction.account:
+            account_name = transaction.account.name
+            trial_balance[account_name] = trial_balance.get(account_name, 0) + transaction.amount
+    return render_template('output.html', trial_balance=trial_balance)
