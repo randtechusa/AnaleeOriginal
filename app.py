@@ -3,6 +3,10 @@ import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -37,29 +41,43 @@ app.config.update(
 )
 
 # Initialize Flask extensions
-db = SQLAlchemy(app)
-login_manager = LoginManager(app)
-login_manager.login_view = 'login'
+db = SQLAlchemy()
+login_manager = LoginManager()
 
-logger.info(f"Database URL configured (masked): {database_url.split('@')[0]}@****")
+def init_app():
+    """Initialize the Flask application"""
+    db.init_app(app)
+    login_manager.init_app(app)
+    login_manager.login_view = 'login'
+    
+    with app.app_context():
+        try:
+            # Import models and create tables
+            from models import User, Account, Transaction
+            logger.info("Creating database tables...")
+            db.create_all()
+            logger.info("Database tables created successfully")
+            
+            # Register blueprints
+            from routes import main as main_blueprint
+            app.register_blueprint(main_blueprint)
+            logger.info("Routes initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Error during initialization: {str(e)}")
+            logger.exception("Full stack trace:")
+            raise
+    
+    return app
 
 @login_manager.user_loader
 def load_user(user_id):
     from models import User
-    return User.query.get(int(user_id))
+    try:
+        return User.query.get(int(user_id))
+    except Exception as e:
+        logger.error(f"Error loading user {user_id}: {str(e)}")
+        return None
 
-try:
-    with app.app_context():
-        # Import models and routes after db initialization
-        import models
-        import routes
-        
-        # Create database tables
-        logger.info("Creating database tables...")
-        db.create_all()
-        
-        logger.info("Application initialization completed successfully")
-except Exception as e:
-    logger.error(f"Error during initialization: {e}")
-    logger.exception("Full stack trace:")
-    raise
+# Initialize the application
+app = init_app()
