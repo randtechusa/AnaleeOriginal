@@ -1,0 +1,250 @@
+Here's the updated approach and code to develop your prototype on **Replit**, considering the changes:
+
+---
+
+## **Objective: A One-User System**
+
+### Key Adjustments
+1. **User-Centric Workflow**:
+   - Registration and login functionality allow only one user.
+   - The registered user is treated as the company (no separate "Add Company").
+2. **Menu Adjustments**:
+   - Replace company menus with user-specific menus: **Upload Data**, **Analyze Data**, **Output**, and **Settings**.
+3. **Data Management**:
+   - Data uploaded by the user (bank statements) will directly relate to the user (no multi-company management).
+4. **Chart of Accounts**:
+   - Editable under "Settings" for the user.
+5. **Deployment**:
+   - Hosted on **Replit**, designed for single-user use.
+
+---
+
+## **Directory Structure**
+
+```plaintext
+analee/
+│
+├── app/
+│   ├── __init__.py         # Flask app initialization
+│   ├── models.py           # SQLAlchemy models
+│   ├── routes.py           # Routes for all functionalities
+│   ├── templates/          # HTML templates
+│   │   ├── base.html       # Base layout
+│   │   ├── login.html      # Login page
+│   │   ├── register.html   # Registration page
+│   │   ├── dashboard.html  # User dashboard
+│   │   ├── upload.html     # Data upload page
+│   │   ├── analyze.html    # Analyze data page
+│   │   ├── output.html     # Output page
+│   │   └── settings.html   # User settings (chart of accounts)
+│   ├── static/             # Static files (CSS, JS)
+│   └── utils.py            # Utility functions (e.g., email sending)
+│
+├── migrations/             # Database migrations
+├── config.py               # Flask configuration
+├── run.py                  # App entry point
+└── requirements.txt        # Python dependencies
+```
+
+---
+
+## **Setup on Replit**
+
+### Step 1: Install Dependencies
+1. Create a new Replit project.
+2. Add dependencies in `requirements.txt`:
+   ```plaintext
+   flask
+   flask-sqlalchemy
+   flask-login
+   flask-bcrypt
+   flask-wtf
+   pandas
+   openpyxl  # For exporting to Excel
+   ```
+3. Install them via Replit's package manager.
+
+---
+
+## **Code Implementation**
+
+### **1. Flask Initialization (`__init__.py`)**
+```python
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager
+
+db = SQLAlchemy()
+login_manager = LoginManager()
+
+def create_app():
+    app = Flask(__name__)
+    app.config['SECRET_KEY'] = 'your_secret_key'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///analee.db'
+
+    db.init_app(app)
+    login_manager.init_app(app)
+    login_manager.login_view = 'login'
+
+    with app.app_context():
+        from .routes import main_bp
+        app.register_blueprint(main_bp)
+
+        db.create_all()
+
+    return app
+```
+
+---
+
+### **2. Database Models (`models.py`)**
+```python
+from . import db
+from flask_login import UserMixin
+
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(150), unique=True, nullable=False)
+    password = db.Column(db.String(200), nullable=False)
+
+class BankStatement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.String(10), nullable=False)
+    description = db.Column(db.String(255), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    explanation = db.Column(db.String(255), nullable=True)
+    analysis = db.Column(db.String(100), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+
+class ChartOfAccounts(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    account_name = db.Column(db.String(100), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+```
+
+---
+
+### **3. Routes (`routes.py`)**
+```python
+from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask_login import login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from .models import db, User, BankStatement, ChartOfAccounts
+
+main_bp = Blueprint('main', __name__)
+
+# Landing Page (Login)
+@main_bp.route('/', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        user = User.query.filter_by(email=email).first()
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            return redirect(url_for('main.dashboard'))
+        flash('Invalid credentials')
+    return render_template('login.html')
+
+# Registration
+@main_bp.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        email = request.form.get('email')
+        password = generate_password_hash(request.form.get('password'))
+        user = User(name=name, email=email, password=password)
+        db.session.add(user)
+        db.session.commit()
+        flash('Account created successfully. Please log in.')
+        return redirect(url_for('main.login'))
+    return render_template('register.html')
+
+# Dashboard
+@main_bp.route('/dashboard')
+@login_required
+def dashboard():
+    return render_template('dashboard.html')
+
+# Upload Data
+@main_bp.route('/upload', methods=['GET', 'POST'])
+@login_required
+def upload():
+    if request.method == 'POST':
+        # Handle file upload
+        pass
+    return render_template('upload.html')
+
+# Analyze Data
+@main_bp.route('/analyze')
+@login_required
+def analyze():
+    # Query uploaded data
+    data = BankStatement.query.filter_by(user_id=current_user.id).all()
+    return render_template('analyze.html', data=data)
+
+# Settings (Chart of Accounts)
+@main_bp.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    if request.method == 'POST':
+        account_name = request.form.get('account_name')
+        new_account = ChartOfAccounts(account_name=account_name, user_id=current_user.id)
+        db.session.add(new_account)
+        db.session.commit()
+    accounts = ChartOfAccounts.query.filter_by(user_id=current_user.id).all()
+    return render_template('settings.html', accounts=accounts)
+
+# Logout
+@main_bp.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('main.login'))
+```
+
+---
+
+### **4. Templates (Example: `login.html`)**
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Login</title>
+</head>
+<body>
+    <form method="POST">
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+    </form>
+    <a href="{{ url_for('main.register') }}">Register</a>
+</body>
+</html>
+```
+
+---
+
+### **5. Deployment on Replit**
+1. Add a `run.py` file:
+   ```python
+   from app import create_app
+
+   app = create_app()
+
+   if __name__ == "__main__":
+       app.run(host="0.0.0.0", port=5000)
+   ```
+2. Run the project on Replit.
+3. Access the app using the Replit preview link.
+
+---
+
+### **Testing Steps**
+1. **Register** a user and login.
+2. **Upload Data** via the "Upload" menu.
+3. Add and edit the **Chart of Accounts** in "Settings."
+4. View and analyze uploaded data in the "Analyze" menu.
+
+Would you like detailed instructions for the upload functionality or predictive analysis? Then say '[Click here to access our prompt library!](https://ko-fi.com/s/277d07bae3)'
