@@ -1,0 +1,260 @@
+Here are **detailed instructions** for implementing **upload functionality** and setting up **predictive analysis** for your prototype on Replit:
+
+---
+
+## **1. Upload Functionality**
+
+This feature allows users to upload bank statements. The system processes the uploaded file and stores the data in the database. Additionally, two columns (`Explanation` and `Analysis`) are added to the data.
+
+### Steps:
+
+#### **Database Schema Adjustments**
+Ensure the `BankStatement` model from `models.py` includes all necessary columns:
+```python
+class BankStatement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.String(10), nullable=False)
+    description = db.Column(db.String(255), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    explanation = db.Column(db.String(255), nullable=True)  # User-provided
+    analysis = db.Column(db.String(100), nullable=True)     # Dropdown selection
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+```
+
+---
+
+#### **Upload Route**
+Add a route for file uploads in `routes.py`:
+```python
+import pandas as pd
+from werkzeug.utils import secure_filename
+import os
+
+UPLOAD_FOLDER = 'uploads/'
+ALLOWED_EXTENSIONS = {'csv', 'xlsx'}
+
+# Ensure the upload folder exists
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+main_bp.app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@main_bp.route('/upload', methods=['GET', 'POST'])
+@login_required
+def upload():
+    if request.method == 'POST':
+        file = request.files['file']
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(main_bp.app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+
+            # Process the uploaded file
+            if filename.endswith('.csv'):
+                data = pd.read_csv(filepath)
+            else:
+                data = pd.read_excel(filepath)
+
+            # Validate required columns
+            required_columns = ['Date', 'Description', 'Amount']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                flash(f"Missing required columns: {', '.join(missing_columns')}", 'danger')
+                return redirect(url_for('main.upload'))
+
+            # Add Explanation and Analysis columns
+            data['Explanation'] = ''
+            data['Analysis'] = ''
+
+            # Save to database
+            for _, row in data.iterrows():
+                new_entry = BankStatement(
+                    date=row['Date'],
+                    description=row['Description'],
+                    amount=row['Amount'],
+                    explanation='',
+                    analysis='',
+                    user_id=current_user.id
+                )
+                db.session.add(new_entry)
+            db.session.commit()
+
+            flash(f"File uploaded and processed successfully. {len(data)} rows added.", 'success')
+            return redirect(url_for('main.analyze'))
+
+    return render_template('upload.html')
+```
+
+---
+
+#### **Template for Upload Page (`upload.html`)**
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Upload Data</title>
+</head>
+<body>
+    <h2>Upload Bank Statement</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv,.xlsx" required>
+        <button type="submit">Upload</button>
+    </form>
+</body>
+</html>
+```
+
+---
+
+## **2. Analyze Data**
+
+This feature displays uploaded data, allowing the user to add `Explanation` and select from the `Analysis` dropdown.
+
+### Steps:
+
+#### **Analyze Route**
+Add the route to fetch and display data in `routes.py`:
+```python
+@main_bp.route('/analyze', methods=['GET', 'POST'])
+@login_required
+def analyze():
+    if request.method == 'POST':
+        # Update rows based on form submission
+        for key, value in request.form.items():
+            if key.startswith('explanation_'):
+                row_id = key.split('_')[1]
+                row = BankStatement.query.get(row_id)
+                row.explanation = value
+            elif key.startswith('analysis_'):
+                row_id = key.split('_')[1]
+                row = BankStatement.query.get(row_id)
+                row.analysis = value
+        db.session.commit()
+        flash('Data saved successfully!', 'success')
+
+    # Fetch user's uploaded data
+    data = BankStatement.query.filter_by(user_id=current_user.id).all()
+    chart_of_accounts = ChartOfAccounts.query.filter_by(user_id=current_user.id).all()
+    return render_template('analyze.html', data=data, chart_of_accounts=chart_of_accounts)
+```
+
+---
+
+#### **Template for Analyze Page (`analyze.html`)**
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Analyze Data</title>
+</head>
+<body>
+    <h2>Analyze Uploaded Data</h2>
+    <form method="POST">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Amount</th>
+                    <th>Explanation</th>
+                    <th>Analysis</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    <td>{{ row.date }}</td>
+                    <td>{{ row.description }}</td>
+                    <td>{{ row.amount }}</td>
+                    <td>
+                        <input type="text" name="explanation_{{ row.id }}" value="{{ row.explanation }}">
+                    </td>
+                    <td>
+                        <select name="analysis_{{ row.id }}">
+                            <option value="">Select Account</option>
+                            {% for account in chart_of_accounts %}
+                            <option value="{{ account.account_name }}" {% if row.analysis == account.account_name %}selected{% endif %}>
+                                {{ account.account_name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <button type="submit">Save Changes</button>
+    </form>
+</body>
+</html>
+```
+
+---
+
+## **3. Predictive Analysis**
+
+This feature suggests an appropriate chart of account based on patterns in the `Explanation` field.
+
+### Steps:
+
+#### **Install Natural Language Processing (NLP) Library**
+Add **scikit-learn** for simple predictive analysis:
+```bash
+pip install scikit-learn
+```
+
+#### **Update the Analyze Route**
+Incorporate predictive suggestions based on historical data:
+```python
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+
+@main_bp.route('/analyze', methods=['GET', 'POST'])
+@login_required
+def analyze():
+    if request.method == 'POST':
+        # Update rows based on form submission
+        for key, value in request.form.items():
+            if key.startswith('explanation_'):
+                row_id = key.split('_')[1]
+                row = BankStatement.query.get(row_id)
+                row.explanation = value
+            elif key.startswith('analysis_'):
+                row_id = key.split('_')[1]
+                row = BankStatement.query.get(row_id)
+                row.analysis = value
+        db.session.commit()
+        flash('Data saved successfully!', 'success')
+
+    # Fetch user's uploaded data
+    data = BankStatement.query.filter_by(user_id=current_user.id).all()
+    chart_of_accounts = ChartOfAccounts.query.filter_by(user_id=current_user.id).all()
+
+    # Prepare data for predictions
+    explanations = [row.explanation for row in data if row.explanation]
+    analyses = [row.analysis for row in data if row.analysis]
+    if explanations and analyses:
+        vectorizer = CountVectorizer()
+        X = vectorizer.fit_transform(explanations)
+        model = MultinomialNB()
+        model.fit(X, analyses)
+
+        for row in data:
+            if row.explanation and not row.analysis:
+                prediction = model.predict(vectorizer.transform([row.explanation]))[0]
+                row.analysis = prediction
+        db.session.commit()
+
+    return render_template('analyze.html', data=data, chart_of_accounts=chart_of_accounts)
+```
+
+---
+
+### Summary of Workflow
+1. Users upload bank statements, which are stored in the database.
+2. In the **Analyze Data** page, users manually input `Explanation` and choose `Analysis`.
+3. The application predicts the `Analysis` value based on the `Explanation` using an NLP model.
+
+Would you like more details about report generation or exporting the trial balance? Then say '[Click here to access our prompt library!](https://ko-fi.com/s/277d07bae3)'
