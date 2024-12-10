@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask
+from flask import Flask, render_template, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from sqlalchemy.orm import DeclarativeBase
@@ -13,16 +13,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configure Flask application
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev_key_123")
-app.config["SECRET_KEY"] = app.secret_key
-
-# Configure database
-database_url = os.environ.get("DATABASE_URL")
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-
 app.config.update(
-    SQLALCHEMY_DATABASE_URI=database_url,
+    SECRET_KEY=os.environ.get("FLASK_SECRET_KEY", "dev_key_123"),
+    SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL").replace("postgres://", "postgresql://", 1) if os.environ.get("DATABASE_URL", "").startswith("postgres://") else os.environ.get("DATABASE_URL"),
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     SQLALCHEMY_ENGINE_OPTIONS={
         "pool_recycle": 300,
@@ -42,11 +35,34 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Import models and routes
+# Initialize Flask-Login
+@login_manager.user_loader
+def load_user(user_id):
+    from models import User
+    return User.query.get(int(user_id))
+
+# Import routes after all configurations
 with app.app_context():
-    from models import User  # Import User model for login manager
-    import routes
-    
-    logger.info("Creating database tables...")
-    db.create_all()  # Create tables if they don't exist
-    logger.info("Database tables created successfully")
+    try:
+        # Import models first
+        from models import User, Account, Transaction
+        
+        # Verify database connection
+        logger.info("Verifying database connection...")
+        db.engine.connect()
+        logger.info("Database connection successful")
+        
+        # Create database tables
+        logger.info("Creating database tables...")
+        db.create_all()
+        logger.info("Database tables created successfully")
+        
+        # Import routes after models are ready
+        logger.info("Initializing routes...")
+        import routes
+        logger.info("Routes initialized successfully")
+        
+    except Exception as e:
+        logger.error(f"Error during initialization: {e}")
+        logger.exception("Full stack trace:")
+        raise
