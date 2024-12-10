@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-body">
+        <h2 class="card-title mb-4">Upload Transactions</h2>
+        
+        <form method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="file" class="form-label">CSV File</label>
+                <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
+                <div class="form-text">
+                    File should contain columns: Date, Description, Amount
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Upload</button>
+        </form>
+        
+        <div class="mt-4">
+            <h5>File Format Requirements:</h5>
+            <ul>
+                <li>CSV format only</li>
+                <li>Required columns: Date, Description, Amount</li>
+                <li>Date format: YYYY-MM-DD</li>
+                <li>Amount should be numeric (positive for income, negative for expenses)</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
