@@ -36,7 +36,9 @@ class Transaction(db.Model):
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
     bank_account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
     file_id = db.Column(db.Integer, db.ForeignKey('uploaded_files.id'), nullable=False)
-    bank_account = db.relationship('Account', foreign_keys=[bank_account_id], backref='bank_transactions')
+    bank_account = db.relationship('Account', 
+                                foreign_keys=[bank_account_id],
+                                backref=db.backref('bank_transactions_rel', lazy=True))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
