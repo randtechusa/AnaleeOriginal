@@ -97,13 +97,18 @@ def analyze_cross_field_patterns(transactions):
 def analyze_temporal_patterns(transactions, time_window_days=30):
     """
     Analyze temporal patterns in transaction data to identify trends and cyclical behavior.
+    Uses advanced pattern recognition to detect recurring transactions and seasonal variations.
     
     Args:
         transactions: List of transaction objects
         time_window_days: Number of days to consider for each analysis window
     
     Returns:
-        Dictionary containing temporal pattern analysis results
+        Dictionary containing detailed temporal pattern analysis results including:
+        - Recurring transaction patterns
+        - Seasonal trends
+        - Growth/decline indicators
+        - Confidence metrics for each pattern
     """
     temporal_patterns = {
         "cycles": [],
