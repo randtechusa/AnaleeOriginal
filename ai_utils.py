@@ -55,12 +55,18 @@ Limit to top 3 most likely matches. Confidence should be between 0 and 1."""
         
         # Parse response
         # Access content from the new API response structure
-        content = response.choices[0].message.content
+        content = response.choices[0].message.content.strip()
+        suggestions = []
         try:
-            suggestions = eval(content)
+            # Safely evaluate the response content
+            import json
+            if content.startswith('[') and content.endswith(']'):
+                suggestions = json.loads(content)
+            else:
+                logger.error("Invalid response format from AI")
         except Exception as e:
             logger.error(f"Error parsing AI suggestions: {str(e)}")
-            suggestions = []
+            logger.debug(f"Raw content received: {content}")
         
         # Validate and format suggestions
         valid_suggestions = []
