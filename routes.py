@@ -499,14 +499,9 @@ def delete_file(file_id):
     return redirect(url_for('main.upload'))
 
 @main.route('/output')
-@main.route('/output/<int:file_id>')
 @login_required
-def output(file_id=None):
-    # Get all uploaded files for selection
-    files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-    
+def output():
     trial_balance = []
-    selected_file = None
     categories = []
     
     # Get company settings for financial year
@@ -535,84 +530,79 @@ def output(file_id=None):
             financial_years.add(t.date.year - 1)
     financial_years = sorted(list(financial_years))
     
-    if file_id:
-        selected_file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+    # Get all unique categories for the filter dropdown
+    categories = db.session.query(Account.category).distinct().all()
+    categories = [cat[0] for cat in categories if cat[0]]  # Remove None values
+    
+    # Calculate financial year date range
+    start_date = datetime(selected_year, company_settings.financial_year_end + 1, 1)
+    if company_settings.financial_year_end == 12:
+        end_date = datetime(selected_year + 1, 1, 1)
+    else:
+        end_date = datetime(selected_year + 1, company_settings.financial_year_end + 1, 1)
+    
+    # Build the transaction query with filters
+    query = Transaction.query.filter_by(user_id=current_user.id)
+    
+    # Apply financial year filter
+    query = query.filter(Transaction.date >= start_date, Transaction.date < end_date)
+    
+    # Apply additional date filters if provided
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    if date_from:
+        query = query.filter(Transaction.date >= datetime.strptime(date_from, '%Y-%m-%d'))
+    if date_to:
+        query = query.filter(Transaction.date <= datetime.strptime(date_to, '%Y-%m-%d'))
         
-        # Get all unique categories for the filter dropdown
-        categories = db.session.query(Account.category).distinct().all()
-        categories = [cat[0] for cat in categories if cat[0]]  # Remove None values
-        
-        # Calculate financial year date range
-        start_date = datetime(selected_year, company_settings.financial_year_end + 1, 1)
-        if company_settings.financial_year_end == 12:
-            end_date = datetime(selected_year + 1, 1, 1)
-        else:
-            end_date = datetime(selected_year + 1, company_settings.financial_year_end + 1, 1)
-        
-        # Build the transaction query with filters
-        query = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id)
-        
-        # Apply financial year filter
-        query = query.filter(Transaction.date >= start_date, Transaction.date < end_date)
-        
-        # Apply additional date filters if provided
-        date_from = request.args.get('date_from')
-        date_to = request.args.get('date_to')
-        if date_from:
-            query = query.filter(Transaction.date >= date_from)
-        if date_to:
-            query = query.filter(Transaction.date <= date_to)
+    # Get all transactions matching the filters
+    transactions = query.all()
+    
+    # Filter by category if provided
+    category_filter = request.args.get('category')
+    
+    for transaction in transactions:
+        # Add the main account entry
+        if transaction.account:
+            # Skip if category filter is active and doesn't match
+            if category_filter and transaction.account.category != category_filter:
+                continue
             
-        # Get all transactions matching the filters
-        transactions = query.all()
+            account = transaction.account
+            account_info = next((item for item in trial_balance if item['account_name'] == account.name), None)
+            if account_info is None:
+                account_info = {
+                    'account_name': account.name,
+                    'category': account.category,
+                    'sub_category': account.sub_category,
+                    'link': account.link,
+                    'amount': 0
+                }
+                trial_balance.append(account_info)
+            account_info['amount'] += transaction.amount
         
-        # Filter by category if provided
-        category_filter = request.args.get('category')
-        
-        for transaction in transactions:
-            # Add the main account entry
-            if transaction.account:
-                # Skip if category filter is active and doesn't match
-                if category_filter and transaction.account.category != category_filter:
-                    continue
-                    
-                account = transaction.account
-                account_info = next((item for item in trial_balance if item['account_name'] == account.name), None)
-                if account_info is None:
-                    account_info = {
-                        'account_name': account.name,
-                        'category': account.category,
-                        'sub_category': account.sub_category,
-                        'link': account.link,
-                        'amount': 0
-                    }
-                    trial_balance.append(account_info)
-                account_info['amount'] += transaction.amount
-                
-            # Add the corresponding bank account entry (double-entry)
-            if transaction.bank_account:
-                # Skip if category filter is active and doesn't match
-                if category_filter and transaction.bank_account.category != category_filter:
-                    continue
-                    
-                bank_account = transaction.bank_account
-                bank_info = next((item for item in trial_balance if item['account_name'] == bank_account.name), None)
-                if bank_info is None:
-                    bank_info = {
-                        'account_name': bank_account.name,
-                        'category': bank_account.category,
-                        'sub_category': bank_account.sub_category,
-                        'link': bank_account.link,
-                        'amount': 0
-                    }
-                    trial_balance.append(bank_info)
-                # Reverse the amount for the bank account (double-entry)
-                bank_info['amount'] -= transaction.amount
+        # Add the corresponding bank account entry (double-entry)
+        if transaction.bank_account:
+            # Skip if category filter is active and doesn't match
+            if category_filter and transaction.bank_account.category != category_filter:
+                continue
+            
+            bank_account = transaction.bank_account
+            bank_info = next((item for item in trial_balance if item['account_name'] == bank_account.name), None)
+            if bank_info is None:
+                bank_info = {
+                    'account_name': bank_account.name,
+                    'category': bank_account.category,
+                    'sub_category': bank_account.sub_category,
+                    'link': bank_account.link,
+                    'amount': 0
+                }
+                trial_balance.append(bank_info)
+            # Reverse the amount for the bank account (double-entry)
+            bank_info['amount'] -= transaction.amount
     
     return render_template('output.html', 
-                         trial_balance=trial_balance, 
-                         files=files,
-                         selected_file=selected_file,
+                         trial_balance=trial_balance,
                          categories=categories,
                          financial_years=financial_years,
                          current_year=selected_year)

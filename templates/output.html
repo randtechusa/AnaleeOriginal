@@ -2,48 +2,11 @@
 
 {% block content %}
 <div class="row">
-    <div class="col-md-12 mb-4">
-        <div class="card">
-            <div class="card-body">
-                <h2 class="card-title">Bank Statements</h2>
-                {% if files %}
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>File Name</th>
-                                <th>Upload Date</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for file in files %}
-                            <tr>
-                                <td>{{ file.filename }}</td>
-                                <td>{{ file.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                                <td>
-                                    <a href="{{ url_for('main.output', file_id=file.id) }}" class="btn btn-sm btn-primary">View</a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <div class="alert alert-info">
-                    No files uploaded yet.
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
-    {% if selected_file %}
     <div class="col-md-12">
         <div class="card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h2 class="card-title">Trial Balance - {{ selected_file.filename }}</h2>
+                    <h2 class="card-title">Trial Balance</h2>
                     <div class="d-flex align-items-center">
                         <span class="me-2">Financial Year:</span>
                         <select class="form-select me-3" id="financialYear" name="financial_year" style="width: auto;">
@@ -86,75 +49,71 @@
                             </div>
                         </div>
                     </div>
-                    <input type="hidden" name="file_id" value="{{ selected_file.id }}">
                     <button type="submit" class="btn btn-primary">Apply Filters</button>
                 </form>
-                
+
                 <div class="table-responsive">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Account</th>
-                        <th class="text-end">Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% set current_category = None %}
-                    {% for item in trial_balance %}
-                        {% if item.category != current_category %}
-                            {% set current_category = item.category %}
-                            <tr class="table-secondary">
-                                <td colspan="2"><strong>{{ current_category }}</strong></td>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th class="text-end">Amount</th>
                             </tr>
-                        {% endif %}
-                        <tr>
-                            <td>
-                                <div class="d-flex justify-content-between">
-                                    {{ item.account_name }}
-                                    <button class="btn btn-sm btn-link p-0" 
-                                            type="button" 
-                                            data-bs-toggle="collapse" 
-                                            data-bs-target="#details-{{ loop.index }}"
-                                            aria-expanded="false">
-                                        <small>View Details</small>
-                                    </button>
-                                </div>
-                                <div class="collapse mt-2" id="details-{{ loop.index }}">
-                                    <div class="card card-body p-2">
-                                        <small>
-                                            <strong>Account Code:</strong> {{ item.link }}<br>
-                                            <strong>Category:</strong> {{ item.category }}<br>
-                                            {% if item.sub_category %}
-                                                <strong>Sub Category:</strong> {{ item.sub_category }}
-                                            {% endif %}
-                                        </small>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="text-end {{ 'text-success' if item.amount > 0 else 'text-danger' }}">
-                                ${{ "%.2f"|format(item.amount|abs) }}
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-                <tfoot>
-                    <tr>
-                        <th>Total</th>
-                        {% set total = trial_balance|map(attribute='amount')|sum %}
-                        <th class="text-end {{ 'text-success' if total > 0 else 'text-danger' }}">
-                            ${{ "%.2f"|format(total|abs) }}
-                        </th>
-                    </tr>
-                </tfoot>
-            </table>
+                        </thead>
+                        <tbody>
+                            {% set current_category = None %}
+                            {% for item in trial_balance %}
+                                {% if item.category != current_category %}
+                                    {% set current_category = item.category %}
+                                    <tr class="table-secondary">
+                                        <td colspan="2"><strong>{{ current_category }}</strong></td>
+                                    </tr>
+                                {% endif %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex justify-content-between">
+                                            {{ item.account_name }}
+                                            <button class="btn btn-sm btn-link p-0" 
+                                                    type="button" 
+                                                    data-bs-toggle="collapse" 
+                                                    data-bs-target="#details-{{ loop.index }}"
+                                                    aria-expanded="false">
+                                                <small>View Details</small>
+                                            </button>
+                                        </div>
+                                        <div class="collapse mt-2" id="details-{{ loop.index }}">
+                                            <div class="card card-body p-2">
+                                                <small>
+                                                    <strong>Account Code:</strong> {{ item.link }}<br>
+                                                    <strong>Category:</strong> {{ item.category }}<br>
+                                                    {% if item.sub_category %}
+                                                        <strong>Sub Category:</strong> {{ item.sub_category }}
+                                                    {% endif %}
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="text-end {{ 'text-success' if item.amount > 0 else 'text-danger' }}">
+                                        ${{ "%.2f"|format(item.amount|abs) }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th>Total</th>
+                                <th class="text-end {{ 'text-success' if trial_balance|map(attribute='amount')|sum > 0 else 'text-danger' }}">
+                                    ${{ "%.2f"|format(trial_balance|map(attribute='amount')|sum|abs) }}
+                                </th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
-{% else %}
-<div class="alert alert-info">
-    Please select a bank statement file to view its Trial Balance.
-</div>
-{% endif %}
+
 {% endblock %}
 
 {% block scripts %}
