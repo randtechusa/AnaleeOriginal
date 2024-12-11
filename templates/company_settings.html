@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">Company Settings</h2>
+                <form method="POST">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="company_name" class="form-label">Company Name</label>
+                                <input type="text" class="form-control" id="company_name" name="company_name" 
+                                       value="{{ settings.company_name if settings else '' }}" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="registration_number" class="form-label">Registration Number</label>
+                                <input type="text" class="form-control" id="registration_number" name="registration_number"
+                                       value="{{ settings.registration_number if settings else '' }}">
+                            </div>
+                            <div class="mb-3">
+                                <label for="tax_number" class="form-label">Tax Number</label>
+                                <input type="text" class="form-control" id="tax_number" name="tax_number"
+                                       value="{{ settings.tax_number if settings else '' }}">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="vat_number" class="form-label">VAT Number</label>
+                                <input type="text" class="form-control" id="vat_number" name="vat_number"
+                                       value="{{ settings.vat_number if settings else '' }}">
+                            </div>
+                            <div class="mb-3">
+                                <label for="address" class="form-label">Address</label>
+                                <textarea class="form-control" id="address" name="address" rows="3">{{ settings.address if settings else '' }}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="financial_year_end" class="form-label">Financial Year End</label>
+                                <select class="form-select" id="financial_year_end" name="financial_year_end" required>
+                                    {% for month_num, month_name in months %}
+                                        <option value="{{ month_num }}" 
+                                                {% if settings and settings.financial_year_end == month_num %}selected{% endif %}>
+                                            {{ month_name }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text" id="financial_year_info">
+                                    {% if settings %}
+                                        {% set fy = settings.get_financial_year() %}
+                                        Financial Year: {{ fy.start_date.strftime('%B %d, %Y') }} to {{ fy.end_date.strftime('%B %d, %Y') }}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const yearEndSelect = document.getElementById('financial_year_end');
+    const infoDiv = document.getElementById('financial_year_info');
+    
+    yearEndSelect.addEventListener('change', function() {
+        const selectedMonth = parseInt(this.value);
+        const now = new Date();
+        let startYear = now.getFullYear();
+        let endYear = now.getFullYear();
+        
+        if (now.getMonth() + 1 > selectedMonth) {
+            startYear = now.getFullYear();
+            endYear = now.getFullYear() + 1;
+        } else {
+            startYear = now.getFullYear() - 1;
+            endYear = now.getFullYear();
+        }
+        
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+                          "July", "August", "September", "October", "November", "December"];
+        
+        const startMonth = (selectedMonth % 12) + 1;
+        const startDate = `${monthNames[startMonth-1]} 1, ${startYear}`;
+        const endDate = `${monthNames[selectedMonth-1]} ${selectedMonth === 2 ? '28' : '30'}, ${endYear}`;
+        
+        infoDiv.textContent = `Financial Year: ${startDate} to ${endDate}`;
+    });
+});
+</script>
+{% endblock %}

@@ -61,3 +61,42 @@ class Account(db.Model):
 
     def __repr__(self):
         return f'<Account {self.link}: {self.name}>'
+
+class CompanySettings(db.Model):
+    __tablename__ = 'company_settings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    company_name = db.Column(db.String(200), nullable=False)
+    registration_number = db.Column(db.String(50))
+    tax_number = db.Column(db.String(50))
+    vat_number = db.Column(db.String(50))
+    address = db.Column(db.Text)
+    financial_year_end = db.Column(db.Integer, nullable=False)  # Month number (1-12)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = db.relationship('User', backref=db.backref('company_settings', lazy=True))
+
+    def get_financial_year(self, date=None):
+        if date is None:
+            date = datetime.utcnow()
+        
+        if date.month > self.financial_year_end:
+            start_year = date.year
+            end_year = date.year + 1
+        else:
+            start_year = date.year - 1
+            end_year = date.year
+            
+        start_date = datetime(start_year, (self.financial_year_end % 12) + 1, 1)
+        end_date = datetime(end_year, self.financial_year_end, 
+                          28 if self.financial_year_end == 2 else 30)
+        
+        return {
+            'start_date': start_date,
+            'end_date': end_date
+        }
+
+    def __repr__(self):
+        return f'<CompanySettings {self.company_name}>'
