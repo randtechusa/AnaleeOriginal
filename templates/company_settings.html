@@ -93,8 +93,17 @@ document.addEventListener('DOMContentLoaded', function() {
                           "July", "August", "September", "October", "November", "December"];
         
         const startMonth = (selectedMonth % 12) + 1;
-        const startDate = `${monthNames[startMonth-1]} 1, ${startYear}`;
-        const endDate = `${monthNames[selectedMonth-1]} ${selectedMonth === 2 ? '28' : '30'}, ${endYear}`;
+        let endDay;
+        if (selectedMonth === 2) {
+            endDay = '28/29';  // Show both possibilities for February
+        } else if ([4, 6, 9, 11].includes(selectedMonth)) {
+            endDay = '30';
+        } else {
+            endDay = '31';
+        }
+        
+        const startDate = `${monthNames[startMonth-1]} 1`;
+        const endDate = `${monthNames[selectedMonth-1]} ${endDay}`;
         
         infoDiv.textContent = `Financial Year: ${startDate} to ${endDate}`;
     });
