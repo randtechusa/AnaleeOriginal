@@ -126,6 +126,45 @@ def logout():
     logout_user()
     return redirect(url_for('main.login'))
 
+@main.route('/company-settings', methods=['GET', 'POST'])
+@login_required
+def company_settings():
+    settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+    
+    if request.method == 'POST':
+        try:
+            if not settings:
+                settings = CompanySettings(user_id=current_user.id)
+                db.session.add(settings)
+            
+            settings.company_name = request.form['company_name']
+            settings.registration_number = request.form['registration_number']
+            settings.tax_number = request.form['tax_number']
+            settings.vat_number = request.form['vat_number']
+            settings.address = request.form['address']
+            settings.financial_year_end = int(request.form['financial_year_end'])
+            
+            db.session.commit()
+            flash('Company settings updated successfully')
+            
+        except Exception as e:
+            logger.error(f'Error updating company settings: {str(e)}')
+            flash('Error updating company settings')
+            db.session.rollback()
+    
+    months = [
+        (1, 'January'), (2, 'February'), (3, 'March'),
+        (4, 'April'), (5, 'May'), (6, 'June'),
+        (7, 'July'), (8, 'August'), (9, 'September'),
+        (10, 'October'), (11, 'November'), (12, 'December')
+    ]
+    
+    return render_template(
+        'company_settings.html',
+        settings=settings,
+        months=months
+    )
+
 @main.route('/account/<int:account_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_account(account_id):
