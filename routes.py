@@ -9,6 +9,7 @@ from app import db
 from models import User, Account, Transaction, UploadedFile, CompanySettings
 
 # Create blueprint
+from ai_utils import predict_account
 main = Blueprint('main', __name__)
 
 # Configure logging
@@ -497,6 +498,32 @@ def delete_file(file_id):
         logger.error(f'Error deleting file: {str(e)}')
         flash('Error deleting file')
         db.session.rollback()
+
+@main.route('/predict_account', methods=['POST'])
+@login_required
+def predict_account_route():
+    try:
+        data = request.get_json()
+        description = data.get('description', '')
+        explanation = data.get('explanation', '')
+        
+        # Get all available accounts for the current user
+        accounts = Account.query.filter_by(user_id=current_user.id).all()
+        account_data = [{
+            'name': account.name,
+            'category': account.category,
+            'link': account.link,
+            'id': account.id,
+            'sub_category': account.sub_category
+        } for account in accounts]
+        
+        # Get predictions
+        predictions = predict_account(description, explanation, account_data)
+        
+        return jsonify(predictions)
+    except Exception as e:
+        logger.error(f"Error in account prediction route: {str(e)}")
+        return jsonify({'error': str(e)}), 500
     return redirect(url_for('main.upload'))
 
 @main.route('/output')
