@@ -379,3 +379,129 @@ Provide a detailed financial analysis in this JSON structure:
             "error": "Failed to generate financial advice",
             "details": str(e)
         }
+
+def forecast_expenses(transactions, accounts, forecast_months=12):
+    """
+    Generate expense forecasts based on historical transaction patterns.
+    
+    Args:
+        transactions: List of transaction dictionaries with amount, description, and dates
+        accounts: List of available accounts with categories and balances
+        forecast_months: Number of months to forecast (default 12)
+        
+    Returns:
+        Dictionary containing expense forecasts and confidence metrics
+    """
+    try:
+        # Format transaction data for analysis
+        transaction_summary = "\n".join([
+            f"- Amount: ${t['amount']}, Description: {t['description']}, "
+            f"Date: {t.get('date', 'N/A')}, Account: {t.get('account_name', 'Uncategorized')}"
+            for t in transactions[:50]  # Use recent transactions for pattern analysis
+        ])
+        
+        # Format account information
+        account_summary = "\n".join([
+            f"- {acc['name']}: ${acc.get('balance', 0):.2f} ({acc['category']})"
+            for acc in accounts
+        ])
+        
+        prompt = f"""Analyze these financial transactions and accounts to generate detailed expense forecasts:
+
+Transaction History:
+{transaction_summary}
+
+Account Balances:
+{account_summary}
+
+Instructions:
+1. Analyze Historical Patterns
+   - Identify recurring expenses and their frequencies
+   - Calculate growth rates and seasonal variations
+   - Consider account-specific trends
+   - Factor in both Description and Explanation fields for pattern recognition
+
+2. Generate Expense Forecasts
+   - Project monthly expenses for next {forecast_months} months
+   - Break down by expense categories
+   - Include confidence intervals
+   - Account for seasonality and trends
+   - Consider economic factors and business context
+
+3. Provide Risk Analysis
+   - Identify potential expense risks
+   - Calculate variance in projections
+   - Assess forecast reliability
+   - Consider external factors
+
+Format your response as a JSON object with this structure:
+{{
+    "monthly_forecasts": [
+        {{
+            "month": "YYYY-MM",
+            "total_expenses": float,
+            "confidence": float,
+            "breakdown": [
+                {{
+                    "category": string,
+                    "amount": float,
+                    "trend": "increasing|stable|decreasing"
+                }}
+            ]
+        }}
+    ],
+    "forecast_factors": {{
+        "key_drivers": [string],
+        "risk_factors": [string],
+        "assumptions": [string]
+    }},
+    "confidence_metrics": {{
+        "overall_confidence": float,
+        "variance_range": {{
+            "min": float,
+            "max": float
+        }},
+        "reliability_score": float
+    }},
+    "recommendations": [
+        {{
+            "action": string,
+            "potential_impact": string,
+            "implementation_timeline": string
+        }}
+    ]
+}}"""
+
+        # Make API call
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert financial analyst specializing in expense forecasting and predictive analysis. Focus on providing accurate, actionable forecasts with detailed supporting analysis."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=1000,
+            response_format={"type": "json_object"}
+        )
+        
+        # Parse and return the forecast
+        import json
+        forecast = json.loads(response.choices[0].message.content)
+        
+        # Add metadata about the forecast
+        forecast["generated_at"] = datetime.utcnow().isoformat()
+        forecast["forecast_period_months"] = forecast_months
+        forecast["data_points_analyzed"] = len(transactions)
+        
+        return forecast
+        
+    except Exception as e:
+        logger.error(f"Error generating expense forecast: {str(e)}")
+        return {
+            "error": "Failed to generate expense forecast",
+            "details": str(e)
+        }

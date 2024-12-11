@@ -574,13 +574,15 @@ def financial_insights():
             'balance': sum(t.amount for t in acc.transactions)
         } for acc in accounts]
         
-        # Generate financial advice
-        from ai_utils import generate_financial_advice
+        # Generate financial advice and expense forecasts
+        from ai_utils import generate_financial_advice, forecast_expenses
         financial_advice = generate_financial_advice(transaction_data, account_data)
+        expense_forecast = forecast_expenses(transaction_data, account_data)
         
         return render_template(
             'financial_insights.html',
             financial_advice=financial_advice,
+            expense_forecast=expense_forecast,
             transactions=transactions[:10],  # Show recent transactions
             accounts=accounts
         )
