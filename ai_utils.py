@@ -26,20 +26,31 @@ def predict_account(description: str, explanation: str, available_accounts: List
         ])
         
         # Construct the prompt
-        prompt = f"""Given a financial transaction with:
-Description: {description}
-Additional Explanation: {explanation}
+        prompt = f"""Analyze this financial transaction and suggest the most appropriate account classifications:
 
-Available accounts:
+Transaction Details:
+- Description: {description}
+- Additional Context/Explanation: {explanation}
+
+Available Chart of Accounts:
 {account_info}
 
-Based on the transaction details and available accounts, suggest the most appropriate account classification.
-Format your response as a JSON list with the following structure:
+Instructions:
+1. Consider both the transaction description and additional explanation equally
+2. Account for the account categories and sub-categories in your analysis
+3. Provide confidence scores based on:
+   - Match with similar historical transactions
+   - Clarity of the description and explanation
+   - Alignment with account categories
+4. Explain your reasoning considering accounting principles
+
+Format your response as a JSON list with exactly this structure:
 [
-    {{"account_name": "suggested account name", "confidence": 0.95, "reasoning": "brief explanation"}},
-    {{"account_name": "alternative account", "confidence": 0.75, "reasoning": "brief explanation"}}
+    {{"account_name": "suggested account name", "confidence": 0.95, "reasoning": "detailed explanation including category consideration"}},
+    {{"account_name": "alternative account", "confidence": 0.75, "reasoning": "explanation of why this is an alternative match"}}
 ]
-Limit to top 3 most likely matches. Confidence should be between 0 and 1."""
+
+Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy over quantity."""
 
         # Make API call
         client = openai.OpenAI()
