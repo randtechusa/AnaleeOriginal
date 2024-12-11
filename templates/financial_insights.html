@@ -145,6 +145,92 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Expense Forecasts -->
+                    {% if expense_forecast and not expense_forecast.error %}
+                    <div class="mb-4">
+                        <h4 class="text-info">Expense Forecasts</h4>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <!-- Monthly Forecasts -->
+                                <div class="mb-3">
+                                    <h6 class="text-primary">Monthly Projections</h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>Month</th>
+                                                    <th>Projected Expenses</th>
+                                                    <th>Confidence</th>
+                                                    <th>Trend</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for forecast in expense_forecast.monthly_forecasts %}
+                                                <tr>
+                                                    <td>{{ forecast.month }}</td>
+                                                    <td>${{ "%.2f"|format(forecast.total_expenses) }}</td>
+                                                    <td>{{ "%.1f"|format(forecast.confidence * 100) }}%</td>
+                                                    <td>
+                                                        {% for category in forecast.breakdown %}
+                                                            {% if loop.first %}
+                                                                {% if category.trend == 'increasing' %}
+                                                                    <span class="text-danger">↑</span>
+                                                                {% elif category.trend == 'decreasing' %}
+                                                                    <span class="text-success">↓</span>
+                                                                {% else %}
+                                                                    <span class="text-warning">→</span>
+                                                                {% endif %}
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- Forecast Factors -->
+                                <div class="mb-3">
+                                    <h6 class="text-primary">Key Drivers & Risks</h6>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <h6 class="text-muted">Key Drivers</h6>
+                                            <ul class="list-unstyled">
+                                                {% for driver in expense_forecast.forecast_factors.key_drivers %}
+                                                    <li><i class="fas fa-chart-line me-2"></i>{{ driver }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6 class="text-muted">Risk Factors</h6>
+                                            <ul class="list-unstyled">
+                                                {% for risk in expense_forecast.forecast_factors.risk_factors %}
+                                                    <li><i class="fas fa-exclamation-triangle me-2"></i>{{ risk }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Recommendations -->
+                                <div>
+                                    <h6 class="text-primary">Recommendations</h6>
+                                    <ul class="list-group">
+                                        {% for rec in expense_forecast.recommendations %}
+                                            <li class="list-group-item">
+                                                <div class="d-flex w-100 justify-content-between">
+                                                    <h6 class="mb-1">{{ rec.action }}</h6>
+                                                    <small>{{ rec.implementation_timeline }}</small>
+                                                </div>
+                                                <p class="mb-1">{{ rec.potential_impact }}</p>
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     {% endif %}
                     
                 </div>
