@@ -5,6 +5,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from dotenv import load_dotenv
+import os
+import logging
 
 # Load environment variables
 load_dotenv()
@@ -16,38 +18,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Flask application
-app = Flask(__name__)
-
-# Configure Flask application
-database_url = os.environ.get("DATABASE_URL")
-if not database_url:
-    raise ValueError("DATABASE_URL environment variable is not set")
-
-if database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-
-logger.info("Configuring Flask application with database URL")
-app.config.update(
-    SECRET_KEY=os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
-    SQLALCHEMY_DATABASE_URI=database_url,
-    SQLALCHEMY_TRACK_MODIFICATIONS=False,
-    SQLALCHEMY_ENGINE_OPTIONS={
-        "pool_recycle": 300,
-        "pool_pre_ping": True,
-        "connect_args": {
-            "connect_timeout": 10
-        }
-    }
-)
-
 # Initialize Flask extensions
 db = SQLAlchemy()
 migrate = Migrate()
 login_manager = LoginManager()
 
-def init_app():
-    """Initialize the Flask application"""
+def create_app():
+    """Create and configure the Flask application"""
+    app = Flask(__name__)
+    
+    # Configure Flask application
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is not set")
+
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+    logger.info("Configuring Flask application with database URL")
+    app.config.update(
+        SECRET_KEY=os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
+        SQLALCHEMY_DATABASE_URI=database_url,
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLALCHEMY_ENGINE_OPTIONS={
+            "pool_recycle": 300,
+            "pool_pre_ping": True,
+            "connect_args": {
+                "connect_timeout": 10
+            }
+        }
+    )
+    
+    # Initialize Flask extensions with app
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
@@ -56,7 +58,7 @@ def init_app():
     with app.app_context():
         try:
             # Import models
-            from models import User, Account, Transaction
+            from models import User, Account, Transaction, UploadedFile, CompanySettings
             
             # Register blueprints
             from routes import main as main_blueprint
@@ -87,5 +89,6 @@ def load_user(user_id):
         logger.error(f"Error loading user {user_id}: {str(e)}")
         return None
 
-# Initialize the application
-app = init_app()
+# Initialize the application (only if running directly)
+if __name__ == '__main__':
+    app = create_app()

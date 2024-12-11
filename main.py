@@ -1,4 +1,4 @@
-from app import app
+from app import create_app
 import logging
 
 # Configure logging with more detailed format
@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     try:
+        logger.info("Creating Flask application...")
+        app = create_app()
+        
         logger.info("Starting Flask application...")
         app.run(
             host="0.0.0.0",
