@@ -9,8 +9,8 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(64), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256))
-    transactions = db.relationship('Transaction', backref='user', lazy=True)
-    accounts = db.relationship('Account', backref='user', lazy=True)
+    transactions = db.relationship('Transaction', backref='user', lazy=True, cascade='all, delete-orphan')
+    accounts = db.relationship('Account', backref='user', lazy=True, cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<User {self.username}>'
