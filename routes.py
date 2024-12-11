@@ -652,8 +652,8 @@ def export_forecast_pdf():
     try:
         from weasyprint import HTML
         from flask import make_response
-        import tempfile
         from datetime import datetime
+        import os
         
         # Get company settings
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
@@ -661,12 +661,18 @@ def export_forecast_pdf():
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
             
+        # Get forecast data from session
+        forecast_data = session.get('forecast', {})
+        if not forecast_data:
+            flash('No forecast data available. Please generate a forecast first.')
+            return redirect(url_for('main.expense_forecast'))
+            
         # Generate the HTML content
         html_content = render_template(
             'pdf_templates/forecast_pdf.html',
             company=company_settings,
             datetime=datetime,
-            forecast=session.get('forecast', {}),
+            forecast=forecast_data,
             monthly_labels=session.get('monthly_labels', []),
             monthly_amounts=session.get('monthly_amounts', []),
             confidence_upper=session.get('confidence_upper', []),
