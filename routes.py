@@ -558,9 +558,19 @@ def output(file_id=None):
                 if category_filter and transaction.bank_account.category != category_filter:
                     continue
                     
-                bank_name = transaction.bank_account.name
+                bank_account = transaction.bank_account
+                bank_info = next((item for item in trial_balance if item['account_name'] == bank_account.name), None)
+                if bank_info is None:
+                    bank_info = {
+                        'account_name': bank_account.name,
+                        'category': bank_account.category,
+                        'sub_category': bank_account.sub_category,
+                        'link': bank_account.link,
+                        'amount': 0
+                    }
+                    trial_balance.append(bank_info)
                 # Reverse the amount for the bank account (double-entry)
-                trial_balance[bank_name] = trial_balance.get(bank_name, 0) - transaction.amount
+                bank_info['amount'] -= transaction.amount
     
     return render_template('output.html', 
                          trial_balance=trial_balance, 
