@@ -236,31 +236,72 @@ def upload():
             else:
                 df = pd.read_excel(file)
                 
-            # Convert column names to lowercase for case-insensitive comparison
-            df.columns = df.columns.str.lower()
-            required_columns = {'date', 'description', 'amount'}
-            existing_columns = set(df.columns)
+            # Clean and normalize column names
+            df.columns = df.columns.str.strip().str.lower()
+            logger.debug(f"Original columns in file: {df.columns.tolist()}")
             
-            logger.debug(f"Found columns in file: {existing_columns}")
-            missing_columns = required_columns - existing_columns
+            # Define required columns and their possible variations
+            column_mappings = {
+                'date': ['date', 'trans_date', 'transaction_date', 'trans date', 'transdate', 'dated', 'dt'],
+                'description': ['description', 'desc', 'narrative', 'details', 'transaction', 'particulars', 'descr'],
+                'amount': ['amount', 'amt', 'sum', 'value', 'debit/credit', 'transaction_amount', 'total']
+            }
+            
+            # Find best matches for each required column
+            column_matches = {}
+            missing_columns = []
+            
+            for required_col, variations in column_mappings.items():
+                # Try exact match first
+                found = False
+                for col in df.columns:
+                    if any(var == col for var in variations):
+                        column_matches[required_col] = col
+                        found = True
+                        break
+                
+                # If no exact match, try partial match
+                if not found:
+                    for col in df.columns:
+                        if any(var in col or col in var for var in variations):
+                            column_matches[required_col] = col
+                            found = True
+                            break
+                
+                if not found:
+                    missing_columns.append(required_col)
+            
+            logger.debug(f"Column matches found: {column_matches}")
             
             if missing_columns:
-                flash(f'Missing required columns: {", ".join(col.title() for col in missing_columns)}. Found columns: {", ".join(existing_columns)}')
+                flash(f'Missing required columns: {", ".join(col.title() for col in missing_columns)}. Found columns: {", ".join(df.columns)}')
                 return redirect(url_for('main.upload'))
 
-            # Map columns to expected names
-            df = df.rename(columns={
-                'date': 'Date',
-                'description': 'Description',
-                'amount': 'Amount'
-            })
+            # Rename columns to standard names
+            df = df.rename(columns=column_matches)
                 
             # Process each row
             for _, row in df.iterrows():
                 try:
                     # Create transaction record
+                    # Try multiple date formats
+                    date_str = str(row['Date'])
+                    date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
+                    parsed_date = None
+                    
+                    for date_format in date_formats:
+                        try:
+                            parsed_date = pd.to_datetime(date_str, format=date_format)
+                            break
+                        except ValueError:
+                            continue
+                    
+                    if parsed_date is None:
+                        logger.warning(f"Could not parse date: {date_str}")
+                        raise ValueError(f"Invalid date format: {date_str}")
+                    
                     transaction = Transaction(
-                        date=pd.to_datetime(str(row['Date']), format='%Y%m%d'),
+                        date=parsed_date,
                         description=str(row['Description']),
                         amount=float(row['Amount']),
                         explanation='',  # Initially empty
