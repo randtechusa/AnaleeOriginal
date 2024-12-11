@@ -1032,7 +1032,7 @@ requires-dist = [
     { name = "flask-migrate", specifier = ">=4.0.7" },
     { name = "flask-sqlalchemy", specifier = ">=3.1.1" },
     { name = "nltk", specifier = ">=3.9.1" },
-    { name = "openai", specifier = ">=1.57.1" },
+    { name = "openai", specifier = ">=1.0.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
