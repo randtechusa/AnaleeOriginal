@@ -530,8 +530,8 @@ def output():
             financial_years.add(t.date.year - 1)
     financial_years = sorted(list(financial_years))
     
-    # Get financial year dates from company settings
-    fy_dates = company_settings.get_financial_year(current_date)
+    # Get financial year dates from company settings using selected year
+    fy_dates = company_settings.get_financial_year(year=selected_year)
     start_date = fy_dates['start_date']
     end_date = fy_dates['end_date']
     
