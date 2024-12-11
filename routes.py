@@ -530,12 +530,10 @@ def output():
             financial_years.add(t.date.year - 1)
     financial_years = sorted(list(financial_years))
     
-    # Calculate financial year date range
-    start_date = datetime(selected_year, company_settings.financial_year_end + 1, 1)
-    if company_settings.financial_year_end == 12:
-        end_date = datetime(selected_year + 1, 1, 1)
-    else:
-        end_date = datetime(selected_year + 1, company_settings.financial_year_end + 1, 1)
+    # Get financial year dates from company settings
+    fy_dates = company_settings.get_financial_year(current_date)
+    start_date = fy_dates['start_date']
+    end_date = fy_dates['end_date']
     
     # Get transactions for the selected financial year
     transactions = Transaction.query.filter(
