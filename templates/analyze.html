@@ -111,9 +111,10 @@
                                 <textarea
                                        class="form-control explanation-input" 
                                        name="explanation_{{ transaction.id }}" 
-                                       rows="2"
-                                       placeholder="Enter explanation"
-                                       style="min-height: 60px; resize: vertical;">{{ transaction.explanation }}</textarea>
+                                       rows="3"
+                                       placeholder="Enter detailed explanation for this transaction"
+                                       style="min-height: 80px; resize: vertical; background-color: var(--bs-body-bg); color: var(--bs-body-color);"
+                                       data-description="{{ transaction.description }}">{{ transaction.explanation }}</textarea>
                             </td>
                             <td>
                                 <div class="input-group">
@@ -175,44 +176,76 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Handle explanation changes and repetitive descriptions
     explanationInputs.forEach(input => {
+        // Auto-expand on input
+        const adjustHeight = (element) => {
+            element.style.height = 'auto';
+            element.style.height = (element.scrollHeight) + 'px';
+        };
+
+        // Initial height adjustment
+        adjustHeight(input);
+
+        // Handle input changes for auto-expand
+        input.addEventListener('input', function() {
+            adjustHeight(this);
+        });
+
+        // Maintain visibility on blur
+        input.addEventListener('blur', function() {
+            this.style.backgroundColor = 'var(--bs-body-bg)';
+            this.style.color = 'var(--bs-body-color)';
+        });
+
+        // Handle explanation changes and check for repetitive descriptions
         input.addEventListener('change', async function() {
-            const currentDescription = this.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+            const currentDescription = this.dataset.description;
             const newExplanation = this.value.trim();
             
+            if (!newExplanation) return;
+
             // Find similar descriptions
-            const similarRows = Array.from(document.querySelectorAll('tr')).filter(row => {
-                const descCell = row.querySelector('td:nth-child(2)');
-                return descCell && descCell.textContent.trim() === currentDescription;
-            });
+            const similarInputs = Array.from(document.querySelectorAll('.explanation-input')).filter(el => 
+                el !== this && el.dataset.description === currentDescription
+            );
             
-            if (similarRows.length > 1 && newExplanation) {
-                const shouldApplyToAll = await new Promise(resolve => {
-                    const modal = document.createElement('div');
-                    modal.className = 'modal fade';
-                    modal.innerHTML = `
-                        <div class="modal-dialog">
-                            <div class="modal-content">
-                                <div class="modal-header">
-                                    <h5 class="modal-title">Similar Transactions Found</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            if (similarInputs.length > 0) {
+                const modal = document.createElement('div');
+                modal.className = 'modal fade';
+                modal.innerHTML = `
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Similar Transactions Found</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-info">
+                                    <p class="mb-2">Found ${similarInputs.length} other transaction(s) with the description:</p>
+                                    <p class="fw-bold mb-3">"${currentDescription}"</p>
+                                    <p class="mb-0">Would you like to apply this explanation to all similar transactions?</p>
                                 </div>
-                                <div class="modal-body">
-                                    <p>Found ${similarRows.length - 1} other transaction(s) with the same description:</p>
-                                    <p><strong>"${currentDescription}"</strong></p>
-                                    <p>Would you like to apply this explanation to all similar transactions?</p>
-                                </div>
-                                <div class="modal-footer">
-                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No, Just This One</button>
-                                    <button type="button" class="btn btn-primary" id="applyToAll">Yes, Apply to All</button>
+                                <div class="mt-3">
+                                    <p class="fw-bold mb-2">New Explanation:</p>
+                                    <p class="bg-light p-2 rounded">${newExplanation}</p>
                                 </div>
                             </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                    <i class="fas fa-times me-1"></i> No, Just This One
+                                </button>
+                                <button type="button" class="btn btn-primary" id="applyToAll">
+                                    <i class="fas fa-check me-1"></i> Yes, Apply to All
+                                </button>
+                            </div>
                         </div>
-                    `;
-                    document.body.appendChild(modal);
-                    
-                    const modalInstance = new bootstrap.Modal(modal);
-                    modalInstance.show();
-                    
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                
+                const modalInstance = new bootstrap.Modal(modal);
+                modalInstance.show();
+                
+                const result = await new Promise(resolve => {
                     modal.querySelector('#applyToAll').addEventListener('click', () => {
                         modalInstance.hide();
                         resolve(true);
@@ -224,23 +257,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                 });
                 
-                if (shouldApplyToAll) {
-                    similarRows.forEach(row => {
-                        const explanationArea = row.querySelector('.explanation-input');
-                        if (explanationArea && explanationArea !== this) {
-                            explanationArea.value = newExplanation;
-                        }
+                if (result) {
+                    similarInputs.forEach(explanationArea => {
+                        explanationArea.value = newExplanation;
+                        adjustHeight(explanationArea);
                     });
                 }
             }
             
             form.submit();
-        });
-        
-        // Improve textarea behavior
-        input.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = (this.scrollHeight) + 'px';
         });
     });
     

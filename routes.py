@@ -331,6 +331,7 @@ def analyze(file_id):
     transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).all()
     bank_account_id = None
     anomalies = None
+    historical_analysis = None
 
     if request.method == 'POST':
         try:
@@ -356,6 +357,16 @@ def analyze(file_id):
             
             db.session.commit()
             flash('Changes saved successfully', 'success')
+            
+            # Perform quick analysis without blocking
+            try:
+                from ai_utils import detect_transaction_anomalies, analyze_historical_patterns
+                anomalies = detect_transaction_anomalies(transactions[:50])  # Analyze recent transactions
+                logger.info("Quick anomaly detection completed")
+            except Exception as analysis_error:
+                logger.error(f"Non-blocking analysis error: {str(analysis_error)}")
+                anomalies = {"status": "Analysis in progress"}
+                
         except Exception as e:
             logger.error(f"Error saving analysis changes: {str(e)}")
             db.session.rollback()
