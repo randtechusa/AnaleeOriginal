@@ -99,6 +99,36 @@
             .page-break {
                 page-break-before: always;
             }
+            table {
+                page-break-inside: avoid;
+            }
+            .metric-item {
+                page-break-inside: avoid;
+                margin-bottom: 1.5rem;
+            }
+            .recommendations {
+                page-break-inside: avoid;
+            }
+            h2 {
+                page-break-after: avoid;
+            }
+            .header {
+                page-break-after: avoid;
+            }
+        }
+        .table-wrapper {
+            margin: 2rem 0;
+            page-break-inside: avoid;
+        }
+        .trend-indicator {
+            font-weight: bold;
+            margin-left: 0.5rem;
+        }
+        .metric-highlight {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin: 0.5rem 0;
         }
     </style>
 </head>
@@ -123,8 +153,17 @@
         <h2>Forecast Metrics</h2>
         <div class="metrics">
             <div class="metric-item">
-                <strong>Overall Confidence:</strong> 
-                {{ "%.1f"|format(forecast.confidence_metrics.overall_confidence * 100) }}%
+                <strong>Overall Confidence</strong>
+                <div class="metric-highlight">
+                    {{ "%.1f"|format(forecast.confidence_metrics.overall_confidence * 100) }}%
+                    {% if forecast.confidence_metrics.overall_confidence > 0.75 %}
+                        <span class="trend-indicator positive">↑ High</span>
+                    {% elif forecast.confidence_metrics.overall_confidence > 0.5 %}
+                        <span class="trend-indicator neutral">→ Moderate</span>
+                    {% else %}
+                        <span class="trend-indicator negative">↓ Low</span>
+                    {% endif %}
+                </div>
             </div>
             <div class="metric-item">
                 <strong>Variance Range:</strong>
