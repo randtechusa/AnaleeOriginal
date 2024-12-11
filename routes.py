@@ -212,9 +212,62 @@ def analyze():
     accounts = Account.query.filter_by(user_id=current_user.id).all()
     return render_template('analyze.html', accounts=accounts)
 
-@main.route('/upload')
+@main.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('No file uploaded')
+            return redirect(url_for('main.upload'))
+            
+        file = request.files['file']
+        if not file.filename:
+            flash('No file selected')
+            return redirect(url_for('main.upload'))
+            
+        if not file.filename.endswith(('.csv', '.xlsx')):
+            flash('Invalid file format. Please upload a CSV or Excel file.')
+            return redirect(url_for('main.upload'))
+            
+        try:
+            # Read file content
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file)
+                
+            # Validate required columns
+            required_columns = ['Date', 'Description', 'Amount']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                flash(f'Missing required columns: {", ".join(missing_columns)}')
+                return redirect(url_for('main.upload'))
+                
+            # Process each row
+            for _, row in df.iterrows():
+                try:
+                    # Create transaction record
+                    transaction = Transaction(
+                        date=pd.to_datetime(str(row['Date']), format='%Y%m%d'),
+                        description=str(row['Description']),
+                        amount=float(row['Amount']),
+                        explanation='',  # Initially empty
+                        user_id=current_user.id
+                    )
+                    db.session.add(transaction)
+                except Exception as row_error:
+                    logger.error(f'Error processing row: {row} - {str(row_error)}')
+                    continue
+                    
+            db.session.commit()
+            flash('File uploaded and processed successfully')
+            return redirect(url_for('main.analyze'))
+            
+        except Exception as e:
+            logger.error(f'Error processing file: {str(e)}')
+            db.session.rollback()
+            flash(f'Error processing file: {str(e)}')
+            
     return render_template('upload.html')
 
 @main.route('/output')
