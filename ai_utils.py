@@ -1,4 +1,12 @@
 import openai
+import logging
+import json
+from datetime import datetime
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
+import openai
 from datetime import datetime
 import logging
 import json
@@ -121,6 +129,56 @@ Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy an
         logger.error(f"Error in account prediction: {str(e)}")
         return []
 
+def analyze_historical_patterns(historical_data):
+    """
+    Analyze historical transaction data to identify patterns and establish baselines.
+    
+    Args:
+        historical_data: List of historical transactions
+        
+    Returns:
+        String containing summarized historical patterns
+    """
+    try:
+        # Group transactions by category
+        category_data = {}
+        for transaction in historical_data:
+            category = transaction.account.category if transaction.account else 'Uncategorized'
+            if category not in category_data:
+                category_data[category] = []
+            category_data[category].append(transaction)
+        
+        # Analyze patterns for each category
+        patterns = []
+        for category, transactions in category_data.items():
+            # Calculate basic statistics
+            amounts = [t.amount for t in transactions]
+            avg_amount = sum(amounts) / len(amounts) if amounts else 0
+            max_amount = max(amounts) if amounts else 0
+            min_amount = min(amounts) if amounts else 0
+            
+            # Identify common transaction frequencies
+            dates = sorted([t.date for t in transactions])
+            if len(dates) > 1:
+                date_diffs = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
+                avg_frequency = sum(date_diffs) / len(date_diffs) if date_diffs else 0
+            else:
+                avg_frequency = 0
+            
+            patterns.append(
+                f"Category: {category}\n"
+                f"- Average Amount: ${avg_amount:.2f}\n"
+                f"- Amount Range: ${min_amount:.2f} to ${max_amount:.2f}\n"
+                f"- Transaction Count: {len(transactions)}\n"
+                f"- Average Frequency: {avg_frequency:.1f} days\n"
+            )
+        
+        return "\n".join(patterns)
+        
+    except Exception as e:
+        logger.error(f"Error analyzing historical patterns: {str(e)}")
+        return "Historical pattern analysis unavailable"
+
 def detect_transaction_anomalies(transactions, historical_data=None):
     """
     Detect anomalies in transactions using AI analysis of Description and Explanation fields.
@@ -140,51 +198,99 @@ def detect_transaction_anomalies(transactions, historical_data=None):
             f"- Description: {t.description}\n"
             f"- Explanation: {t.explanation or 'No explanation provided'}\n"
             f"- Date: {t.date.strftime('%Y-%m-%d')}\n"
-            f"- Account: {t.account.name if t.account else 'Uncategorized'}"
+            f"- Account: {t.account.name if t.account else 'Uncategorized'}\n"
+            f"- Category: {t.account.category if t.account else 'Unknown'}"
             for idx, t in enumerate(transactions)
         ])
 
-        prompt = f"""Analyze these transactions for potential anomalies and unusual patterns. Consider:
+        # Format historical data if available
+        historical_context = ""
+        if historical_data:
+            historical_summary = analyze_historical_patterns(historical_data)
+            historical_context = f"\nHistorical Context:\n{historical_summary}"
 
-1. Amount patterns:
-   - Unusually large or small amounts
-   - Irregular payment patterns
-   - Unexpected changes in regular amounts
+        prompt = f"""Perform comprehensive anomaly detection and pattern analysis on these transactions. Consider:
 
-2. Description & Explanation analysis:
-   - Inconsistencies between description and explanation
-   - Unusual or unexpected descriptions
-   - Missing or vague explanations
-   - Semantic mismatches with account categories
+1. Amount Analysis:
+   - Statistical outliers in transaction amounts
+   - Unusual changes in regular payment patterns
+   - Category-specific amount deviations
+   - Seasonal variations and cyclical patterns
+   - Year-over-year comparisons where applicable
 
-3. Timing patterns:
-   - Unusual transaction timing
-   - Irregular frequencies
-   - Unexpected date patterns
+2. Description & Explanation Analysis:
+   - Natural language processing of descriptions
+   - Semantic consistency between fields
+   - Category alignment analysis
+   - Potential duplicate transactions
+   - Missing or incomplete information
+   - Keyword pattern analysis
 
-4. Account usage:
-   - Unusual account assignments
-   - Inconsistent categorization
-   - Pattern deviations
+3. Temporal Pattern Analysis:
+   - Transaction timing anomalies
+   - Frequency pattern deviations
+   - Seasonal trend analysis
+   - Day-of-week patterns
+   - Time-based correlations
+
+4. Category & Account Analysis:
+   - Cross-category pattern violations
+   - Account usage consistency
+   - Category distribution anomalies
+   - Related transaction patterns
+   - Historical category alignment
+
+5. Contextual Analysis:
+   - Business rule violations
+   - Industry-specific patterns
+   - Regulatory compliance indicators
+   - Internal control considerations
+   - Risk pattern identification
 
 Transactions to analyze:
 {transaction_text}
+{historical_context}
 
-Provide analysis in this JSON structure:
+Provide detailed analysis in this JSON structure:
 {{
     "anomalies": [
         {{
             "transaction_index": <index>,
-            "anomaly_type": "amount|description|timing|account",
+            "anomaly_type": "amount|description|timing|account|pattern",
             "confidence": <float between 0-1>,
             "reason": "detailed explanation",
             "severity": "high|medium|low",
-            "recommendation": "suggested action"
+            "impact_area": "financial|operational|compliance",
+            "risk_level": "high|medium|low",
+            "recommendation": "suggested action",
+            "supporting_evidence": ["list of specific evidence points"],
+            "related_transactions": [<indices of related transactions>]
         }}
     ],
     "pattern_insights": {{
         "identified_patterns": ["string"],
-        "unusual_deviations": ["string"]
+        "unusual_deviations": ["string"],
+        "category_patterns": [
+            {{
+                "category": "string",
+                "pattern_type": "string",
+                "significance": "high|medium|low",
+                "description": "string"
+            }}
+        ],
+        "temporal_patterns": [
+            {{
+                "pattern_type": "string",
+                "timeframe": "string",
+                "description": "string",
+                "confidence": <float between 0-1>
+            }}
+        ]
+    }},
+    "risk_assessment": {{
+        "overall_risk_level": "high|medium|low",
+        "key_risk_factors": ["string"],
+        "recommended_controls": ["string"]
     }}
 }}"""
 
