@@ -1,9 +1,31 @@
 {% extends "base.html" %}
 
 {% block content %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h2 class="card-title">Select Bank Statement</h2>
+        <form method="GET" action="{{ url_for('main.output') }}" class="mb-3">
+            <div class="row align-items-end">
+                <div class="col-md-8">
+                    <label for="file_select" class="form-label">Choose Bank Statement</label>
+                    <select class="form-select" id="file_select" name="file_id" onchange="this.form.submit()">
+                        <option value="">Select a file...</option>
+                        {% for file in files %}
+                        <option value="{{ file.id }}" {% if selected_file and selected_file.id == file.id %}selected{% endif %}>
+                            {{ file.filename }} ({{ file.upload_date.strftime('%Y-%m-%d') }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if selected_file %}
 <div class="card">
     <div class="card-body">
-        <h2 class="card-title mb-4">Trial Balance</h2>
+        <h2 class="card-title mb-4">Trial Balance - {{ selected_file.filename }}</h2>
         <div class="table-responsive">
             <table class="table table-striped">
                 <thead>
@@ -34,4 +56,9 @@
         </div>
     </div>
 </div>
+{% else %}
+<div class="alert alert-info">
+    Please select a bank statement file to view its Trial Balance.
+</div>
+{% endif %}
 {% endblock %}
