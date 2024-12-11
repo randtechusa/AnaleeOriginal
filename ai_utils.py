@@ -144,7 +144,7 @@ def generate_financial_advice(transactions, accounts):
             for acc in accounts
         ])
         
-        prompt = f"""Analyze these financial transactions and account balances to provide strategic financial advice:
+        prompt = f"""Analyze these financial transactions and account balances to provide comprehensive financial insights and predictive advice:
 
 Transaction History:
 {transaction_summary}
@@ -153,30 +153,89 @@ Account Balances:
 {account_summary}
 
 Instructions:
-1. Analyze spending patterns and account utilization
-2. Identify potential areas for optimization
-3. Suggest actionable financial strategies
-4. Consider cash flow management and budget alignment
-5. Evaluate risk factors and opportunities
+1. Analyze transaction patterns and financial trends
+   - Identify recurring patterns
+   - Calculate growth rates
+   - Detect seasonal variations
+   - Evaluate account utilization efficiency
 
-Provide detailed financial advice in JSON format with these sections:
-1. Key Insights
-2. Risk Factors
-3. Optimization Opportunities
-4. Strategic Recommendations
-5. Cash Flow Analysis
+2. Assess financial health metrics
+   - Cash flow stability
+   - Account balance trends
+   - Spending patterns
+   - Revenue diversification
+
+3. Predict potential future scenarios
+   - Growth projections
+   - Risk assessment
+   - Cash flow forecasts
+   - Budget optimization opportunities
+
+4. Generate strategic recommendations
+   - Short-term actions (next 30 days)
+   - Medium-term strategy (3-6 months)
+   - Long-term planning (6-12 months)
+   - Risk mitigation steps
+
+Provide a detailed financial analysis in this JSON structure:
+{
+    "key_insights": [
+        {
+            "category": "string",
+            "finding": "string",
+            "impact_level": "high|medium|low",
+            "trend": "increasing|stable|decreasing"
+        }
+    ],
+    "risk_factors": [
+        {
+            "risk_type": "string",
+            "probability": "high|medium|low",
+            "potential_impact": "string",
+            "mitigation_strategy": "string"
+        }
+    ],
+    "optimization_opportunities": [
+        {
+            "area": "string",
+            "potential_benefit": "string",
+            "implementation_difficulty": "high|medium|low",
+            "recommended_timeline": "string"
+        }
+    ],
+    "strategic_recommendations": [
+        {
+            "timeframe": "short|medium|long",
+            "action": "string",
+            "expected_outcome": "string",
+            "priority": "high|medium|low"
+        }
+    ],
+    "cash_flow_analysis": {
+        "current_status": "string",
+        "projected_trend": "string",
+        "key_drivers": ["string"],
+        "improvement_suggestions": ["string"]
+    }
+}
 """
 
         # Make API call for financial advice
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
+            # do not change this unless explicitly requested by the user
+            model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are an expert financial advisor focusing on business accounting and financial strategy."},
+                {
+                    "role": "system", 
+                    "content": "You are an expert financial advisor specializing in business accounting, financial strategy, and predictive analysis. Focus on providing actionable insights and quantitative metrics."
+                },
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.4,
-            max_tokens=800
+            temperature=0.3,  # Lower temperature for more focused and consistent advice
+            max_tokens=1000,
+            response_format={"type": "json_object"}
         )
         
         # Parse and return the financial advice
