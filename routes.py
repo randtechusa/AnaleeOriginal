@@ -537,6 +537,86 @@ def predict_account_route():
         return jsonify({'error': str(e)}), 500
     return redirect(url_for('main.upload'))
 
+@main.route('/expense-forecast')
+@login_required
+def expense_forecast():
+    try:
+        # Get current financial year transactions
+        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+        if not company_settings:
+            flash('Please configure company settings first.')
+            return redirect(url_for('main.company_settings'))
+        
+        # Get financial year dates
+        fy_dates = company_settings.get_financial_year()
+        start_date = fy_dates['start_date']
+        end_date = fy_dates['end_date']
+        
+        # Get transactions
+        transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.date.between(start_date, end_date)
+        ).order_by(Transaction.date.desc()).all()
+        
+        # Format transactions for AI analysis
+        transaction_data = [{
+            'amount': t.amount,
+            'description': t.description,
+            'date': t.date.strftime('%Y-%m-%d'),
+            'account_name': t.account.name if t.account else 'Uncategorized'
+        } for t in transactions]
+        
+        # Get account information
+        accounts = Account.query.filter_by(user_id=current_user.id).all()
+        account_data = [{
+            'name': acc.name,
+            'category': acc.category,
+            'balance': sum(t.amount for t in transactions if t.account_id == acc.id)
+        } for acc in accounts]
+        
+        # Generate expense forecast
+        forecast = forecast_expenses(transaction_data, account_data)
+        
+        # Prepare data for charts
+        monthly_data = forecast['monthly_forecasts']
+        monthly_labels = [m['month'] for m in monthly_data]
+        monthly_amounts = [m['total_expenses'] for m in monthly_data]
+        
+        # Calculate confidence intervals
+        confidence_upper = []
+        confidence_lower = []
+        for m in monthly_data:
+            base_amount = m['total_expenses']
+            variance = forecast['confidence_metrics']['variance_range']
+            confidence_upper.append(base_amount + (variance['max'] - base_amount))
+            confidence_lower.append(base_amount - (base_amount - variance['min']))
+        
+        # Prepare category breakdown
+        categories = {}
+        for m in monthly_data:
+            for cat in m['breakdown']:
+                if cat['category'] not in categories:
+                    categories[cat['category']] = []
+                categories[cat['category']].append(cat['amount'])
+        
+        category_labels = list(categories.keys())
+        category_amounts = [sum(amounts)/len(amounts) for amounts in categories.values()]
+        
+        return render_template(
+            'expense_forecast.html',
+            forecast=forecast,
+            monthly_labels=monthly_labels,
+            monthly_amounts=monthly_amounts,
+            confidence_upper=confidence_upper,
+            confidence_lower=confidence_lower,
+            category_labels=category_labels,
+            category_amounts=category_amounts
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating expense forecast: {str(e)}")
+        flash('Error generating expense forecast. Please try again.')
+        return redirect(url_for('main.dashboard'))
 
 @main.route('/financial-insights')
 @login_required
