@@ -387,21 +387,35 @@ def upload():
     return render_template('upload.html', files=files)
 
 @main.route('/output')
+@main.route('/output/<int:file_id>')
 @login_required
-def output():
-    transactions = Transaction.query.filter_by(user_id=current_user.id).all()
-    trial_balance = {}
+def output(file_id=None):
+    # Get all uploaded files for selection
+    files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
     
-    for transaction in transactions:
-        # Add the main account entry
-        if transaction.account:
-            account_name = transaction.account.name
-            trial_balance[account_name] = trial_balance.get(account_name, 0) + transaction.amount
-            
-        # Add the corresponding bank account entry (double-entry)
-        if transaction.bank_account:
-            bank_name = transaction.bank_account.name
-            # Reverse the amount for the bank account (double-entry)
-            trial_balance[bank_name] = trial_balance.get(bank_name, 0) - transaction.amount
-            
-    return render_template('output.html', trial_balance=trial_balance)
+    trial_balance = {}
+    selected_file = None
+    
+    if file_id:
+        selected_file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+        transactions = Transaction.query.filter_by(
+            file_id=file_id,
+            user_id=current_user.id
+        ).all()
+        
+        for transaction in transactions:
+            # Add the main account entry
+            if transaction.account:
+                account_name = transaction.account.name
+                trial_balance[account_name] = trial_balance.get(account_name, 0) + transaction.amount
+                
+            # Add the corresponding bank account entry (double-entry)
+            if transaction.bank_account:
+                bank_name = transaction.bank_account.name
+                # Reverse the amount for the bank account (double-entry)
+                trial_balance[bank_name] = trial_balance.get(bank_name, 0) - transaction.amount
+    
+    return render_template('output.html', 
+                         trial_balance=trial_balance, 
+                         files=files,
+                         selected_file=selected_file)
