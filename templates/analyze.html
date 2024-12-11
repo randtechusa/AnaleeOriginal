@@ -15,6 +15,7 @@
 <div class="card">
     <div class="card-body">
         <h5 class="card-title">Transaction Analysis</h5>
+        {% if transactions %}
         <div class="table-responsive">
             <table class="table">
                 <thead>
@@ -22,8 +23,8 @@
                         <th>Date</th>
                         <th>Description</th>
                         <th>Amount</th>
-                        <th>Category</th>
-                        <th>Confidence</th>
+                        <th>Account</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -34,13 +35,29 @@
                         <td class="{{ 'text-success' if transaction.amount > 0 else 'text-danger' }}">
                             ${{ "%.2f"|format(transaction.amount) }}
                         </td>
-                        <td>{{ transaction.ai_category|title }}</td>
-                        <td>{{ "%.1f"|format(transaction.ai_confidence * 100) }}%</td>
+                        <td>
+                            <select class="form-select" name="account_{{ transaction.id }}">
+                                <option value="">Select Account</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.id }}" {% if transaction.account_id == account.id %}selected{% endif %}>
+                                    {{ account.name }} ({{ account.category }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary">Update</button>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+        {% else %}
+        <div class="alert alert-info">
+            No transactions found. Please <a href="{{ url_for('main.upload') }}">upload</a> some transactions first.
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
