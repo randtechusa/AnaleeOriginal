@@ -1,6 +1,68 @@
 {% extends "base.html" %}
 
 {% block content %}
+<div class="card mb-4">
+    <div class="card-body">
+        {% if anomalies and not anomalies.error %}
+            <div class="alert alert-info">
+                <h4 class="alert-heading mb-3">Transaction Analysis Insights</h4>
+                {% if anomalies.anomalies %}
+                    <h5>Detected Anomalies:</h5>
+                    <ul class="list-group mb-3">
+                        {% for anomaly in anomalies.anomalies %}
+                            <li class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <span class="badge bg-{{ 'danger' if anomaly.severity == 'high' else 'warning' if anomaly.severity == 'medium' else 'info' }} me-2">
+                                            {{ anomaly.severity|upper }}
+                                        </span>
+                                        <strong>Transaction {{ anomaly.transaction_index + 1 }}</strong>
+                                    </div>
+                                    <span class="badge bg-secondary">{{ (anomaly.confidence * 100)|round(1) }}% confidence</span>
+                                </div>
+                                <p class="mb-1 mt-2">{{ anomaly.reason }}</p>
+                                <small class="text-muted">Recommendation: {{ anomaly.recommendation }}</small>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+                
+                {% if anomalies.pattern_insights %}
+                    <h5>Pattern Insights:</h5>
+                    <div class="row">
+                        {% if anomalies.pattern_insights.identified_patterns %}
+                            <div class="col-md-6">
+                                <h6>Identified Patterns:</h6>
+                                <ul class="list-group">
+                                    {% for pattern in anomalies.pattern_insights.identified_patterns %}
+                                        <li class="list-group-item">{{ pattern }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+                        
+                        {% if anomalies.pattern_insights.unusual_deviations %}
+                            <div class="col-md-6">
+                                <h6>Unusual Deviations:</h6>
+                                <ul class="list-group">
+                                    {% for deviation in anomalies.pattern_insights.unusual_deviations %}
+                                        <li class="list-group-item">{{ deviation }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        {% elif anomalies and anomalies.error %}
+            <div class="alert alert-warning">
+                <h4 class="alert-heading">Analysis Note</h4>
+                <p>{{ anomalies.error }}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
 <div class="card">
     <div class="card-body">
         <div class="mb-4">
