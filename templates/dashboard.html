@@ -2,19 +2,90 @@
 
 {% block content %}
 <div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2>Financial Dashboard</h2>
+                    <div class="d-flex align-items-center">
+                        <span class="me-2">Financial Year:</span>
+                        <select class="form-select" id="financialYear" style="width: auto;">
+                            {% for year in financial_years %}
+                            <option value="{{ year }}" {% if year == current_year %}selected{% endif %}>
+                                FY {{ year }}/{{ year + 1 }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card bg-primary bg-opacity-10">
+                            <div class="card-body">
+                                <h5 class="card-title">Total Income</h5>
+                                <h2 class="text-success">${{ "%.2f"|format(total_income) }}</h2>
+                                <p class="card-text">
+                                    <small class="text-muted">For current financial year</small>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-danger bg-opacity-10">
+                            <div class="card-body">
+                                <h5 class="card-title">Total Expenses</h5>
+                                <h2 class="text-danger">${{ "%.2f"|format(total_expenses) }}</h2>
+                                <p class="card-text">
+                                    <small class="text-muted">For current financial year</small>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success bg-opacity-10">
+                            <div class="card-body">
+                                <h5 class="card-title">Net Position</h5>
+                                <h2 class="{{ 'text-success' if (total_income - total_expenses) >= 0 else 'text-danger' }}">
+                                    ${{ "%.2f"|format(total_income - total_expenses) }}
+                                </h2>
+                                <p class="card-text">
+                                    <small class="text-muted">Income - Expenses</small>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-info bg-opacity-10">
+                            <div class="card-body">
+                                <h5 class="card-title">Transaction Count</h5>
+                                <h2>{{ transaction_count }}</h2>
+                                <p class="card-text">
+                                    <small class="text-muted">Total transactions</small>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
     <div class="col-md-6">
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title">Total Income</h5>
-                <h2 class="text-success">${{ "%.2f"|format(total_income) }}</h2>
+                <h5 class="card-title">Monthly Income vs Expenses</h5>
+                <canvas id="monthlyChart"></canvas>
             </div>
         </div>
     </div>
     <div class="col-md-6">
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title">Total Expenses</h5>
-                <h2 class="text-danger">${{ "%.2f"|format(total_expenses) }}</h2>
+                <h5 class="card-title">Expense Distribution by Category</h5>
+                <canvas id="categoryChart"></canvas>
             </div>
         </div>
     </div>
@@ -30,7 +101,7 @@
                         <th>Date</th>
                         <th>Description</th>
                         <th>Amount</th>
-                        <th>Category</th>
+                        <th>Account</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -41,7 +112,7 @@
                         <td class="{{ 'text-success' if transaction.amount > 0 else 'text-danger' }}">
                             ${{ "%.2f"|format(transaction.amount) }}
                         </td>
-                        <td>{{ transaction.ai_category|title }}</td>
+                        <td>{{ transaction.account.name if transaction.account else '' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -50,18 +121,75 @@
     </div>
 </div>
 
-<div class="row">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">Expense Distribution</h5>
-                <canvas id="expenseChart"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const ctx1 = document.getElementById('monthlyChart').getContext('2d');
+    const ctx2 = document.getElementById('categoryChart').getContext('2d');
+    
+    // Monthly Income vs Expenses Chart
+    new Chart(ctx1, {
+        type: 'line',
+        data: {
+            labels: {{ monthly_labels|tojson }},
+            datasets: [{
+                label: 'Income',
+                data: {{ monthly_income|tojson }},
+                borderColor: 'rgba(40, 167, 69, 1)',
+                backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                tension: 0.1
+            }, {
+                label: 'Expenses',
+                data: {{ monthly_expenses|tojson }},
+                borderColor: 'rgba(220, 53, 69, 1)',
+                backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                }
+            }
+        }
+    });
+
+    // Category Distribution Chart
+    new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+            labels: {{ category_labels|tojson }},
+            datasets: [{
+                data: {{ category_amounts|tojson }},
+                backgroundColor: [
+                    'rgba(40, 167, 69, 0.8)',
+                    'rgba(220, 53, 69, 0.8)',
+                    'rgba(255, 193, 7, 0.8)',
+                    'rgba(23, 162, 184, 0.8)',
+                    'rgba(111, 66, 193, 0.8)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            }
+        }
+    });
+
+    // Financial Year Selector
+    document.getElementById('financialYear').addEventListener('change', function() {
+        window.location.href = '/dashboard?year=' + this.value;
+    });
+});
+</script>
 {% endblock %}
