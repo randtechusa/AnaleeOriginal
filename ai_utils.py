@@ -26,7 +26,7 @@ def predict_account(description: str, explanation: str, available_accounts: List
         ])
         
         # Construct the prompt
-        prompt = f"""Analyze this financial transaction and suggest the most appropriate account classifications:
+        prompt = f"""Analyze this financial transaction and provide comprehensive account classification with financial insights:
 
 Transaction Details:
 - Description: {description}
@@ -36,21 +36,37 @@ Available Chart of Accounts:
 {account_info}
 
 Instructions:
-1. Consider both the transaction description and additional explanation equally
-2. Account for the account categories and sub-categories in your analysis
-3. Provide confidence scores based on:
-   - Match with similar historical transactions
-   - Clarity of the description and explanation
-   - Alignment with account categories
-4. Explain your reasoning considering accounting principles
+1. Analyze both transaction description and explanation with equal weight for classification
+2. Consider account categories, sub-categories, and accounting principles
+3. Evaluate patterns and financial implications
+4. Provide confidence scores based on:
+   - Semantic similarity with account purposes
+   - Clarity and completeness of transaction information
+   - Historical accounting patterns
+   - Compliance with accounting principles
+5. Generate detailed reasoning that includes:
+   - Specific matching criteria met
+   - Financial implications
+   - Accounting principle alignment
+   - Alternative considerations
 
 Format your response as a JSON list with exactly this structure:
 [
-    {{"account_name": "suggested account name", "confidence": 0.95, "reasoning": "detailed explanation including category consideration"}},
-    {{"account_name": "alternative account", "confidence": 0.75, "reasoning": "explanation of why this is an alternative match"}}
+    {{
+        "account_name": "suggested account name",
+        "confidence": 0.95,
+        "reasoning": "detailed explanation including category fit, accounting principles, and financial implications",
+        "financial_insight": "broader financial context and impact analysis"
+    }},
+    {{
+        "account_name": "alternative account",
+        "confidence": 0.75,
+        "reasoning": "explanation of alternative classification",
+        "financial_insight": "additional financial implications for this classification"
+    }}
 ]
 
-Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy over quantity."""
+Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy and detailed financial insights."""
 
         # Make API call
         client = openai.OpenAI()
@@ -65,7 +81,6 @@ Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy ov
         )
         
         # Parse response
-        # Access content from the new API response structure
         content = response.choices[0].message.content.strip()
         suggestions = []
         try:
@@ -86,9 +101,13 @@ Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy ov
                 # Only include suggestions that match existing accounts
                 matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
                 if matching_accounts:
+                    # Extract financial insight or use reasoning if insight not provided
+                    financial_insight = suggestion.get('financial_insight', suggestion.get('reasoning', ''))
+                    
                     valid_suggestions.append({
                         **suggestion,
-                        'account': matching_accounts[0]
+                        'account': matching_accounts[0],
+                        'financial_insight': financial_insight
                     })
             
             return valid_suggestions[:3]  # Return top 3 suggestions
