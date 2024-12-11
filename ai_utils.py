@@ -42,7 +42,8 @@ Format your response as a JSON list with the following structure:
 Limit to top 3 most likely matches. Confidence should be between 0 and 1."""
 
         # Make API call
-        response = openai.ChatCompletion.create(
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a financial accounting assistant helping to classify transactions into the correct accounts."},
@@ -53,20 +54,30 @@ Limit to top 3 most likely matches. Confidence should be between 0 and 1."""
         )
         
         # Parse response
-        suggestions = eval(response.choices[0].message.content)
+        # Access content from the new API response structure
+        content = response.choices[0].message.content
+        try:
+            suggestions = eval(content)
+        except Exception as e:
+            logger.error(f"Error parsing AI suggestions: {str(e)}")
+            suggestions = []
         
         # Validate and format suggestions
         valid_suggestions = []
-        for suggestion in suggestions:
-            # Only include suggestions that match existing accounts
-            matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
-            if matching_accounts:
-                valid_suggestions.append({
-                    **suggestion,
-                    'account': matching_accounts[0]
-                })
-        
-        return valid_suggestions[:3]  # Return top 3 suggestions
+        try:
+            for suggestion in suggestions:
+                # Only include suggestions that match existing accounts
+                matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
+                if matching_accounts:
+                    valid_suggestions.append({
+                        **suggestion,
+                        'account': matching_accounts[0]
+                    })
+            
+            return valid_suggestions[:3]  # Return top 3 suggestions
+        except Exception as e:
+            logger.error(f"Error processing suggestions: {str(e)}")
+            return []
         
     except Exception as e:
         logger.error(f"Error in account prediction: {str(e)}")
