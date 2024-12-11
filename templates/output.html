@@ -42,7 +42,19 @@
     <div class="col-md-12">
         <div class="card">
             <div class="card-body">
-                <h2 class="card-title">Trial Balance - {{ selected_file.filename }}</h2>
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="card-title">Trial Balance - {{ selected_file.filename }}</h2>
+                    <div class="d-flex align-items-center">
+                        <span class="me-2">Financial Year:</span>
+                        <select class="form-select me-3" id="financialYear" name="financial_year" style="width: auto;">
+                            {% for year in financial_years %}
+                            <option value="{{ year }}" {% if year == current_year %}selected{% endif %}>
+                                FY {{ year }}/{{ year + 1 }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
                 
                 <form method="GET" class="mb-4">
                     <div class="row">
@@ -143,4 +155,20 @@
     Please select a bank statement file to view its Trial Balance.
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Financial Year Selector
+    const yearSelect = document.getElementById('financialYear');
+    if (yearSelect) {
+        yearSelect.addEventListener('change', function() {
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.set('financial_year', this.value);
+            window.location.href = currentUrl.toString();
+        });
+    }
+});
+</script>
 {% endblock %}
