@@ -108,11 +108,12 @@
                                 ${{ "%.2f"|format(transaction.amount) }}
                             </td>
                             <td>
-                                <input type="text" 
+                                <textarea
                                        class="form-control explanation-input" 
                                        name="explanation_{{ transaction.id }}" 
-                                       value="{{ transaction.explanation }}"
-                                       placeholder="Enter explanation">
+                                       rows="2"
+                                       placeholder="Enter explanation"
+                                       style="min-height: 60px; resize: vertical;">{{ transaction.explanation }}</textarea>
                             </td>
                             <td>
                                 <div class="input-group">
@@ -172,10 +173,74 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Handle explanation changes
+    // Handle explanation changes and repetitive descriptions
     explanationInputs.forEach(input => {
-        input.addEventListener('change', function() {
+        input.addEventListener('change', async function() {
+            const currentDescription = this.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+            const newExplanation = this.value.trim();
+            
+            // Find similar descriptions
+            const similarRows = Array.from(document.querySelectorAll('tr')).filter(row => {
+                const descCell = row.querySelector('td:nth-child(2)');
+                return descCell && descCell.textContent.trim() === currentDescription;
+            });
+            
+            if (similarRows.length > 1 && newExplanation) {
+                const shouldApplyToAll = await new Promise(resolve => {
+                    const modal = document.createElement('div');
+                    modal.className = 'modal fade';
+                    modal.innerHTML = `
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Similar Transactions Found</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <p>Found ${similarRows.length - 1} other transaction(s) with the same description:</p>
+                                    <p><strong>"${currentDescription}"</strong></p>
+                                    <p>Would you like to apply this explanation to all similar transactions?</p>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No, Just This One</button>
+                                    <button type="button" class="btn btn-primary" id="applyToAll">Yes, Apply to All</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                    
+                    const modalInstance = new bootstrap.Modal(modal);
+                    modalInstance.show();
+                    
+                    modal.querySelector('#applyToAll').addEventListener('click', () => {
+                        modalInstance.hide();
+                        resolve(true);
+                    });
+                    
+                    modal.addEventListener('hidden.bs.modal', () => {
+                        resolve(false);
+                        modal.remove();
+                    });
+                });
+                
+                if (shouldApplyToAll) {
+                    similarRows.forEach(row => {
+                        const explanationArea = row.querySelector('.explanation-input');
+                        if (explanationArea && explanationArea !== this) {
+                            explanationArea.value = newExplanation;
+                        }
+                    });
+                }
+            }
+            
             form.submit();
+        });
+        
+        // Improve textarea behavior
+        input.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
         });
     });
     
