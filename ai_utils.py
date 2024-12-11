@@ -338,7 +338,7 @@ def analyze_historical_patterns(historical_data):
             'detailed_analysis': {}
         }
 
-def detect_transaction_anomalies(transactions, historical_data=None):
+def detect_transaction_anomalies(transactions, historical_data=None, sensitivity_threshold=0.7):
     """
     Detect anomalies in transactions using AI analysis of Description and Explanation fields.
     

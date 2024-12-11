@@ -2,6 +2,7 @@ import os
 import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from dotenv import load_dotenv
@@ -66,10 +67,19 @@ def create_app():
             
             # Initialize database if needed
             try:
+                logger.info("Attempting to create database tables...")
                 db.create_all()
-                logger.info("Database tables verified successfully")
+                logger.info("Database tables created successfully")
+                
+                # Verify tables were created
+                with db.engine.connect() as conn:
+                    tables = conn.execute(text("SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public'"))
+                    logger.info(f"Available tables: {[table[0] for table in tables]}")
+                
             except Exception as db_error:
-                logger.warning(f"Database initialization note: {str(db_error)}")
+                logger.error(f"Database initialization error: {str(db_error)}")
+                logger.exception("Full stack trace:")
+                raise
                 
             logger.info("Routes initialized successfully")
             
