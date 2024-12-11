@@ -210,19 +210,95 @@ def delete_account(account_id):
 @main.route('/dashboard')
 @login_required
 def dashboard():
-    transactions = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).limit(5)
-    total_income = sum(t.amount for t in Transaction.query.filter(
+    # Get company settings for financial year
+    company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+    if not company_settings:
+        flash('Please configure company settings first.')
+        return redirect(url_for('main.company_settings'))
+    
+    # Get selected year from query params or use current year
+    selected_year = request.args.get('year', type=int)
+    current_date = datetime.utcnow()
+    
+    if not selected_year:
+        # Calculate current financial year based on company settings
+        if current_date.month > company_settings.financial_year_end:
+            selected_year = current_date.year
+        else:
+            selected_year = current_date.year - 1
+    
+    # Calculate financial year date range
+    fy_dates = company_settings.get_financial_year(current_date)
+    start_date = fy_dates['start_date']
+    end_date = fy_dates['end_date']
+    
+    # Get transactions for the selected financial year
+    transactions = Transaction.query.filter(
         Transaction.user_id == current_user.id,
-        Transaction.amount > 0
-    ).all())
-    total_expenses = abs(sum(t.amount for t in Transaction.query.filter(
-        Transaction.user_id == current_user.id,
-        Transaction.amount < 0
-    ).all()))
+        Transaction.date.between(start_date, end_date)
+    ).order_by(Transaction.date.desc()).all()
+    
+    # Calculate totals
+    total_income = sum(t.amount for t in transactions if t.amount > 0)
+    total_expenses = abs(sum(t.amount for t in transactions if t.amount < 0))
+    transaction_count = len(transactions)
+    
+    # Prepare monthly data
+    monthly_data = {}
+    for transaction in transactions:
+        month_key = transaction.date.strftime('%Y-%m')
+        if month_key not in monthly_data:
+            monthly_data[month_key] = {'income': 0, 'expenses': 0}
+        if transaction.amount > 0:
+            monthly_data[month_key]['income'] += transaction.amount
+        else:
+            monthly_data[month_key]['expenses'] += abs(transaction.amount)
+    
+    # Sort months and prepare chart data
+    sorted_months = sorted(monthly_data.keys())
+    monthly_labels = [datetime.strptime(m, '%Y-%m').strftime('%b %Y') for m in sorted_months]
+    monthly_income = [monthly_data[m]['income'] for m in sorted_months]
+    monthly_expenses = [monthly_data[m]['expenses'] for m in sorted_months]
+    
+    # Prepare category data
+    category_data = {}
+    for transaction in transactions:
+        if transaction.account and transaction.amount < 0:  # Only expenses
+            category = transaction.account.category or 'Uncategorized'
+            category_data[category] = category_data.get(category, 0) + abs(transaction.amount)
+    
+    # Sort categories by amount
+    sorted_categories = sorted(category_data.items(), key=lambda x: x[1], reverse=True)
+    category_labels = [cat[0] for cat in sorted_categories]
+    category_amounts = [cat[1] for cat in sorted_categories]
+    
+    # Get available financial years
+    financial_years = set()
+    for t in Transaction.query.filter_by(user_id=current_user.id).all():
+        if t.date.month > company_settings.financial_year_end:
+            financial_years.add(t.date.year)
+        else:
+            financial_years.add(t.date.year - 1)
+    financial_years = sorted(list(financial_years))
+    
+    # Get recent transactions
+    recent_transactions = Transaction.query.filter_by(user_id=current_user.id)\
+        .order_by(Transaction.date.desc())\
+        .limit(5)\
+        .all()
+    
     return render_template('dashboard.html',
-                         transactions=transactions,
+                         transactions=recent_transactions,
                          total_income=total_income,
-                         total_expenses=total_expenses)
+                         total_expenses=total_expenses,
+                         transaction_count=transaction_count,
+                         monthly_labels=monthly_labels,
+                         monthly_income=monthly_income,
+                         monthly_expenses=monthly_expenses,
+                         category_labels=category_labels,
+                         category_amounts=category_amounts,
+                         financial_years=financial_years,
+                         current_year=selected_year)
 
 @main.route('/analyze/<int:file_id>', methods=['GET', 'POST'])
 @login_required
