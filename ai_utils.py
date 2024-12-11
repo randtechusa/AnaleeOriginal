@@ -341,7 +341,22 @@ Provide a detailed financial analysis in this JSON structure:
         try:
             import json
             advice = json.loads(response.choices[0].message.content)
-            return advice
+            
+            # Enhance the advice with more detailed natural language summaries
+            enhanced_advice = {
+                "key_insights": advice.get("key_insights", []),
+                "risk_factors": advice.get("risk_factors", []),
+                "optimization_opportunities": advice.get("optimization_opportunities", []),
+                "strategic_recommendations": advice.get("strategic_recommendations", []),
+                "cash_flow_analysis": {
+                    "current_status": advice.get("cash_flow_analysis", {}).get("current_status", ""),
+                    "projected_trend": advice.get("cash_flow_analysis", {}).get("projected_trend", ""),
+                    "key_drivers": advice.get("cash_flow_analysis", {}).get("key_drivers", []),
+                    "improvement_suggestions": advice.get("cash_flow_analysis", {}).get("improvement_suggestions", [])
+                }
+            }
+            
+            return enhanced_advice
         except json.JSONDecodeError:
             # If JSON parsing fails, return the raw text in a structured format
             raw_advice = response.choices[0].message.content
@@ -350,7 +365,12 @@ Provide a detailed financial analysis in this JSON structure:
                 "risk_factors": [],
                 "optimization_opportunities": [],
                 "strategic_recommendations": [],
-                "cash_flow_analysis": ""
+                "cash_flow_analysis": {
+                    "current_status": "",
+                    "projected_trend": "",
+                    "key_drivers": [],
+                    "improvement_suggestions": []
+                }
             }
             
     except Exception as e:
