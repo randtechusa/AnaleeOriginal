@@ -12,7 +12,7 @@
                         <select class="form-select me-3" id="financialYear" name="financial_year" style="width: auto;">
                             {% for year in financial_years %}
                             <option value="{{ year }}" {% if year == current_year %}selected{% endif %}>
-                                Financial Year {{ year }}
+                                Financial Year Period {{ loop.index }}
                             </option>
                             {% endfor %}
                         </select>
