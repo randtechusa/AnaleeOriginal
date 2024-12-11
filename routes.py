@@ -252,26 +252,40 @@ def upload():
             missing_columns = []
             
             for required_col, variations in column_mappings.items():
-                # Try exact match first
+                # Log the current column we're looking for
+                logger.debug(f"Looking for matches for {required_col}")
+                logger.debug(f"Available columns: {df.columns.tolist()}")
+                
+                # First, check if the required column exists exactly as is
+                if required_col in df.columns:
+                    logger.debug(f"Found exact match for {required_col}")
+                    column_matches[required_col] = required_col
+                    continue
+                
+                # Then try variations
                 found = False
                 for col in df.columns:
-                    if any(var == col for var in variations):
+                    # Try exact matches with variations
+                    if col in variations:
+                        logger.debug(f"Found variation match: {col} for {required_col}")
                         column_matches[required_col] = col
                         found = True
                         break
+                    
+                    # Try partial matches
+                    if not found:
+                        for var in variations:
+                            if var in col or col in var:
+                                logger.debug(f"Found partial match: {col} for {required_col} (variation: {var})")
+                                column_matches[required_col] = col
+                                found = True
+                                break
                 
-                # If no exact match, try partial match
                 if not found:
-                    for col in df.columns:
-                        if any(var in col or col in var for var in variations):
-                            column_matches[required_col] = col
-                            found = True
-                            break
-                
-                if not found:
+                    logger.warning(f"No match found for {required_col}")
                     missing_columns.append(required_col)
             
-            logger.debug(f"Column matches found: {column_matches}")
+            logger.debug(f"Final column matches found: {column_matches}")
             
             if missing_columns:
                 flash(f'Missing required columns: {", ".join(col.title() for col in missing_columns)}. Found columns: {", ".join(df.columns)}')
