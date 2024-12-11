@@ -1,17 +1,31 @@
-from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, session
-from flask_login import login_user, logout_user, login_required, current_user
+from datetime import datetime
+from flask import (
+    Blueprint, render_template, request, redirect, url_for,
+    flash, session, make_response, jsonify
+)
+from flask_login import (
+    login_required, current_user, login_user, logout_user
+)
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
-from datetime import datetime
-from ai_utils import predict_account, detect_transaction_anomalies, generate_financial_advice, forecast_expenses
-import pandas as pd
+from weasyprint import HTML
 import logging
 import os
+import pandas as pd
+
 from app import db
-from models import User, Account, Transaction, UploadedFile, CompanySettings
+from models import (
+    User, Account, Transaction, UploadedFile, CompanySettings
+)
+from ai_utils import (
+    predict_account, detect_transaction_anomalies,
+    generate_financial_advice, forecast_expenses
+)
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 # Create blueprint
-from ai_utils import predict_account
 main = Blueprint('main', __name__)
 
 # Configure secret key for session management
@@ -861,68 +875,5 @@ def output():
         flash('Error generating trial balance. Please try again.')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/export_forecast_pdf')
-@login_required
-def export_forecast_pdf():
-    try:
-        # Get the same forecast data as the main forecast page
-        transactions = Transaction.query.filter_by(user_id=current_user.id).all()
-        accounts = Account.query.filter_by(user_id=current_user.id).all()
-        
-        # Generate forecast using existing AI function
-        forecast = forecast_expenses(transactions, accounts)
-        
-        if not forecast or 'error' in forecast:
-            flash('Error generating forecast data for PDF export.')
-            return redirect(url_for('main.expense_forecast'))
-            
-        # Prepare data for the template
-        monthly_labels = [f['month'] for f in forecast.get('monthly_forecasts', [])]
-        monthly_amounts = [f['total_expenses'] for f in forecast.get('monthly_forecasts', [])]
-        
-        # Calculate confidence intervals
-        confidence_upper = []
-        confidence_lower = []
-        for f in forecast.get('monthly_forecasts', []):
-            amount = f['total_expenses']
-            variance = forecast['confidence_metrics']['variance_range']
-            confidence_upper.append(amount + variance['max'])
-            confidence_lower.append(amount + variance['min'])
-            
-        # Get category breakdown data
-        categories = {}
-        for f in forecast.get('monthly_forecasts', []):
-            for cat in f.get('breakdown', []):
-                if cat['category'] not in categories:
-                    categories[cat['category']] = []
-                categories[cat['category']].append(cat['amount'])
-                
-        category_labels = list(categories.keys())
-        category_amounts = [sum(amounts)/len(amounts) for amounts in categories.values()]
-        
-        # Render the template to HTML
-        html = render_template(
-            'pdf_templates/forecast_pdf.html',
-            forecast=forecast,
-            monthly_labels=monthly_labels,
-            monthly_amounts=monthly_amounts,
-            confidence_upper=confidence_upper,
-            confidence_lower=confidence_lower,
-            category_labels=category_labels,
-            category_amounts=category_amounts
-        )
-        
-        # Generate PDF
-        pdf = HTML(string=html).write_pdf()
-        
-        # Create response
-        response = make_response(pdf)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = 'attachment; filename=expense_forecast.pdf'
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF forecast: {str(e)}")
-        flash('Error generating PDF export. Please try again.')
-        return redirect(url_for('main.expense_forecast'))
+# Removed duplicate implementation of export_forecast_pdf
+# The primary implementation is maintained above at line 649
