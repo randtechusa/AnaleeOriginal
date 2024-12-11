@@ -581,28 +581,35 @@ def expense_forecast():
         
         # Prepare data for charts
         monthly_data = forecast['monthly_forecasts']
-        monthly_labels = [m['month'] for m in monthly_data]
-        monthly_amounts = [m['total_expenses'] for m in monthly_data]
+        monthly_labels = [str(m.get('month', '')) for m in monthly_data]
+        monthly_amounts = [float(m.get('total_expenses', 0)) for m in monthly_data]
         
         # Calculate confidence intervals
         confidence_upper = []
         confidence_lower = []
         for m in monthly_data:
-            base_amount = m['total_expenses']
-            variance = forecast['confidence_metrics']['variance_range']
-            confidence_upper.append(base_amount + (variance['max'] - base_amount))
-            confidence_lower.append(base_amount - (base_amount - variance['min']))
+            base_amount = float(m.get('total_expenses', 0))
+            variance = forecast.get('confidence_metrics', {}).get('variance_range', {'min': 0, 'max': 0})
+            variance_max = float(variance.get('max', base_amount))
+            variance_min = float(variance.get('min', base_amount))
+            confidence_upper.append(variance_max)
+            confidence_lower.append(variance_min)
         
         # Prepare category breakdown
         categories = {}
         for m in monthly_data:
-            for cat in m['breakdown']:
-                if cat['category'] not in categories:
-                    categories[cat['category']] = []
-                categories[cat['category']].append(cat['amount'])
+            for cat in m.get('breakdown', []):
+                category = cat.get('category', 'Other')
+                amount = float(cat.get('amount', 0))
+                if category not in categories:
+                    categories[category] = []
+                categories[category].append(amount)
         
         category_labels = list(categories.keys())
-        category_amounts = [sum(amounts)/len(amounts) for amounts in categories.values()]
+        category_amounts = [
+            sum(amounts)/len(amounts) if amounts else 0 
+            for amounts in categories.values()
+        ]
         
         return render_template(
             'expense_forecast.html',

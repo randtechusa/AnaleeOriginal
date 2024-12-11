@@ -477,7 +477,7 @@ Format your response as a JSON object with this structure:
         # Make API call
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4",
             messages=[
                 {
                     "role": "system",
