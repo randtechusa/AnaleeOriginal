@@ -119,6 +119,101 @@ Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy an
         logger.error(f"Error in account prediction: {str(e)}")
         return []
 
+def detect_transaction_anomalies(transactions, historical_data=None):
+    """
+    Detect anomalies in transactions using AI analysis of Description and Explanation fields.
+    
+    Args:
+        transactions: List of current transactions to analyze
+        historical_data: Optional historical transaction data for baseline comparison
+        
+    Returns:
+        List of dictionaries containing anomaly details
+    """
+    try:
+        # Format transaction data for analysis
+        transaction_text = "\n".join([
+            f"Transaction {idx + 1}:\n"
+            f"- Amount: ${t.amount}\n"
+            f"- Description: {t.description}\n"
+            f"- Explanation: {t.explanation or 'No explanation provided'}\n"
+            f"- Date: {t.date.strftime('%Y-%m-%d')}\n"
+            f"- Account: {t.account.name if t.account else 'Uncategorized'}"
+            for idx, t in enumerate(transactions)
+        ])
+
+        prompt = f"""Analyze these transactions for potential anomalies and unusual patterns. Consider:
+
+1. Amount patterns:
+   - Unusually large or small amounts
+   - Irregular payment patterns
+   - Unexpected changes in regular amounts
+
+2. Description & Explanation analysis:
+   - Inconsistencies between description and explanation
+   - Unusual or unexpected descriptions
+   - Missing or vague explanations
+   - Semantic mismatches with account categories
+
+3. Timing patterns:
+   - Unusual transaction timing
+   - Irregular frequencies
+   - Unexpected date patterns
+
+4. Account usage:
+   - Unusual account assignments
+   - Inconsistent categorization
+   - Pattern deviations
+
+Transactions to analyze:
+{transaction_text}
+
+Provide analysis in this JSON structure:
+{{
+    "anomalies": [
+        {{
+            "transaction_index": <index>,
+            "anomaly_type": "amount|description|timing|account",
+            "confidence": <float between 0-1>,
+            "reason": "detailed explanation",
+            "severity": "high|medium|low",
+            "recommendation": "suggested action"
+        }}
+    ],
+    "pattern_insights": {{
+        "identified_patterns": ["string"],
+        "unusual_deviations": ["string"]
+    }}
+}}"""
+
+        # Make API call for anomaly detection
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert financial analyst specialized in detecting transaction anomalies and patterns. Focus on providing detailed, actionable insights while maintaining high accuracy."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,  # Lower temperature for more consistent analysis
+            max_tokens=1000,
+            response_format={"type": "json_object"}
+        )
+
+        # Parse and return the analysis
+        import json
+        analysis = json.loads(response.choices[0].message.content)
+        return analysis
+
+    except Exception as e:
+        logger.error(f"Error detecting transaction anomalies: {str(e)}")
+        return {
+            "error": "Failed to analyze transactions for anomalies",
+            "details": str(e)
+        }
+
 def generate_financial_advice(transactions, accounts):
     """
     Generate comprehensive financial advice based on transaction patterns and account usage.

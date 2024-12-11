@@ -309,6 +309,7 @@ def analyze(file_id):
     accounts = Account.query.filter_by(user_id=current_user.id).all()
     transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).all()
     bank_account_id = None
+    anomalies = None
 
     if request.method == 'POST':
         try:
@@ -339,11 +340,21 @@ def analyze(file_id):
             db.session.rollback()
             flash('Error saving changes', 'error')
     
+    # Perform anomaly detection on transactions
+    try:
+        from ai_utils import detect_transaction_anomalies
+        anomalies = detect_transaction_anomalies(transactions)
+        logger.info(f"Detected anomalies: {anomalies}")
+    except Exception as e:
+        logger.error(f"Error detecting anomalies: {str(e)}")
+        anomalies = {"error": str(e)}
+    
     return render_template('analyze.html', 
                          file=file,
                          accounts=accounts,
                          transactions=transactions,
-                         bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int))
+                         bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int),
+                         anomalies=anomalies)
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
