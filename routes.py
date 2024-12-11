@@ -526,6 +526,58 @@ def predict_account_route():
         return jsonify({'error': str(e)}), 500
     return redirect(url_for('main.upload'))
 
+
+@main.route('/financial-insights')
+@login_required
+def financial_insights():
+    try:
+        # Get company settings for financial year
+        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+        if not company_settings:
+            flash('Please configure company settings first.')
+            return redirect(url_for('main.company_settings'))
+        
+        # Get current financial year dates
+        fy_dates = company_settings.get_financial_year()
+        start_date = fy_dates['start_date']
+        end_date = fy_dates['end_date']
+        
+        # Get transactions for the current financial year
+        transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.date.between(start_date, end_date)
+        ).order_by(Transaction.date.desc()).all()
+        
+        # Format transactions for AI analysis
+        transaction_data = [{
+            'amount': t.amount,
+            'description': t.description,
+            'account_name': t.account.name if t.account else 'Uncategorized'
+        } for t in transactions]
+        
+        # Get account information
+        accounts = Account.query.filter_by(user_id=current_user.id).all()
+        account_data = [{
+            'name': acc.name,
+            'category': acc.category,
+            'balance': sum(t.amount for t in acc.transactions)
+        } for acc in accounts]
+        
+        # Generate financial advice
+        from ai_utils import generate_financial_advice
+        financial_advice = generate_financial_advice(transaction_data, account_data)
+        
+        return render_template(
+            'financial_insights.html',
+            financial_advice=financial_advice,
+            transactions=transactions[:10],  # Show recent transactions
+            accounts=accounts
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating financial insights: {str(e)}")
+        flash('Error generating financial insights. Please try again.')
+        return redirect(url_for('main.dashboard'))
 @main.route('/output')
 @login_required
 def output():

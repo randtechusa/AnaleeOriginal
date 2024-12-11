@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="card-title">Financial Insights</h2>
+                    
+                    {% if financial_advice.error %}
+                    <div class="alert alert-danger">
+                        {{ financial_advice.error }}
+                    </div>
+                    {% else %}
+                    
+                    <!-- Key Insights -->
+                    <div class="mb-4">
+                        <h4 class="text-primary">Key Insights</h4>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                {% if financial_advice.key_insights is string %}
+                                    {{ financial_advice.key_insights }}
+                                {% else %}
+                                    <ul class="list-unstyled mb-0">
+                                    {% for insight in financial_advice.key_insights %}
+                                        <li class="mb-2">{{ insight }}</li>
+                                    {% endfor %}
+                                    </ul>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Risk Factors -->
+                    <div class="mb-4">
+                        <h4 class="text-warning">Risk Factors</h4>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <ul class="list-unstyled mb-0">
+                                {% for risk in financial_advice.risk_factors %}
+                                    <li class="mb-2">
+                                        <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                                        {{ risk }}
+                                    </li>
+                                {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Optimization Opportunities -->
+                    <div class="mb-4">
+                        <h4 class="text-success">Optimization Opportunities</h4>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <ul class="list-unstyled mb-0">
+                                {% for opportunity in financial_advice.optimization_opportunities %}
+                                    <li class="mb-2">
+                                        <i class="fas fa-lightbulb text-success me-2"></i>
+                                        {{ opportunity }}
+                                    </li>
+                                {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Strategic Recommendations -->
+                    <div class="mb-4">
+                        <h4 class="text-info">Strategic Recommendations</h4>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <ul class="list-unstyled mb-0">
+                                {% for recommendation in financial_advice.strategic_recommendations %}
+                                    <li class="mb-2">
+                                        <i class="fas fa-check-circle text-info me-2"></i>
+                                        {{ recommendation }}
+                                    </li>
+                                {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Cash Flow Analysis -->
+                    <div class="mb-4">
+                        <h4>Cash Flow Analysis</h4>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                {{ financial_advice.cash_flow_analysis }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Transactions -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h4 class="card-title">Recent Transactions</h4>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Account</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for transaction in transactions %}
+                                <tr>
+                                    <td>{{ transaction.date.strftime('%Y-%m-%d') }}</td>
+                                    <td>{{ transaction.description }}</td>
+                                    <td class="{{ 'text-success' if transaction.amount > 0 else 'text-danger' }}">
+                                        ${{ "%.2f"|format(transaction.amount|abs) }}
+                                    </td>
+                                    <td>{{ transaction.account.name if transaction.account else 'Uncategorized' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add any client-side interactivity here if needed
+});
+</script>
+{% endblock %}
