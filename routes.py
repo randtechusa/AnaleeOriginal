@@ -404,6 +404,23 @@ def upload():
             
     return render_template('upload.html', files=files)
 
+@main.route('/file/<int:file_id>/delete', methods=['POST'])
+@login_required
+def delete_file(file_id):
+    file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+    try:
+        # Delete associated transactions first
+        Transaction.query.filter_by(file_id=file.id).delete()
+        # Then delete the file record
+        db.session.delete(file)
+        db.session.commit()
+        flash('File and associated transactions deleted successfully')
+    except Exception as e:
+        logger.error(f'Error deleting file: {str(e)}')
+        flash('Error deleting file')
+        db.session.rollback()
+    return redirect(url_for('main.upload'))
+
 @main.route('/output')
 @main.route('/output/<int:file_id>')
 @login_required
