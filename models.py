@@ -36,11 +36,16 @@ class Transaction(db.Model):
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
     bank_account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
     file_id = db.Column(db.Integer, db.ForeignKey('uploaded_files.id'), nullable=False)
-    bank_account = db.relationship('Account', 
-                                foreign_keys=[bank_account_id],
-                                backref=db.backref('bank_transactions', lazy=True))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Define the relationships with explicit foreign keys
+    account = db.relationship('Account', 
+                            foreign_keys=[account_id],
+                            backref=db.backref('transactions', lazy=True))
+    bank_account = db.relationship('Account', 
+                                 foreign_keys=[bank_account_id],
+                                 backref=db.backref('bank_transactions', lazy=True))
 
 class Account(db.Model):
     __tablename__ = 'account'
@@ -52,12 +57,6 @@ class Account(db.Model):
     account_code = db.Column(db.String(20))  # Accounts from Excel
     name = db.Column(db.String(100), nullable=False)  # Account Name from Excel (e.g., Ned Bank)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    transactions = db.relationship('Transaction', 
-                                 foreign_keys=[Transaction.account_id],
-                                 backref=db.backref('account', lazy=True))
-    bank_transactions = db.relationship('Transaction',
-                                 foreign_keys=[Transaction.bank_account_id],
-                                 backref=db.backref('bank_account_rel', lazy=True))
     is_active = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
