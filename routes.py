@@ -508,6 +508,32 @@ def output(file_id=None):
     selected_file = None
     categories = []
     
+    # Get company settings for financial year
+    company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+    if not company_settings:
+        flash('Please configure company settings first.')
+        return redirect(url_for('main.company_settings'))
+    
+    # Get selected year from query params or use current year
+    selected_year = request.args.get('financial_year', type=int)
+    current_date = datetime.utcnow()
+    
+    if not selected_year:
+        # Calculate current financial year based on company settings
+        if current_date.month > company_settings.financial_year_end:
+            selected_year = current_date.year
+        else:
+            selected_year = current_date.year - 1
+    
+    # Get available financial years
+    financial_years = set()
+    for t in Transaction.query.filter_by(user_id=current_user.id).all():
+        if t.date.month > company_settings.financial_year_end:
+            financial_years.add(t.date.year)
+        else:
+            financial_years.add(t.date.year - 1)
+    financial_years = sorted(list(financial_years))
+    
     if file_id:
         selected_file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
         
@@ -515,10 +541,20 @@ def output(file_id=None):
         categories = db.session.query(Account.category).distinct().all()
         categories = [cat[0] for cat in categories if cat[0]]  # Remove None values
         
+        # Calculate financial year date range
+        start_date = datetime(selected_year, company_settings.financial_year_end + 1, 1)
+        if company_settings.financial_year_end == 12:
+            end_date = datetime(selected_year + 1, 1, 1)
+        else:
+            end_date = datetime(selected_year + 1, company_settings.financial_year_end + 1, 1)
+        
         # Build the transaction query with filters
         query = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id)
         
-        # Apply date filters if provided
+        # Apply financial year filter
+        query = query.filter(Transaction.date >= start_date, Transaction.date < end_date)
+        
+        # Apply additional date filters if provided
         date_from = request.args.get('date_from')
         date_to = request.args.get('date_to')
         if date_from:
@@ -576,4 +612,6 @@ def output(file_id=None):
                          trial_balance=trial_balance, 
                          files=files,
                          selected_file=selected_file,
-                         categories=categories)
+                         categories=categories,
+                         financial_years=financial_years,
+                         current_year=selected_year)
