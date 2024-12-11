@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="card-title">Expense Forecasting</h2>
+                    <p class="text-muted">AI-powered 12-month expense predictions based on historical data</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Monthly Expense Forecast</h5>
+                    <canvas id="forecastChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Forecast Metrics</h5>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Overall Confidence
+                            <span class="badge bg-primary rounded-pill">{{ "%.1f"|format(forecast.confidence_metrics.overall_confidence * 100) }}%</span>
+                        </li>
+                        <li class="list-group-item">
+                            <div class="d-flex justify-content-between">
+                                <span>Variance Range</span>
+                                <span class="text-muted">
+                                    ${{ "%.2f"|format(forecast.confidence_metrics.variance_range.min) }} - 
+                                    ${{ "%.2f"|format(forecast.confidence_metrics.variance_range.max) }}
+                                </span>
+                            </div>
+                        </li>
+                        <li class="list-group-item">
+                            <div class="d-flex justify-content-between">
+                                <span>Reliability Score</span>
+                                <span class="badge bg-info rounded-pill">{{ "%.1f"|format(forecast.confidence_metrics.reliability_score * 100) }}%</span>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Category Breakdown</h5>
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Key Insights</h5>
+                    <div class="list-group">
+                        {% for factor in forecast.forecast_factors.key_drivers %}
+                        <div class="list-group-item">
+                            <i class="fas fa-chart-line me-2"></i> {{ factor }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Recommendations</h5>
+                    <div class="list-group">
+                        {% for rec in forecast.recommendations %}
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">{{ rec.action }}</h6>
+                                <small class="text-muted">{{ rec.implementation_timeline }}</small>
+                            </div>
+                            <p class="mb-1">{{ rec.potential_impact }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Monthly Forecast Chart
+    const forecastCtx = document.getElementById('forecastChart').getContext('2d');
+    new Chart(forecastCtx, {
+        type: 'line',
+        data: {
+            labels: {{ monthly_labels|tojson }},
+            datasets: [{
+                label: 'Predicted Expenses',
+                data: {{ monthly_amounts|tojson }},
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                fill: true
+            }, {
+                label: 'Confidence Interval (Upper)',
+                data: {{ confidence_upper|tojson }},
+                borderColor: 'rgba(75, 192, 192, 0.3)',
+                backgroundColor: 'transparent',
+                borderDashed: [5, 5],
+                fill: false
+            }, {
+                label: 'Confidence Interval (Lower)',
+                data: {{ confidence_lower|tojson }},
+                borderColor: 'rgba(75, 192, 192, 0.3)',
+                backgroundColor: 'transparent',
+                borderDashed: [5, 5],
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Amount ($)'
+                    }
+                }
+            }
+        }
+    });
+
+    // Category Breakdown Chart
+    const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+    new Chart(categoryCtx, {
+        type: 'bar',
+        data: {
+            labels: {{ category_labels|tojson }},
+            datasets: [{
+                label: 'Predicted Monthly Average',
+                data: {{ category_amounts|tojson }},
+                backgroundColor: [
+                    'rgba(75, 192, 192, 0.8)',
+                    'rgba(255, 159, 64, 0.8)',
+                    'rgba(255, 205, 86, 0.8)',
+                    'rgba(54, 162, 235, 0.8)',
+                    'rgba(153, 102, 255, 0.8)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Amount ($)'
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}
