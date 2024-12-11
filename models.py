@@ -34,7 +34,9 @@ class Transaction(db.Model):
     explanation = db.Column(db.String(255))  # User-provided explanation
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
+    bank_account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
     file_id = db.Column(db.Integer, db.ForeignKey('uploaded_files.id'), nullable=False)
+    bank_account = db.relationship('Account', foreign_keys=[bank_account_id], backref='bank_transactions')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

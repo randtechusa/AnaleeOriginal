@@ -212,19 +212,29 @@ def analyze(file_id):
     file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
     accounts = Account.query.filter_by(user_id=current_user.id).all()
     transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).all()
+    bank_account_id = None
 
     if request.method == 'POST':
         try:
+            # Handle bank account selection
+            bank_account_id = request.form.get('bank_account')
+            if bank_account_id:
+                bank_account_id = int(bank_account_id)
+                
             for transaction in transactions:
                 explanation_key = f'explanation_{transaction.id}'
                 analysis_key = f'analysis_{transaction.id}'
                 
+                # Update transaction details
                 if explanation_key in request.form:
                     transaction.explanation = request.form[explanation_key]
                 if analysis_key in request.form:
                     account_id = request.form[analysis_key]
                     if account_id:  # Only update if a value was selected
                         transaction.account_id = int(account_id)
+                        # Set the bank account for double-entry
+                        if bank_account_id:
+                            transaction.bank_account_id = bank_account_id
             
             db.session.commit()
             flash('Changes saved successfully', 'success')
