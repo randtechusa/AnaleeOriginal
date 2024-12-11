@@ -191,17 +191,16 @@ Provide analysis in this JSON structure:
         # Make API call for anomaly detection
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-3.5-turbo",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert financial analyst specialized in detecting transaction anomalies and patterns. Focus on providing detailed, actionable insights while maintaining high accuracy."
+                    "content": "You are an expert financial analyst specialized in detecting transaction anomalies and patterns. Focus on providing detailed, actionable insights while maintaining high accuracy. Format your response as valid JSON."
                 },
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,  # Lower temperature for more consistent analysis
-            max_tokens=1000,
-            response_format={"type": "json_object"}
+            max_tokens=1000
         )
 
         # Parse and return the analysis
@@ -486,20 +485,64 @@ Format your response as a JSON object with this structure:
             max_tokens=1000
         )
         
-        # Parse and return the forecast
-        import json
-        forecast = json.loads(response.choices[0].message.content)
-        
-        # Add metadata about the forecast
-        forecast["generated_at"] = datetime.utcnow().isoformat()
-        forecast["forecast_period_months"] = forecast_months
-        forecast["data_points_analyzed"] = len(transactions)
-        
-        return forecast
+        # Parse and validate the forecast
+        try:
+            content = response.choices[0].message.content.strip()
+            if not content:
+                logger.error("Empty response from AI model")
+                return {
+                    "error": "Empty response from AI model",
+                    "monthly_forecasts": [],
+                    "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+                    "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+                    "recommendations": []
+                }
+
+            forecast = json.loads(content)
+            
+            # Validate required fields
+            required_fields = ['monthly_forecasts', 'forecast_factors', 'confidence_metrics', 'recommendations']
+            missing_fields = [field for field in required_fields if field not in forecast]
+            
+            if missing_fields:
+                logger.warning(f"Missing required fields in forecast: {missing_fields}")
+                # Initialize missing fields with empty defaults
+                for field in missing_fields:
+                    if field == 'monthly_forecasts':
+                        forecast[field] = []
+                    elif field == 'forecast_factors':
+                        forecast[field] = {"key_drivers": [], "risk_factors": [], "assumptions": []}
+                    elif field == 'confidence_metrics':
+                        forecast[field] = {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0}
+                    elif field == 'recommendations':
+                        forecast[field] = []
+
+            # Add metadata about the forecast
+            forecast["generated_at"] = datetime.utcnow().isoformat()
+            forecast["forecast_period_months"] = forecast_months
+            forecast["data_points_analyzed"] = len(transactions)
+            
+            logger.info("Successfully generated and validated forecast")
+            return forecast
+            
+        except json.JSONDecodeError as je:
+            logger.error(f"JSON parsing error in forecast: {str(je)}")
+            return {
+                "error": "Invalid forecast format",
+                "details": str(je),
+                "monthly_forecasts": [],
+                "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+                "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+                "recommendations": []
+            }
         
     except Exception as e:
         logger.error(f"Error generating expense forecast: {str(e)}")
         return {
             "error": "Failed to generate expense forecast",
-            "details": str(e)
+            "details": str(e),
+            "monthly_forecasts": [],
+            "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+            "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+            "recommendations": []
         }

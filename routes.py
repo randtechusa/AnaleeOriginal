@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify
+from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, session
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
@@ -13,6 +13,11 @@ from models import User, Account, Transaction, UploadedFile, CompanySettings
 # Create blueprint
 from ai_utils import predict_account
 main = Blueprint('main', __name__)
+
+# Configure secret key for session management
+import os
+if not os.environ.get('FLASK_SECRET_KEY'):
+    os.environ['FLASK_SECRET_KEY'] = os.urandom(24).hex()
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -611,21 +616,80 @@ def expense_forecast():
             for amounts in categories.values()
         ]
         
+        # Store the data in session for PDF generation
+        session['forecast'] = forecast
+        session['monthly_labels'] = monthly_labels
+        session['monthly_amounts'] = monthly_amounts
+        session['confidence_upper'] = confidence_upper
+        session['confidence_lower'] = confidence_lower
+        session['category_labels'] = category_labels
+        session['category_amounts'] = category_amounts
+        
+        # Prepare template data
+        template_data = {
+            'forecast': forecast,
+            'monthly_labels': monthly_labels,
+            'monthly_amounts': monthly_amounts,
+            'confidence_upper': confidence_upper,
+            'confidence_lower': confidence_lower,
+            'category_labels': category_labels,
+            'category_amounts': category_amounts
+        }
+        
         return render_template(
             'expense_forecast.html',
-            forecast=forecast,
-            monthly_labels=monthly_labels,
-            monthly_amounts=monthly_amounts,
-            confidence_upper=confidence_upper,
-            confidence_lower=confidence_lower,
-            category_labels=category_labels,
-            category_amounts=category_amounts
+            **template_data
         )
         
     except Exception as e:
         logger.error(f"Error generating expense forecast: {str(e)}")
         flash('Error generating expense forecast. Please try again.')
         return redirect(url_for('main.dashboard'))
+
+@main.route('/export-forecast-pdf')
+@login_required
+def export_forecast_pdf():
+    try:
+        from weasyprint import HTML
+        from flask import make_response
+        import tempfile
+        from datetime import datetime
+        
+        # Get company settings
+        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+        if not company_settings:
+            flash('Please configure company settings first.')
+            return redirect(url_for('main.company_settings'))
+            
+        # Generate the HTML content
+        html_content = render_template(
+            'pdf_templates/forecast_pdf.html',
+            company=company_settings,
+            datetime=datetime,
+            forecast=session.get('forecast', {}),
+            monthly_labels=session.get('monthly_labels', []),
+            monthly_amounts=session.get('monthly_amounts', []),
+            confidence_upper=session.get('confidence_upper', []),
+            confidence_lower=session.get('confidence_lower', []),
+            category_labels=session.get('category_labels', []),
+            category_amounts=session.get('category_amounts', []),
+            zip=zip  # Required for template iteration
+        )
+        
+        # Create PDF
+        pdf = HTML(string=html_content).write_pdf()
+        
+        # Create response
+        response = make_response(pdf)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename=forecast_report_{datetime.now().strftime("%Y%m%d")}.pdf'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF: {str(e)}")
+        flash('Error generating PDF report. Please try again.')
+        return redirect(url_for('main.expense_forecast'))
 
 @main.route('/financial-insights')
 @login_required

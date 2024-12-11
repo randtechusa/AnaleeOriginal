@@ -6,13 +6,18 @@
         <div class="col-12">
             <div class="card">
                 <div class="card-body">
-                    <h2 class="card-title">Expense Forecasting</h2>
-                    <p class="text-muted">AI-powered 12-month expense predictions based on historical data</p>
-                    <div class="text-end">
-                        <a href="{{ url_for('main.export_forecast_pdf') }}" class="btn btn-secondary">
-                            <i class="fas fa-file-pdf me-2"></i>Export as PDF
-                        </a>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h2 class="card-title mb-1">Expense Forecasting</h2>
+                            <p class="text-muted">AI-powered 12-month expense predictions based on historical data</p>
+                        </div>
+                        <div>
+                            <a href="{{ url_for('main.export_forecast_pdf') }}" class="btn btn-secondary">
+                                <i class="fas fa-file-pdf me-2"></i>Export as PDF
+                            </a>
+                        </div>
                     </div>
+                    
                 </div>
             </div>
         </div>
