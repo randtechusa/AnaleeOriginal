@@ -211,13 +211,14 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
         Dictionary containing detected anomalies and analysis results
     """
     try:
-        # Analyze cross-field patterns
-        field_patterns = analyze_cross_field_patterns(transactions)
+        # Set timeout for API calls
+        client = openai.OpenAI(timeout=30.0)
         
-        # Analyze temporal patterns
-        temporal_analysis = analyze_temporal_patterns(transactions)
+        # Analyze only essential patterns first
+        field_patterns = analyze_cross_field_patterns(transactions[:50])  # Limit initial analysis
+        temporal_analysis = analyze_temporal_patterns(transactions[:50])
         
-        # Format transaction data for analysis
+        # Format transaction data with limits
         transaction_text = "\n".join([
             f"Transaction {idx + 1}:\n"
             f"- Amount: ${t.amount}\n"
@@ -226,54 +227,57 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
             f"- Date: {t.date.strftime('%Y-%m-%d')}\n"
             f"- Account: {t.account.name if t.account else 'Uncategorized'}\n"
             f"- Category: {t.account.category if t.account else 'Unknown'}"
-            for idx, t in enumerate(transactions)
+            for idx, t in enumerate(transactions[:50])  # Limit to recent transactions
         ])
 
-        # Format historical data if available
+        # Format historical data if available (with limits)
         historical_context = ""
         if historical_data:
-            historical_summary = analyze_historical_patterns(historical_data)
+            historical_summary = analyze_historical_patterns(historical_data[:100])  # Limit historical data
             historical_context = f"\nHistorical Context:\n{historical_summary['summary']}"
 
-        prompt = f"""Perform comprehensive anomaly detection and pattern analysis on these transactions,
-considering the following patterns and analyses:
+        prompt = f"""Analyze transaction patterns and detect anomalies (brief analysis):
 
-Cross-Field Patterns:
+Key Patterns:
 {json.dumps(field_patterns, indent=2)}
 
-Temporal Patterns:
-{json.dumps(temporal_analysis, indent=2)}
-
-Transactions to analyze:
+Recent Transactions:
 {transaction_text}
 {historical_context}
 
 Instructions:
-1. Consider both cross-field and temporal patterns in analysis
-2. Use sensitivity threshold of {sensitivity_threshold} for anomaly detection
-3. Provide confidence scores for each detected anomaly
-4. Generate specific recommendations for each anomaly
-5. Include pattern-based insights and risk assessment
+1. Focus on most significant patterns
+2. Use sensitivity threshold of {sensitivity_threshold}
+3. Provide key anomalies and risks
+4. Keep analysis concise
 
-Provide analysis in JSON format with comprehensive detection results."""
+Provide analysis in JSON format."""
 
-        # Make API call for anomaly detection
-        client = openai.OpenAI()
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert financial analyst specialized in detecting transaction anomalies and patterns. Focus on providing detailed, actionable insights while maintaining high accuracy."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,
-            max_tokens=1000
-        )
-
-        # Parse and enhance the analysis
-        analysis = json.loads(response.choices[0].message.content)
+        # Make API call with timeout
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a financial analyst. Provide brief, focused analysis."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=500,  # Reduced token limit
+                timeout=20  # Shorter timeout
+            )
+            
+            # Parse and enhance the analysis
+            analysis = json.loads(response.choices[0].message.content)
+            
+        except Exception as api_error:
+            logger.error(f"API call error: {str(api_error)}")
+            return {
+                "error": "Failed to analyze transactions",
+                "details": str(api_error)
+            }
         
         # Add pattern-specific insights
         if field_patterns.get("identified_relationships"):

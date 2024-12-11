@@ -47,8 +47,13 @@ def create_app():
             "connect_args": {
                 "connect_timeout": 10
             }
-        }
+        },
+        PROPAGATE_EXCEPTIONS=True,
+        PREFERRED_URL_SCHEME='http'
     )
+    
+    # Configure server timeouts
+    app.config['TIMEOUT'] = 30
     
     # Initialize Flask extensions with app
     db.init_app(app)
