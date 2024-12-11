@@ -552,11 +552,15 @@ def output():
             Transaction.date <= end_date
         ).all()
         
+        logger.info(f"Found {len(transactions)} transactions in selected period")
+        
         # Initialize account balances
         account_balances = {}
         
         # Process transactions to build trial balance
         for transaction in transactions:
+            logger.debug(f"Processing transaction: {transaction.id}, date: {transaction.date}, amount: {transaction.amount}")
+            
             # Process main account entry
             if transaction.account:
                 account = transaction.account
@@ -569,6 +573,7 @@ def output():
                         'amount': 0
                     }
                 account_balances[account.name]['amount'] += transaction.amount
+                logger.debug(f"Updated balance for {account.name}: {account_balances[account.name]['amount']}")
             
             # Process bank account entry (double-entry)
             if transaction.bank_account:
@@ -582,6 +587,7 @@ def output():
                         'amount': 0
                     }
                 account_balances[bank_account.name]['amount'] -= transaction.amount
+                logger.debug(f"Updated balance for {bank_account.name}: {account_balances[bank_account.name]['amount']}")
         
         # Convert account_balances to list and sort by category and account name
         trial_balance = sorted(
@@ -589,12 +595,9 @@ def output():
             key=lambda x: (x['category'] or '', x['account_name'])
         )
         
-        # Log some debug information
-        logger.debug(f"Financial Years: {financial_years}")
-        logger.debug(f"Selected Year: {selected_year}")
-        logger.debug(f"Date Range: {start_date} to {end_date}")
-        logger.debug(f"Number of transactions: {len(transactions)}")
+        # Log debug information
         logger.debug(f"Number of accounts in trial balance: {len(trial_balance)}")
+        logger.debug(f"Trial balance total: {sum(item['amount'] for item in trial_balance)}")
         
         return render_template('output.html',
                             trial_balance=trial_balance,
@@ -606,52 +609,3 @@ def output():
         logger.exception("Full stack trace:")
         flash('Error generating trial balance. Please try again.')
         return redirect(url_for('main.dashboard'))
-    
-    # Initialize account balances
-    account_balances = {}
-    
-    # Process transactions to build trial balance
-    for transaction in transactions:
-        # Process main account entry
-        if transaction.account:
-            account = transaction.account
-            if account.name not in account_balances:
-                account_balances[account.name] = {
-                    'account_name': account.name,
-                    'category': account.category,
-                    'sub_category': account.sub_category,
-                    'link': account.link,
-                    'amount': 0
-                }
-            account_balances[account.name]['amount'] += transaction.amount
-        
-        # Process bank account entry (double-entry)
-        if transaction.bank_account:
-            bank_account = transaction.bank_account
-            if bank_account.name not in account_balances:
-                account_balances[bank_account.name] = {
-                    'account_name': bank_account.name,
-                    'category': bank_account.category,
-                    'sub_category': bank_account.sub_category,
-                    'link': bank_account.link,
-                    'amount': 0
-                }
-            account_balances[bank_account.name]['amount'] -= transaction.amount
-    
-    # Convert account_balances to list and sort by category and account name
-    trial_balance = sorted(
-        account_balances.values(),
-        key=lambda x: (x['category'] or '', x['account_name'])
-    )
-    
-    # Log some debug information
-    logger.debug(f"Financial Years: {financial_years}")
-    logger.debug(f"Selected Year: {selected_year}")
-    logger.debug(f"Date Range: {start_date} to {end_date}")
-    logger.debug(f"Number of transactions: {len(transactions)}")
-    logger.debug(f"Number of accounts in trial balance: {len(trial_balance)}")
-    
-    return render_template('output.html',
-                         trial_balance=trial_balance,
-                         financial_years=financial_years,
-                         current_year=selected_year)
