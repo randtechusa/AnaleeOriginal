@@ -2,8 +2,9 @@ import openai
 import logging
 import json
 import os
+import statistics
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Union, Any
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -166,44 +167,131 @@ def analyze_historical_patterns(historical_data):
                 date_diffs = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
                 avg_frequency = sum(date_diffs) / len(date_diffs) if date_diffs else 0
                 
-                # Calculate growth rate
-                first_month = dates[0].strftime('%Y-%m')
-                last_month = dates[-1].strftime('%Y-%m')
-                if first_month in monthly_data and last_month in monthly_data:
-                    first_month_avg = sum(t.amount for t in monthly_data[first_month]) / len(monthly_data[first_month])
-                    last_month_avg = sum(t.amount for t in monthly_data[last_month]) / len(monthly_data[last_month])
-                    months_diff = (dates[-1].year - dates[0].year) * 12 + dates[-1].month - dates[0].month
-                    growth_rate = ((last_month_avg / first_month_avg) ** (1/months_diff) - 1) * 100 if months_diff > 0 and first_month_avg != 0 else 0
-                else:
-                    growth_rate = 0
+                # Enhanced growth rate analysis
+                growth_metrics = {
+                    'short_term': {'rate': 0, 'confidence': 0},  # 3-month trend
+                    'medium_term': {'rate': 0, 'confidence': 0}, # 6-month trend
+                    'long_term': {'rate': 0, 'confidence': 0}    # 12-month+ trend
+                }
+                
+                # Calculate moving averages and growth rates for different periods
+                for period, months in [('short_term', 3), ('medium_term', 6), ('long_term', 12)]:
+                    if len(dates) >= months:
+                        # Get monthly averages for the period
+                        recent_months = sorted(list(set([d.strftime('%Y-%m') for d in dates[-months:]])))
+                        start_month = recent_months[0]
+                        end_month = recent_months[-1]
+                        
+                        if start_month in monthly_data and end_month in monthly_data:
+                            # Calculate smoothed averages using 3-month moving average
+                            start_period = recent_months[:3]
+                            end_period = recent_months[-3:]
+                            
+                            start_avg = sum(
+                                sum(t.amount for t in monthly_data[m]) / len(monthly_data[m])
+                                for m in start_period if m in monthly_data
+                            ) / len([m for m in start_period if m in monthly_data])
+                            
+                            end_avg = sum(
+                                sum(t.amount for t in monthly_data[m]) / len(monthly_data[m])
+                                for m in end_period if m in monthly_data
+                            ) / len([m for m in end_period if m in monthly_data])
+                            
+                            # Calculate annualized growth rate
+                            if start_avg != 0:
+                                months_diff = len(recent_months)
+                                growth_rate = ((end_avg / start_avg) ** (12/months_diff) - 1) * 100
+                                
+                                # Calculate confidence based on data points and volatility
+                                data_points = sum(1 for m in recent_months if m in monthly_data)
+                                coverage = data_points / months
+                                volatility = statistics.stdev([t.amount for m in recent_months if m in monthly_data for t in monthly_data[m]]) if data_points > 1 else float('inf')
+                                
+                                confidence = min(1.0, coverage * (1.0 / (1.0 + volatility/abs(start_avg) if start_avg != 0 else 0)))
+                                
+                                growth_metrics[period] = {
+                                    'rate': float(growth_rate),
+                                    'confidence': float(confidence)
+                                }
+                
+                # Use the most confident growth rate as the primary metric
+                growth_rates = [(metrics['rate'], metrics['confidence']) for metrics in growth_metrics.values()]
+                weighted_growth = sum(rate * conf for rate, conf in growth_rates) / sum(conf for _, conf in growth_rates) if growth_rates else 0
+                growth_rate = weighted_growth
             else:
                 avg_frequency = 0
                 growth_rate = 0
             
-            # Seasonal pattern detection
+            # Enhanced seasonal pattern detection with multi-period analysis
             seasonal_patterns = []
             if len(monthly_data) >= 12:
-                month_averages = {}
+                # Analyze patterns by month and quarter
+                period_averages = {'month': {}, 'quarter': {}}
                 for month_key, month_transactions in monthly_data.items():
-                    month = datetime.strptime(month_key, '%Y-%m').month
-                    if month not in month_averages:
-                        month_averages[month] = []
+                    date = datetime.strptime(month_key, '%Y-%m')
+                    month = date.month
+                    quarter = (month - 1) // 3 + 1
+                    
+                    # Initialize period dictionaries
+                    for period_type in ['month', 'quarter']:
+                        period = month if period_type == 'month' else quarter
+                        if period not in period_averages[period_type]:
+                            period_averages[period_type][period] = []
+                    
+                    # Filter transactions for current category
                     month_transactions_in_category = [t for t in month_transactions if t.account and t.account.category == category]
+                    
                     if month_transactions_in_category:
-                        month_averages[month].append(sum(t.amount for t in month_transactions_in_category) / len(month_transactions_in_category))
+                        period_amount = sum(t.amount for t in month_transactions_in_category) / len(month_transactions_in_category)
+                        period_averages['month'][month].append(period_amount)
+                        period_averages['quarter'][quarter].append(period_amount)
                 
-                for month, averages in month_averages.items():
+                # Analyze monthly patterns
+                for month, averages in period_averages['month'].items():
                     if len(averages) > 1:
                         month_avg = sum(averages) / len(averages)
-                        overall_avg = avg_amount
-                        if overall_avg != 0:
-                            seasonal_factor = (month_avg / overall_avg - 1) * 100
-                            if abs(seasonal_factor) > 15:  # Significant seasonal variation threshold
+                        if avg_amount != 0:
+                            seasonal_factor = (month_avg / avg_amount - 1) * 100
+                            reliability = min(1.0, len(averages) / 24.0)  # More data points = higher reliability
+                            
+                            if abs(seasonal_factor) > 10:  # Lower threshold for pattern detection
+                                pattern_strength = abs(seasonal_factor)
+                                significance = 'high' if pattern_strength > 30 else 'medium' if pattern_strength > 20 else 'low'
+                                
                                 seasonal_patterns.append({
-                                    'month': datetime.strptime(str(month), '%m').strftime('%B'),
+                                    'period_type': 'monthly',
+                                    'period': datetime.strptime(str(month), '%m').strftime('%B'),
                                     'variation': seasonal_factor,
-                                    'significance': 'high' if abs(seasonal_factor) > 30 else 'medium'
+                                    'significance': significance,
+                                    'reliability': reliability,
+                                    'pattern_strength': pattern_strength,
+                                    'sample_size': len(averages)
                                 })
+                
+                # Analyze quarterly patterns
+                quarterly_patterns = []
+                for quarter, averages in period_averages['quarter'].items():
+                    if len(averages) > 1:
+                        quarter_avg = sum(averages) / len(averages)
+                        if avg_amount != 0:
+                            seasonal_factor = (quarter_avg / avg_amount - 1) * 100
+                            reliability = min(1.0, len(averages) / 8.0)  # Adjusted for quarterly data
+                            
+                            if abs(seasonal_factor) > 10:
+                                pattern_strength = abs(seasonal_factor)
+                                significance = 'high' if pattern_strength > 30 else 'medium' if pattern_strength > 20 else 'low'
+                                
+                                quarterly_patterns.append({
+                                    'period_type': 'quarterly',
+                                    'period': f'Q{quarter}',
+                                    'variation': seasonal_factor,
+                                    'significance': significance,
+                                    'reliability': reliability,
+                                    'pattern_strength': pattern_strength,
+                                    'sample_size': len(averages)
+                                })
+                
+                seasonal_patterns.extend(quarterly_patterns)
             
             category_patterns[category] = {
                 'statistics': {
