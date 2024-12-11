@@ -222,7 +222,9 @@ def analyze(file_id):
                 if explanation_key in request.form:
                     transaction.explanation = request.form[explanation_key]
                 if analysis_key in request.form:
-                    transaction.account_id = request.form[analysis_key]
+                    account_id = request.form[analysis_key]
+                    if account_id:  # Only update if a value was selected
+                        transaction.account_id = int(account_id)
             
             db.session.commit()
             flash('Changes saved successfully', 'success')
@@ -257,6 +259,14 @@ def upload():
             return redirect(url_for('main.upload'))
             
         try:
+            # Create uploaded file record first
+            uploaded_file = UploadedFile(
+                filename=file.filename,
+                user_id=current_user.id
+            )
+            db.session.add(uploaded_file)
+            db.session.commit()
+            
             # Read file content
             if file.filename.endswith('.csv'):
                 df = pd.read_csv(file)
@@ -312,20 +322,16 @@ def upload():
                     logger.warning(f"No match found for {required_col}")
                     missing_columns.append(required_col)
             
-            logger.debug(f"Final column matches found: {column_matches}")
-            
             if missing_columns:
-                flash(f'Missing required columns: {", ".join(col.title() for col in missing_columns)}. Found columns: {", ".join(df.columns)}')
+                flash(f'Missing required columns: {", ".join(missing_columns)}. Found columns: {", ".join(df.columns)}')
                 return redirect(url_for('main.upload'))
 
             # Rename columns to standard names
             df = df.rename(columns=column_matches)
-                
+            
             # Process each row
             for _, row in df.iterrows():
                 try:
-                    # Create transaction record
-                    # Try multiple date formats
                     date_str = str(row['date'])
                     try:
                         # First try parsing without explicit format
@@ -344,31 +350,20 @@ def upload():
                         
                         if parsed_date is None:
                             logger.warning(f"Could not parse date: {date_str}")
-                            raise ValueError(f"Invalid date format: {date_str}")
+                            continue
                     
                     transaction = Transaction(
                         date=parsed_date,
-                        description=str(row['Description']),
-                        amount=float(row['Amount']),
+                        description=str(row['description']),
+                        amount=float(row['amount']),
                         explanation='',  # Initially empty
-                        user_id=current_user.id
+                        user_id=current_user.id,
+                        file_id=uploaded_file.id
                     )
                     db.session.add(transaction)
                 except Exception as row_error:
-                    logger.error(f'Error processing row: {row} - {str(row_error)}')
+                    logger.error(f"Error processing row: {row} - {str(row_error)}")
                     continue
-                    
-            # Create uploaded file record
-            uploaded_file = UploadedFile(
-                filename=file.filename,
-                user_id=current_user.id
-            )
-            db.session.add(uploaded_file)
-            db.session.commit()
-            
-            # Associate transactions with the file
-            for transaction in Transaction.query.filter_by(user_id=current_user.id, file_id=None).all():
-                transaction.file_id = uploaded_file.id
             
             db.session.commit()
             flash('File uploaded and processed successfully')
