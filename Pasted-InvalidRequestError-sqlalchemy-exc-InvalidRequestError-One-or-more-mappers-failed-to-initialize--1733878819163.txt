@@ -1,0 +1,60 @@
+InvalidRequestError
+sqlalchemy.exc.InvalidRequestError: One or more mappers failed to initialize - can't proceed with initialization of other mappers. Triggering mapper: 'Mapper[Transaction(transactions)]'. Original exception was: Error creating backref 'bank_transactions' on relationship 'Transaction.bank_account': property of that name exists on mapper 'Mapper[Account(account)]'
+
+Traceback (most recent call last)
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1536, in __call__
+return self.wsgi_app(environ, start_response)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1514, in wsgi_app
+response = self.handle_exception(e)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
+response = self.full_dispatch_request()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
+rv = self.handle_user_exception(e)
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
+rv = self.dispatch_request()
+     ^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
+return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/routes.py", line 31, in login
+user = User.query.filter_by(email=email).first()
+       ^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/flask_sqlalchemy/model.py", line 22, in __get__
+return cls.query_class(
+       
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 275, in __init__
+self._set_entities(entities)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 287, in _set_entities
+self._raw_columns = [
+                    
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 288, in <listcomp>
+coercions.expect(
+^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/sql/coercions.py", line 388, in expect
+insp._post_inspect
+^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py", line 1253, in __get__
+obj.__dict__[self.__name__] = result = self.fget(obj)
+                                       ^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2722, in _post_inspect
+self._check_configure()
+^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 2399, in _check_configure
+_configure_registries({self.registry}, cascade=True)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 4215, in _configure_registries
+_do_configure_registries(registries, cascade)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/AI-Integration-Prototype/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/mapper.py", line 4252, in _do_configure_registries
+raise e
+^^^^^^^
+sqlalchemy.exc.InvalidRequestError: One or more mappers failed to initialize - can't proceed with initialization of other mappers. Triggering mapper: 'Mapper[Transaction(transactions)]'. Original exception was: Error creating backref 'bank_transactions' on relationship 'Transaction.bank_account': property of that name exists on mapper 'Mapper[Account(account)]'
+The debugger caught an exception in your WSGI application. You can now look at the traceback which led to the error.
+To switch between the interactive traceback and the plaintext one, you can click on the "Traceback" headline. From the text traceback you can also create a paste of it.
+
+Brought to you by DON'T PANIC, your friendly Werkzeug powered traceback interpreter.
