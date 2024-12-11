@@ -312,20 +312,25 @@ def upload():
                 try:
                     # Create transaction record
                     # Try multiple date formats
-                    date_str = str(row['Date'])
-                    date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
-                    parsed_date = None
-                    
-                    for date_format in date_formats:
-                        try:
-                            parsed_date = pd.to_datetime(date_str, format=date_format)
-                            break
-                        except ValueError:
-                            continue
-                    
-                    if parsed_date is None:
-                        logger.warning(f"Could not parse date: {date_str}")
-                        raise ValueError(f"Invalid date format: {date_str}")
+                    date_str = str(row['date'])
+                    try:
+                        # First try parsing without explicit format
+                        parsed_date = pd.to_datetime(date_str)
+                    except:
+                        # If that fails, try specific formats
+                        date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
+                        parsed_date = None
+                        
+                        for date_format in date_formats:
+                            try:
+                                parsed_date = pd.to_datetime(date_str, format=date_format)
+                                break
+                            except ValueError:
+                                continue
+                        
+                        if parsed_date is None:
+                            logger.warning(f"Could not parse date: {date_str}")
+                            raise ValueError(f"Invalid date format: {date_str}")
                     
                     transaction = Transaction(
                         date=parsed_date,
