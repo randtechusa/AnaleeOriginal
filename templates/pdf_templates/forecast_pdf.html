@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Expense Forecast Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 40px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 40px;
+        }
+        .metrics {
+            margin: 20px 0;
+        }
+        .metric-item {
+            margin: 10px 0;
+        }
+        .recommendations {
+            background-color: #f8f9fa;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Expense Forecast Report</h1>
+        <p>Generated on {{ datetime.now().strftime('%Y-%m-%d %H:%M:%S') }}</p>
+    </div>
+
+    <div class="section">
+        <h2>Forecast Metrics</h2>
+        <div class="metrics">
+            <div class="metric-item">
+                <strong>Overall Confidence:</strong> 
+                {{ "%.1f"|format(forecast.confidence_metrics.overall_confidence * 100) }}%
+            </div>
+            <div class="metric-item">
+                <strong>Variance Range:</strong>
+                ${{ "%.2f"|format(forecast.confidence_metrics.variance_range.min) }} - 
+                ${{ "%.2f"|format(forecast.confidence_metrics.variance_range.max) }}
+            </div>
+            <div class="metric-item">
+                <strong>Reliability Score:</strong>
+                {{ "%.1f"|format(forecast.confidence_metrics.reliability_score * 100) }}%
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Monthly Forecast Breakdown</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Month</th>
+                    <th>Predicted Amount</th>
+                    <th>Confidence Range</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for label, amount, upper, lower in zip(monthly_labels, monthly_amounts, confidence_upper, confidence_lower) %}
+                <tr>
+                    <td>{{ label }}</td>
+                    <td>${{ "%.2f"|format(amount) }}</td>
+                    <td>${{ "%.2f"|format(lower) }} - ${{ "%.2f"|format(upper) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Category Analysis</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Average Monthly Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for label, amount in zip(category_labels, category_amounts) %}
+                <tr>
+                    <td>{{ label }}</td>
+                    <td>${{ "%.2f"|format(amount) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Key Insights</h2>
+        <div class="recommendations">
+            {% for insight in forecast.key_insights %}
+            <div class="metric-item">
+                <strong>{{ insight.category }}:</strong> 
+                {{ insight.finding }}
+                (Impact: {{ insight.impact_level }}, Trend: {{ insight.trend }})
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Recommendations</h2>
+        <div class="recommendations">
+            {% for rec in forecast.recommendations %}
+            <div class="metric-item">
+                <strong>{{ rec.action }}</strong>
+                <br>
+                Impact: {{ rec.potential_impact }}
+                <br>
+                Timeline: {{ rec.implementation_timeline }}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>
