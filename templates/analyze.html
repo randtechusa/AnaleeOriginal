@@ -3,9 +3,25 @@
 {% block content %}
 <div class="card">
     <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="mb-4">
             <h2 class="card-title">Analyze Transactions</h2>
-            <h5>File: {{ file.filename }}</h5>
+            <div class="d-flex justify-content-between align-items-center">
+                <h5>File: {{ file.filename }}</h5>
+                <div class="form-group" style="width: 300px;">
+                    <label for="bank_account" class="form-label">Select Bank Account</label>
+                    <select class="form-select" id="bank_account" name="bank_account">
+                        <option value="">Select Bank Account</option>
+                        {% for account in accounts %}
+                            {% if account.category.lower() == 'bank' or 'bank' in account.name.lower() %}
+                                <option value="{{ account.id }}" 
+                                        {% if bank_account_id == account.id %}selected{% endif %}>
+                                    {{ account.name }}
+                                </option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
         </div>
 
         {% if transactions %}
