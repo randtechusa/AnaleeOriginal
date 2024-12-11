@@ -185,9 +185,27 @@
         <div class="recommendations">
             {% for insight in forecast.key_insights %}
             <div class="metric-item">
-                <strong>{{ insight.category }}:</strong> 
-                {{ insight.finding }}
-                (Impact: {{ insight.impact_level }}, Trend: {{ insight.trend }})
+                <div class="d-flex justify-content-between align-items-start">
+                    <strong>{{ insight.category }}</strong>
+                    {% if insight.impact_level == 'high' %}
+                        <span class="badge bg-danger">High Impact</span>
+                    {% elif insight.impact_level == 'medium' %}
+                        <span class="badge bg-warning">Medium Impact</span>
+                    {% else %}
+                        <span class="badge bg-info">Low Impact</span>
+                    {% endif %}
+                </div>
+                <p>{{ insight.finding }}</p>
+                <small class="text-muted">
+                    Trend: 
+                    {% if insight.trend == 'increasing' %}
+                        <span class="positive">↑ Increasing</span>
+                    {% elif insight.trend == 'decreasing' %}
+                        <span class="negative">↓ Decreasing</span>
+                    {% else %}
+                        <span class="neutral">→ Stable</span>
+                    {% endif %}
+                </small>
             </div>
             {% endfor %}
         </div>
@@ -198,11 +216,20 @@
         <div class="recommendations">
             {% for rec in forecast.recommendations %}
             <div class="metric-item">
-                <strong>{{ rec.action }}</strong>
-                <br>
-                Impact: {{ rec.potential_impact }}
-                <br>
-                Timeline: {{ rec.implementation_timeline }}
+                <div class="d-flex w-100 justify-content-between">
+                    <strong>{{ rec.action }}</strong>
+                    <small class="timeline">{{ rec.implementation_timeline }}</small>
+                </div>
+                <p class="mt-2">{{ rec.potential_impact }}</p>
+                <div class="implementation-progress">
+                    {% if rec.implementation_timeline == 'Immediate' %}
+                        <div class="progress-indicator urgent">Priority: Immediate Action Required</div>
+                    {% elif rec.implementation_timeline == 'Short-term' %}
+                        <div class="progress-indicator short">Timeline: Within 1-3 Months</div>
+                    {% else %}
+                        <div class="progress-indicator long">Timeline: Long-term Strategy</div>
+                    {% endif %}
+                </div>
             </div>
             {% endfor %}
         </div>
