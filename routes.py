@@ -391,8 +391,17 @@ def upload():
 def output():
     transactions = Transaction.query.filter_by(user_id=current_user.id).all()
     trial_balance = {}
+    
     for transaction in transactions:
+        # Add the main account entry
         if transaction.account:
             account_name = transaction.account.name
             trial_balance[account_name] = trial_balance.get(account_name, 0) + transaction.amount
+            
+        # Add the corresponding bank account entry (double-entry)
+        if transaction.bank_account:
+            bank_name = transaction.bank_account.name
+            # Reverse the amount for the bank account (double-entry)
+            trial_balance[bank_name] = trial_balance.get(bank_name, 0) - transaction.amount
+            
     return render_template('output.html', trial_balance=trial_balance)
