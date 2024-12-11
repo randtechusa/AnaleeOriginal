@@ -24,7 +24,34 @@
                                 {% else %}
                                     <ul class="list-unstyled mb-0">
                                     {% for insight in financial_advice.key_insights %}
-                                        <li class="mb-2">{{ insight }}</li>
+                                        <li class="mb-3">
+                                            <div class="d-flex align-items-start">
+                                                <div class="flex-shrink-0">
+                                                    {% if insight.impact_level == 'high' %}
+                                                        <span class="badge bg-danger">High Impact</span>
+                                                    {% elif insight.impact_level == 'medium' %}
+                                                        <span class="badge bg-warning">Medium Impact</span>
+                                                    {% else %}
+                                                        <span class="badge bg-info">Low Impact</span>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="ms-3">
+                                                    <p class="mb-1"><strong>{{ insight.category }}</strong></p>
+                                                    <p class="mb-1">{{ insight.finding }}</p>
+                                                    <small class="text-muted">
+                                                        Trend: 
+                                                        {% if insight.trend == 'increasing' %}
+                                                            <i class="fas fa-arrow-up text-success"></i>
+                                                        {% elif insight.trend == 'decreasing' %}
+                                                            <i class="fas fa-arrow-down text-danger"></i>
+                                                        {% else %}
+                                                            <i class="fas fa-arrows-h text-warning"></i>
+                                                        {% endif %}
+                                                        {{ insight.trend|title }}
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </li>
                                     {% endfor %}
                                     </ul>
                                 {% endif %}
@@ -88,7 +115,33 @@
                         <h4>Cash Flow Analysis</h4>
                         <div class="card bg-light">
                             <div class="card-body">
-                                {{ financial_advice.cash_flow_analysis }}
+                                <div class="mb-3">
+                                    <h6 class="text-primary">Current Status</h6>
+                                    <p>{{ financial_advice.cash_flow_analysis.current_status }}</p>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <h6 class="text-primary">Projected Trend</h6>
+                                    <p>{{ financial_advice.cash_flow_analysis.projected_trend }}</p>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <h6 class="text-primary">Key Drivers</h6>
+                                    <ul class="list-group">
+                                        {% for driver in financial_advice.cash_flow_analysis.key_drivers %}
+                                            <li class="list-group-item">{{ driver }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                
+                                <div>
+                                    <h6 class="text-primary">Improvement Suggestions</h6>
+                                    <ul class="list-group">
+                                        {% for suggestion in financial_advice.cash_flow_analysis.improvement_suggestions %}
+                                            <li class="list-group-item">{{ suggestion }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
