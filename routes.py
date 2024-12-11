@@ -502,8 +502,6 @@ def delete_file(file_id):
 @main.route('/output')
 @login_required
 def output():
-    trial_balance = []
-    
     # Get company settings for financial year
     company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
     if not company_settings:
@@ -514,32 +512,37 @@ def output():
     selected_year = request.args.get('financial_year', type=int)
     current_date = datetime.utcnow()
     
+    # If no year selected, calculate current financial year
     if not selected_year:
-        # Calculate current financial year based on company settings
         if current_date.month > company_settings.financial_year_end:
             selected_year = current_date.year
         else:
             selected_year = current_date.year - 1
     
-    # Get available financial years
+    # Get available financial years from transactions
     financial_years = set()
-    for t in Transaction.query.filter_by(user_id=current_user.id).all():
-        if t.date.month > company_settings.financial_year_end:
-            financial_years.add(t.date.year)
-        else:
-            financial_years.add(t.date.year - 1)
-    financial_years = sorted(list(financial_years))
+    transactions_query = Transaction.query.filter_by(user_id=current_user.id)
     
-    # Get financial year dates from company settings using selected year
+    for t in transactions_query.all():
+        fy = company_settings.get_financial_year(t.date)
+        if fy['start_date'].month > company_settings.financial_year_end:
+            financial_years.add(fy['start_date'].year)
+        else:
+            financial_years.add(fy['start_date'].year - 1)
+    
+    financial_years = sorted(list(financial_years))
+    if not financial_years and selected_year:
+        financial_years = [selected_year]
+    
+    # Get financial year dates for the selected year
     fy_dates = company_settings.get_financial_year(year=selected_year)
     start_date = fy_dates['start_date']
     end_date = fy_dates['end_date']
     
     # Get transactions for the selected financial year
-    transactions = Transaction.query.filter(
-        Transaction.user_id == current_user.id,
+    transactions = transactions_query.filter(
         Transaction.date >= start_date,
-        Transaction.date < end_date
+        Transaction.date <= end_date
     ).all()
     
     # Initialize account balances
@@ -547,7 +550,7 @@ def output():
     
     # Process transactions to build trial balance
     for transaction in transactions:
-        # Process main account
+        # Process main account entry
         if transaction.account:
             account = transaction.account
             if account.name not in account_balances:
@@ -560,7 +563,7 @@ def output():
                 }
             account_balances[account.name]['amount'] += transaction.amount
         
-        # Process bank account (double-entry)
+        # Process bank account entry (double-entry)
         if transaction.bank_account:
             bank_account = transaction.bank_account
             if bank_account.name not in account_balances:
@@ -573,8 +576,18 @@ def output():
                 }
             account_balances[bank_account.name]['amount'] -= transaction.amount
     
-    # Convert account_balances to list and sort by category
-    trial_balance = sorted(account_balances.values(), key=lambda x: (x['category'] or '', x['account_name']))
+    # Convert account_balances to list and sort by category and account name
+    trial_balance = sorted(
+        account_balances.values(),
+        key=lambda x: (x['category'] or '', x['account_name'])
+    )
+    
+    # Log some debug information
+    logger.debug(f"Financial Years: {financial_years}")
+    logger.debug(f"Selected Year: {selected_year}")
+    logger.debug(f"Date Range: {start_date} to {end_date}")
+    logger.debug(f"Number of transactions: {len(transactions)}")
+    logger.debug(f"Number of accounts in trial balance: {len(trial_balance)}")
     
     return render_template('output.html',
                          trial_balance=trial_balance,
