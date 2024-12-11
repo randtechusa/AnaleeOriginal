@@ -128,8 +128,9 @@
                 <tfoot>
                     <tr>
                         <th>Total</th>
-                        <th class="text-end {{ 'text-success' if trial_balance.values()|sum > 0 else 'text-danger' }}">
-                            ${{ "%.2f"|format(trial_balance.values()|sum|abs) }}
+                        {% set total = trial_balance|map(attribute='amount')|sum %}
+                        <th class="text-end {{ 'text-success' if total > 0 else 'text-danger' }}">
+                            ${{ "%.2f"|format(total|abs) }}
                         </th>
                     </tr>
                 </tfoot>
