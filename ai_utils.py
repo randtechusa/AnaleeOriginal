@@ -239,7 +239,7 @@ def generate_financial_advice(transactions, accounts):
             for acc in accounts
         ])
         
-        prompt = f"""Analyze these financial transactions and account balances to provide comprehensive financial insights and predictive advice:
+        prompt = f"""Analyze these financial transactions and account balances to provide comprehensive natural language insights and predictive advice:
 
 Transaction History:
 {transaction_summary}
@@ -248,29 +248,33 @@ Account Balances:
 {account_summary}
 
 Instructions:
-1. Analyze transaction patterns and financial trends
-   - Identify recurring patterns
-   - Calculate growth rates
-   - Detect seasonal variations
-   - Evaluate account utilization efficiency
+1. Perform Detailed Pattern Analysis
+   - Identify and explain recurring transaction patterns
+   - Calculate and interpret growth rates with context
+   - Analyze seasonal variations and their business impact
+   - Evaluate account utilization efficiency with recommendations
+   - Provide natural language explanations for each pattern
 
-2. Assess financial health metrics
-   - Cash flow stability
-   - Account balance trends
-   - Spending patterns
-   - Revenue diversification
+2. Generate In-depth Financial Health Assessment
+   - Analyze cash flow stability with detailed commentary
+   - Track and explain account balance trends
+   - Break down spending patterns by category
+   - Assess revenue diversification opportunities
+   - Highlight key financial ratios and their implications
 
-3. Predict potential future scenarios
-   - Growth projections
-   - Risk assessment
-   - Cash flow forecasts
-   - Budget optimization opportunities
+3. Create Forward-looking Analysis
+   - Project growth trajectories with supporting data
+   - Conduct comprehensive risk assessment
+   - Generate detailed cash flow forecasts
+   - Identify specific budget optimization opportunities
+   - Explain market and industry context
 
-4. Generate strategic recommendations
-   - Short-term actions (next 30 days)
-   - Medium-term strategy (3-6 months)
-   - Long-term planning (6-12 months)
-   - Risk mitigation steps
+4. Develop Actionable Recommendations
+   - Provide specific short-term actions (next 30 days)
+   - Outline medium-term strategy (3-6 months)
+   - Detail long-term planning (6-12 months)
+   - Include implementation steps for each recommendation
+   - Explain expected outcomes and success metrics
 
 Provide a detailed financial analysis in this JSON structure:
 {
