@@ -48,8 +48,29 @@ def register():
             password_hash=generate_password_hash(request.form['password'])
         )
         try:
+            # First save the user to get their ID
             db.session.add(user)
             db.session.commit()
+
+            # Get template accounts from the first user (admin)
+            template_user = User.query.filter(User.id != user.id).first()
+            if template_user:
+                template_accounts = Account.query.filter_by(user_id=template_user.id).all()
+                # Copy accounts to new user
+                for template_account in template_accounts:
+                    new_account = Account(
+                        link=template_account.link,
+                        category=template_account.category,
+                        sub_category=template_account.sub_category,
+                        account_code=template_account.account_code,
+                        name=template_account.name,
+                        user_id=user.id,
+                        is_active=template_account.is_active
+                    )
+                    db.session.add(new_account)
+                db.session.commit()
+                logger.info(f'Copied {len(template_accounts)} accounts to new user {user.username}')
+
             flash('Registration successful')
             return redirect(url_for('main.login'))
         except Exception as e:
@@ -62,66 +83,24 @@ def register():
 @login_required
 def settings():
     if request.method == 'POST':
-        if 'file' in request.files:
-            file = request.files['file']
-            if file and file.filename.endswith('.xlsx'):
-                try:
-                    df = pd.read_excel(file)
-                    logger.debug(f"Uploaded file columns: {df.columns.tolist()}")
-                    
-                    # Define column mappings
-                    required_columns = {
-                        'Links': 'link',
-                        'Category': 'category',
-                        'Account Name': 'name',
-                        'Sub Category': 'sub_category',
-                        'Accounts': 'account_code'
-                    }
-                    
-                    # Validate required columns
-                    missing_columns = [col for col in required_columns if col not in df.columns]
-                    if missing_columns:
-                        flash(f'Missing required columns: {", ".join(missing_columns)}')
-                        return redirect(url_for('main.settings'))
-                    
-                    # Process each row
-                    for _, row in df.iterrows():
-                        existing_account = Account.query.filter_by(
-                            link=row['Links'],
-                            user_id=current_user.id
-                        ).first()
-                        
-                        account_data = {
-                            'link': row['Links'],
-                            'name': row['Account Name'],
-                            'category': row['Category'],
-                            'sub_category': row.get('Sub Category', ''),
-                            'account_code': row.get('Accounts', ''),
-                            'user_id': current_user.id
-                        }
-                        
-                        if existing_account:
-                            logger.info(f"Updating account: {row['Links']}")
-                            for key, value in account_data.items():
-                                setattr(existing_account, key, value)
-                        else:
-                            logger.info(f"Creating account: {row['Links']}")
-                            account = Account(**account_data)
-                            db.session.add(account)
-                    
-                    db.session.commit()
-                    flash('Chart of Accounts imported successfully')
-                    logger.info('Chart of Accounts import completed successfully')
-                    
-                except Exception as e:
-                    logger.error(f'Error importing chart of accounts: {str(e)}')
-                    logger.exception("Full stack trace:")
-                    flash(f'Error importing chart of accounts: {str(e)}')
-                    db.session.rollback()
-            else:
-                flash('Please upload a valid Excel file (.xlsx)')
-        else:
-            # Handle manual account addition
+        # Handle manual account addition
+        try:
+            account = Account(
+                link=request.form['link'],
+                name=request.form['name'],
+                category=request.form['category'],
+                sub_category=request.form.get('sub_category', ''),
+                account_code=request.form.get('account_code', ''),
+                user_id=current_user.id
+            )
+            db.session.add(account)
+            db.session.commit()
+            flash('Account added successfully')
+            logger.info(f'New account added: {account.name}')
+        except Exception as e:
+            logger.error(f'Error adding account: {str(e)}')
+            flash(f'Error adding account: {str(e)}')
+            db.session.rollback()
             try:
                 account = Account(
                     link=request.form['link'],
