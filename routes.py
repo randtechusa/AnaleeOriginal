@@ -210,7 +210,20 @@ def dashboard():
 @login_required
 def analyze():
     accounts = Account.query.filter_by(user_id=current_user.id).all()
-    return render_template('analyze.html', accounts=accounts)
+    transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+    
+    # Initialize categories dictionary for the pie chart
+    categories = {}
+    for transaction in transactions:
+        if transaction.account:
+            category = transaction.account.category
+            amount = abs(transaction.amount)  # Use absolute value for the chart
+            categories[category] = categories.get(category, 0) + amount
+    
+    return render_template('analyze.html', 
+                         accounts=accounts,
+                         transactions=transactions,
+                         categories=categories if categories else {'No Data': 100})
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
