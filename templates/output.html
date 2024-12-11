@@ -1,31 +1,48 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="card mb-4">
-    <div class="card-body">
-        <h2 class="card-title">Select Bank Statement</h2>
-        <form method="GET" action="{{ url_for('main.output') }}" class="mb-3">
-            <div class="row align-items-end">
-                <div class="col-md-8">
-                    <label for="file_select" class="form-label">Choose Bank Statement</label>
-                    <select class="form-select" id="file_select" name="file_id" onchange="this.form.submit()">
-                        <option value="">Select a file...</option>
-                        {% for file in files %}
-                        <option value="{{ file.id }}" {% if selected_file and selected_file.id == file.id %}selected{% endif %}>
-                            {{ file.filename }} ({{ file.upload_date.strftime('%Y-%m-%d') }})
-                        </option>
-                        {% endfor %}
-                    </select>
+<div class="row">
+    <div class="col-md-12 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">Bank Statements</h2>
+                {% if files %}
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>File Name</th>
+                                <th>Upload Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file in files %}
+                            <tr>
+                                <td>{{ file.filename }}</td>
+                                <td>{{ file.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>
+                                    <a href="{{ url_for('main.output', file_id=file.id) }}" class="btn btn-sm btn-primary">View</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
+                {% else %}
+                <div class="alert alert-info">
+                    No files uploaded yet.
+                </div>
+                {% endif %}
             </div>
-        </form>
+        </div>
     </div>
-</div>
 
-{% if selected_file %}
-<div class="card">
-    <div class="card-body">
-        <h2 class="card-title mb-4">Trial Balance - {{ selected_file.filename }}</h2>
+    {% if selected_file %}
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">Trial Balance - {{ selected_file.filename }}</h2>
         <div class="table-responsive">
             <table class="table table-striped">
                 <thead>
