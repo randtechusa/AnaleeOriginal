@@ -502,48 +502,110 @@ def delete_file(file_id):
 @main.route('/output')
 @login_required
 def output():
-    # Get company settings for financial year
-    company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
-    if not company_settings:
-        flash('Please configure company settings first.')
-        return redirect(url_for('main.company_settings'))
+    try:
+        # Get company settings for financial year
+        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+        if not company_settings:
+            flash('Please configure company settings first.')
+            return redirect(url_for('main.company_settings'))
+        
+        logger.info(f"Company settings found for user {current_user.id}, FY end month: {company_settings.financial_year_end}")
+        
+        # Get selected year from query params or use current year
+        selected_year = request.args.get('financial_year', type=int)
+        current_date = datetime.utcnow()
+        
+        # If no year selected, calculate current financial year
+        if not selected_year:
+            current_fy = company_settings.get_financial_year(date=current_date)
+            selected_year = current_fy['start_year']
+            logger.debug(f"No year selected, using current FY starting {selected_year}")
+        
+        # Get available financial years from transactions
+        financial_years = set()
+        transactions_query = Transaction.query.filter_by(user_id=current_user.id)
+        transactions = transactions_query.all()
+        
+        for transaction in transactions:
+            # Get the financial year for each transaction
+            fy = company_settings.get_financial_year(date=transaction.date)
+            financial_years.add(fy['start_year'])
+        
+        financial_years = sorted(list(financial_years))
+        if not financial_years and selected_year:
+            financial_years = [selected_year]
+            logger.debug("No transactions found, using selected year only")
+        
+        logger.info(f"Available financial years: {financial_years}")
+        logger.info(f"Selected year: {selected_year}")
+        
+        # Get financial year dates for the selected year
+        fy_dates = company_settings.get_financial_year(year=selected_year)
+        start_date = fy_dates['start_date']
+        end_date = fy_dates['end_date']
+        
+        logger.info(f"Calculated FY period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     
-    # Get selected year from query params or use current year
-    selected_year = request.args.get('financial_year', type=int)
-    current_date = datetime.utcnow()
-    
-    # If no year selected, calculate current financial year
-    if not selected_year:
-        if current_date.month > company_settings.financial_year_end:
-            selected_year = current_date.year
-        else:
-            selected_year = current_date.year - 1
-    
-    # Get available financial years from transactions
-    financial_years = set()
-    transactions_query = Transaction.query.filter_by(user_id=current_user.id)
-    
-    for t in transactions_query.all():
-        fy = company_settings.get_financial_year(t.date)
-        if fy['start_date'].month > company_settings.financial_year_end:
-            financial_years.add(fy['start_date'].year)
-        else:
-            financial_years.add(fy['start_date'].year - 1)
-    
-    financial_years = sorted(list(financial_years))
-    if not financial_years and selected_year:
-        financial_years = [selected_year]
-    
-    # Get financial year dates for the selected year
-    fy_dates = company_settings.get_financial_year(year=selected_year)
-    start_date = fy_dates['start_date']
-    end_date = fy_dates['end_date']
-    
-    # Get transactions for the selected financial year
-    transactions = transactions_query.filter(
-        Transaction.date >= start_date,
-        Transaction.date <= end_date
-    ).all()
+        # Get transactions for the selected financial year
+        transactions = transactions_query.filter(
+            Transaction.date >= start_date,
+            Transaction.date <= end_date
+        ).all()
+        
+        # Initialize account balances
+        account_balances = {}
+        
+        # Process transactions to build trial balance
+        for transaction in transactions:
+            # Process main account entry
+            if transaction.account:
+                account = transaction.account
+                if account.name not in account_balances:
+                    account_balances[account.name] = {
+                        'account_name': account.name,
+                        'category': account.category,
+                        'sub_category': account.sub_category,
+                        'link': account.link,
+                        'amount': 0
+                    }
+                account_balances[account.name]['amount'] += transaction.amount
+            
+            # Process bank account entry (double-entry)
+            if transaction.bank_account:
+                bank_account = transaction.bank_account
+                if bank_account.name not in account_balances:
+                    account_balances[bank_account.name] = {
+                        'account_name': bank_account.name,
+                        'category': bank_account.category,
+                        'sub_category': bank_account.sub_category,
+                        'link': bank_account.link,
+                        'amount': 0
+                    }
+                account_balances[bank_account.name]['amount'] -= transaction.amount
+        
+        # Convert account_balances to list and sort by category and account name
+        trial_balance = sorted(
+            account_balances.values(),
+            key=lambda x: (x['category'] or '', x['account_name'])
+        )
+        
+        # Log some debug information
+        logger.debug(f"Financial Years: {financial_years}")
+        logger.debug(f"Selected Year: {selected_year}")
+        logger.debug(f"Date Range: {start_date} to {end_date}")
+        logger.debug(f"Number of transactions: {len(transactions)}")
+        logger.debug(f"Number of accounts in trial balance: {len(trial_balance)}")
+        
+        return render_template('output.html',
+                            trial_balance=trial_balance,
+                            financial_years=financial_years,
+                            current_year=selected_year)
+                            
+    except Exception as e:
+        logger.error(f"Error generating trial balance: {str(e)}")
+        logger.exception("Full stack trace:")
+        flash('Error generating trial balance. Please try again.')
+        return redirect(url_for('main.dashboard'))
     
     # Initialize account balances
     account_balances = {}
