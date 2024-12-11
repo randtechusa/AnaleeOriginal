@@ -15,16 +15,26 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return f'<User {self.username}>'
 
+class UploadedFile(db.Model):
+    __tablename__ = 'uploaded_files'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    upload_date = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    transactions = db.relationship('Transaction', backref='file', lazy=True)
+
 class Transaction(db.Model):
     __tablename__ = 'transactions'
     
     id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    date = db.Column(db.DateTime, nullable=False)
     description = db.Column(db.String(200), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     explanation = db.Column(db.String(255))  # User-provided explanation
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
+    file_id = db.Column(db.Integer, db.ForeignKey('uploaded_files.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

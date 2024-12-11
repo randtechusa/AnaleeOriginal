@@ -1,39 +1,82 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="card">
-    <div class="card-body">
-        <h2 class="card-title mb-4">Upload Bank Statement</h2>
-        
-        <form method="POST" enctype="multipart/form-data">
-            <div class="mb-3">
-                <label for="file" class="form-label">Bank Statement File</label>
-                <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
-                <div class="form-text">
-                    Upload bank statement in CSV or Excel format
-                </div>
+<div class="row">
+    <div class="col-md-12 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">Upload New Bank Statement</h2>
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Bank Statement File</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
+                        <div class="form-text">
+                            Upload bank statement in CSV or Excel format
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </form>
             </div>
-            <button type="submit" class="btn btn-primary">Upload</button>
-        </form>
-        
-        <div class="mt-4">
-            <h5>File Format Requirements:</h5>
-            <ul>
-                <li>Required columns:
-                    <ul>
-                        <li>Date (format: YYYYMMDD)</li>
-                        <li>Description (e.g., "Electricity Bill")</li>
-                        <li>Amount (numeric value)</li>
-                    </ul>
-                </li>
-                <li>Supported formats: CSV or Excel (.xlsx)</li>
-                <li>The system will automatically create empty fields for:
-                    <ul>
-                        <li>Explanation (for your transaction notes)</li>
-                        <li>Analysis (for account categorization)</li>
-                    </ul>
-                </li>
-            </ul>
+        </div>
+    </div>
+
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title">Uploaded Files</h2>
+                {% if files %}
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>File Name</th>
+                                <th>Upload Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file in files %}
+                            <tr>
+                                <td>{{ file.filename }}</td>
+                                <td>{{ file.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>
+                                    <a href="{{ url_for('main.analyze', file_id=file.id) }}" class="btn btn-sm btn-primary">Analyze</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    No files uploaded yet.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-12 mt-4">
+        <div class="card">
+            <div class="card-body">
+                <h5>File Format Requirements:</h5>
+                <ul>
+                    <li>Required columns:
+                        <ul>
+                            <li>Date (supports multiple formats)</li>
+                            <li>Description (e.g., "Electricity Bill")</li>
+                            <li>Amount (numeric value)</li>
+                        </ul>
+                    </li>
+                    <li>Supported formats: CSV or Excel (.xlsx)</li>
+                    <li>The system will create:
+                        <ul>
+                            <li>Explanation field for your notes</li>
+                            <li>Analysis field for account selection</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
         </div>
     </div>
 </div>

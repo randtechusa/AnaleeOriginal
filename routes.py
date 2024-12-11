@@ -206,28 +206,42 @@ def dashboard():
                          total_income=total_income,
                          total_expenses=total_expenses)
 
-@main.route('/analyze')
+@main.route('/analyze/<int:file_id>', methods=['GET', 'POST'])
 @login_required
-def analyze():
+def analyze(file_id):
+    file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
     accounts = Account.query.filter_by(user_id=current_user.id).all()
-    transactions = Transaction.query.filter_by(user_id=current_user.id).all()
-    
-    # Initialize categories dictionary for the pie chart
-    categories = {}
-    for transaction in transactions:
-        if transaction.account:
-            category = transaction.account.category
-            amount = abs(transaction.amount)  # Use absolute value for the chart
-            categories[category] = categories.get(category, 0) + amount
+    transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).all()
+
+    if request.method == 'POST':
+        try:
+            for transaction in transactions:
+                explanation_key = f'explanation_{transaction.id}'
+                analysis_key = f'analysis_{transaction.id}'
+                
+                if explanation_key in request.form:
+                    transaction.explanation = request.form[explanation_key]
+                if analysis_key in request.form:
+                    transaction.account_id = request.form[analysis_key]
+            
+            db.session.commit()
+            flash('Changes saved successfully', 'success')
+        except Exception as e:
+            logger.error(f"Error saving analysis changes: {str(e)}")
+            db.session.rollback()
+            flash('Error saving changes', 'error')
     
     return render_template('analyze.html', 
+                         file=file,
                          accounts=accounts,
-                         transactions=transactions,
-                         categories=categories if categories else {'No Data': 100})
+                         transactions=transactions)
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
+    # Get list of uploaded files
+    files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+    
     if request.method == 'POST':
         if 'file' not in request.files:
             flash('No file uploaded')
@@ -344,16 +358,28 @@ def upload():
                     logger.error(f'Error processing row: {row} - {str(row_error)}')
                     continue
                     
+            # Create uploaded file record
+            uploaded_file = UploadedFile(
+                filename=file.filename,
+                user_id=current_user.id
+            )
+            db.session.add(uploaded_file)
+            db.session.commit()
+            
+            # Associate transactions with the file
+            for transaction in Transaction.query.filter_by(user_id=current_user.id, file_id=None).all():
+                transaction.file_id = uploaded_file.id
+            
             db.session.commit()
             flash('File uploaded and processed successfully')
-            return redirect(url_for('main.analyze'))
+            return redirect(url_for('main.analyze', file_id=uploaded_file.id))
             
         except Exception as e:
             logger.error(f'Error processing file: {str(e)}')
             db.session.rollback()
             flash(f'Error processing file: {str(e)}')
             
-    return render_template('upload.html')
+    return render_template('upload.html', files=files)
 
 @main.route('/output')
 @login_required
