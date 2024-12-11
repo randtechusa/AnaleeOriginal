@@ -341,7 +341,8 @@ def analyze(file_id):
     return render_template('analyze.html', 
                          file=file,
                          accounts=accounts,
-                         transactions=transactions)
+                         transactions=transactions,
+                         bank_account_id=request.form.get('bank_account', type=int))
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
