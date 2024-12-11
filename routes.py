@@ -428,7 +428,7 @@ def output(file_id=None):
     # Get all uploaded files for selection
     files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
     
-    trial_balance = {}
+    trial_balance = []
     selected_file = None
     categories = []
     
@@ -463,8 +463,18 @@ def output(file_id=None):
                 if category_filter and transaction.account.category != category_filter:
                     continue
                     
-                account_name = transaction.account.name
-                trial_balance[account_name] = trial_balance.get(account_name, 0) + transaction.amount
+                account = transaction.account
+                account_info = next((item for item in trial_balance if item['account_name'] == account.name), None)
+                if account_info is None:
+                    account_info = {
+                        'account_name': account.name,
+                        'category': account.category,
+                        'sub_category': account.sub_category,
+                        'link': account.link,
+                        'amount': 0
+                    }
+                    trial_balance.append(account_info)
+                account_info['amount'] += transaction.amount
                 
             # Add the corresponding bank account entry (double-entry)
             if transaction.bank_account:

@@ -87,13 +87,42 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for account, amount in trial_balance.items() %}
-                    <tr>
-                        <td>{{ account }}</td>
-                        <td class="text-end {{ 'text-success' if amount > 0 else 'text-danger' }}">
-                            ${{ "%.2f"|format(amount|abs) }}
-                        </td>
-                    </tr>
+                    {% set current_category = None %}
+                    {% for item in trial_balance %}
+                        {% if item.category != current_category %}
+                            {% set current_category = item.category %}
+                            <tr class="table-secondary">
+                                <td colspan="2"><strong>{{ current_category }}</strong></td>
+                            </tr>
+                        {% endif %}
+                        <tr>
+                            <td>
+                                <div class="d-flex justify-content-between">
+                                    {{ item.account_name }}
+                                    <button class="btn btn-sm btn-link p-0" 
+                                            type="button" 
+                                            data-bs-toggle="collapse" 
+                                            data-bs-target="#details-{{ loop.index }}"
+                                            aria-expanded="false">
+                                        <small>View Details</small>
+                                    </button>
+                                </div>
+                                <div class="collapse mt-2" id="details-{{ loop.index }}">
+                                    <div class="card card-body p-2">
+                                        <small>
+                                            <strong>Account Code:</strong> {{ item.link }}<br>
+                                            <strong>Category:</strong> {{ item.category }}<br>
+                                            {% if item.sub_category %}
+                                                <strong>Sub Category:</strong> {{ item.sub_category }}
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="text-end {{ 'text-success' if item.amount > 0 else 'text-danger' }}">
+                                ${{ "%.2f"|format(item.amount|abs) }}
+                            </td>
+                        </tr>
                     {% endfor %}
                 </tbody>
                 <tfoot>
