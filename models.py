@@ -79,25 +79,36 @@ class CompanySettings(db.Model):
     user = db.relationship('User', backref=db.backref('company_settings', lazy=True))
 
     def get_financial_year(self, date=None, year=None):
+        """
+        Calculate financial year dates based on the company's financial year end month.
+        
+        Args:
+            date: Optional datetime object to calculate FY for a specific date
+            year: Optional specific year to calculate FY for
+            
+        Returns:
+            dict with start_date and end_date of the financial year
+        """
         if date is None:
             date = datetime.utcnow()
-            
-        # If specific year is provided, use it
+        
+        # If specific year is provided, use it as the starting year
         if year is not None:
             start_year = year
-            end_year = year + 1
         else:
-            # Calculate based on current date
+            # Calculate based on given/current date
             if date.month > self.financial_year_end:
                 start_year = date.year
-                end_year = date.year + 1
             else:
                 start_year = date.year - 1
-                end_year = date.year
-
+        
+        end_year = start_year + 1
+        
         # Calculate start date (first day of the month after year end)
-        start_month = (self.financial_year_end % 12) + 1
-        start_date = datetime(start_year, start_month, 1)
+        if self.financial_year_end == 12:
+            start_date = datetime(start_year + 1, 1, 1)
+        else:
+            start_date = datetime(start_year, self.financial_year_end + 1, 1)
         
         # Calculate end date (last day of financial year end month)
         if self.financial_year_end == 12:
@@ -110,12 +121,14 @@ class CompanySettings(db.Model):
                 last_day = 30
             else:  # 31-day months
                 last_day = 31
-                
+            
             end_date = datetime(end_year, self.financial_year_end, last_day)
         
         return {
             'start_date': start_date,
-            'end_date': end_date
+            'end_date': end_date,
+            'start_year': start_year,
+            'end_year': end_year
         }
 
     def __repr__(self):
