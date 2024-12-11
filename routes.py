@@ -547,13 +547,7 @@ def output():
     # Apply financial year filter
     query = query.filter(Transaction.date >= start_date, Transaction.date < end_date)
     
-    # Apply additional date filters if provided
-    date_from = request.args.get('date_from')
-    date_to = request.args.get('date_to')
-    if date_from:
-        query = query.filter(Transaction.date >= datetime.strptime(date_from, '%Y-%m-%d'))
-    if date_to:
-        query = query.filter(Transaction.date <= datetime.strptime(date_to, '%Y-%m-%d'))
+    # Financial year filtering is already applied above
         
     # Get all transactions matching the filters
     transactions = query.all()
