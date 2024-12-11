@@ -4,48 +4,119 @@
     <meta charset="UTF-8">
     <title>Expense Forecast Report</title>
     <style>
+        @page {
+            margin: 2.5cm;
+            @top-center {
+                content: "Financial Forecast Report";
+                font-family: Arial, sans-serif;
+                font-size: 9pt;
+            }
+            @bottom-center {
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: Arial, sans-serif;
+                font-size: 9pt;
+            }
+        }
         body {
             font-family: Arial, sans-serif;
             line-height: 1.6;
-            margin: 40px;
+            margin: 0;
+            color: #333;
         }
         .header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 20px;
+        }
+        .company-info {
+            margin-bottom: 20px;
+            text-align: left;
         }
         .section {
             margin-bottom: 40px;
+            page-break-inside: avoid;
+        }
+        .section h2 {
+            color: #2c3e50;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
         }
         .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
             margin: 20px 0;
         }
         .metric-item {
-            margin: 10px 0;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .metric-item strong {
+            color: #2c3e50;
+            display: block;
+            margin-bottom: 5px;
         }
         .recommendations {
             background-color: #f8f9fa;
             padding: 20px;
             margin: 20px 0;
+            border-radius: 5px;
+            border-left: 4px solid #2c3e50;
         }
         table {
             width: 100%;
             border-collapse: collapse;
             margin: 20px 0;
+            background: white;
         }
         th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
+            border: 1px solid #dee2e6;
+            padding: 12px;
             text-align: left;
         }
         th {
             background-color: #f8f9fa;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        .positive {
+            color: #28a745;
+        }
+        .negative {
+            color: #dc3545;
+        }
+        .neutral {
+            color: #6c757d;
+        }
+        @media print {
+            .page-break {
+                page-break-before: always;
+            }
         }
     </style>
 </head>
 <body>
     <div class="header">
+        <div class="company-info">
+            {% if company %}
+            <h2>{{ company.company_name }}</h2>
+            <p>
+                {% if company.registration_number %}Registration: {{ company.registration_number }}<br>{% endif %}
+                {% if company.tax_number %}Tax Number: {{ company.tax_number }}<br>{% endif %}
+                {% if company.address %}Address: {{ company.address }}{% endif %}
+            </p>
+            {% endif %}
+        </div>
         <h1>Expense Forecast Report</h1>
         <p>Generated on {{ datetime.now().strftime('%Y-%m-%d %H:%M:%S') }}</p>
+        <p>Financial Year: {{ datetime.now().strftime('%Y') }}/{{ (datetime.now().year + 1)|string }}</p>
     </div>
 
     <div class="section">
