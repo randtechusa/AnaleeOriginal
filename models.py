@@ -78,20 +78,40 @@ class CompanySettings(db.Model):
     
     user = db.relationship('User', backref=db.backref('company_settings', lazy=True))
 
-    def get_financial_year(self, date=None):
+    def get_financial_year(self, date=None, year=None):
         if date is None:
             date = datetime.utcnow()
-        
-        if date.month > self.financial_year_end:
-            start_year = date.year
-            end_year = date.year + 1
-        else:
-            start_year = date.year - 1
-            end_year = date.year
             
-        start_date = datetime(start_year, (self.financial_year_end % 12) + 1, 1)
-        end_date = datetime(end_year, self.financial_year_end, 
-                          28 if self.financial_year_end == 2 else 30)
+        # If specific year is provided, use it
+        if year is not None:
+            start_year = year
+            end_year = year + 1
+        else:
+            # Calculate based on current date
+            if date.month > self.financial_year_end:
+                start_year = date.year
+                end_year = date.year + 1
+            else:
+                start_year = date.year - 1
+                end_year = date.year
+
+        # Calculate start date (first day of the month after year end)
+        start_month = (self.financial_year_end % 12) + 1
+        start_date = datetime(start_year, start_month, 1)
+        
+        # Calculate end date (last day of financial year end month)
+        if self.financial_year_end == 12:
+            end_date = datetime(end_year, 12, 31)
+        else:
+            # Get last day of the month
+            if self.financial_year_end == 2:  # February
+                last_day = 29 if end_year % 4 == 0 and (end_year % 100 != 0 or end_year % 400 == 0) else 28
+            elif self.financial_year_end in [4, 6, 9, 11]:  # 30-day months
+                last_day = 30
+            else:  # 31-day months
+                last_day = 31
+                
+            end_date = datetime(end_year, self.financial_year_end, last_day)
         
         return {
             'start_date': start_date,
