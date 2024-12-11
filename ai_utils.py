@@ -118,3 +118,86 @@ Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy an
     except Exception as e:
         logger.error(f"Error in account prediction: {str(e)}")
         return []
+
+def generate_financial_advice(transactions, accounts):
+    """
+    Generate comprehensive financial advice based on transaction patterns and account usage.
+    
+    Args:
+        transactions: List of transaction dictionaries with amount, description, and account info
+        accounts: List of available accounts with categories and balances
+        
+    Returns:
+        Dictionary containing financial insights and recommendations
+    """
+    try:
+        # Format transaction data for the prompt
+        transaction_summary = "\n".join([
+            f"- Amount: ${t['amount']}, Description: {t['description']}, "
+            f"Account: {t['account_name'] if 'account_name' in t else 'Uncategorized'}"
+            for t in transactions[:10]  # Limit to recent transactions for context
+        ])
+        
+        # Format account balances
+        account_summary = "\n".join([
+            f"- {acc['name']}: ${acc.get('balance', 0):.2f} ({acc['category']})"
+            for acc in accounts
+        ])
+        
+        prompt = f"""Analyze these financial transactions and account balances to provide strategic financial advice:
+
+Transaction History:
+{transaction_summary}
+
+Account Balances:
+{account_summary}
+
+Instructions:
+1. Analyze spending patterns and account utilization
+2. Identify potential areas for optimization
+3. Suggest actionable financial strategies
+4. Consider cash flow management and budget alignment
+5. Evaluate risk factors and opportunities
+
+Provide detailed financial advice in JSON format with these sections:
+1. Key Insights
+2. Risk Factors
+3. Optimization Opportunities
+4. Strategic Recommendations
+5. Cash Flow Analysis
+"""
+
+        # Make API call for financial advice
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an expert financial advisor focusing on business accounting and financial strategy."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=800
+        )
+        
+        # Parse and return the financial advice
+        try:
+            import json
+            advice = json.loads(response.choices[0].message.content)
+            return advice
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return the raw text in a structured format
+            raw_advice = response.choices[0].message.content
+            return {
+                "key_insights": raw_advice,
+                "risk_factors": [],
+                "optimization_opportunities": [],
+                "strategic_recommendations": [],
+                "cash_flow_analysis": ""
+            }
+            
+    except Exception as e:
+        logger.error(f"Error generating financial advice: {str(e)}")
+        return {
+            "error": "Failed to generate financial advice",
+            "details": str(e)
+        }
