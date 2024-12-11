@@ -324,19 +324,16 @@ Provide a detailed financial analysis in this JSON structure:
         # Make API call for financial advice
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
-            # do not change this unless explicitly requested by the user
-            model="gpt-4o",
+            model="gpt-3.5-turbo",  # Using gpt-3.5-turbo for consistent API support
             messages=[
                 {
                     "role": "system", 
-                    "content": "You are an expert financial advisor specializing in business accounting, financial strategy, and predictive analysis. Focus on providing actionable insights and quantitative metrics."
+                    "content": "You are an expert financial advisor specializing in business accounting, financial strategy, and predictive analysis. Focus on providing actionable insights and quantitative metrics. Format your response as valid JSON."
                 },
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,  # Lower temperature for more focused and consistent advice
-            max_tokens=1000,
-            response_format={"type": "json_object"}
+            max_tokens=1000
         )
         
         # Parse and return the financial advice
@@ -477,17 +474,16 @@ Format your response as a JSON object with this structure:
         # Make API call
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",  # Using gpt-3.5-turbo for consistent API support
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert financial analyst specializing in expense forecasting and predictive analysis. Focus on providing accurate, actionable forecasts with detailed supporting analysis."
+                    "content": "You are an expert financial analyst specializing in expense forecasting and predictive analysis. Focus on providing accurate, actionable forecasts with detailed supporting analysis. Format your response as valid JSON."
                 },
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
-            max_tokens=1000,
-            response_format={"type": "json_object"}
+            max_tokens=1000
         )
         
         # Parse and return the forecast
