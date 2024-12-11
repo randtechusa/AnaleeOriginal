@@ -50,7 +50,14 @@ class Account(db.Model):
     account_code = db.Column(db.String(20))  # Accounts from Excel
     name = db.Column(db.String(100), nullable=False)  # Account Name from Excel (e.g., Ned Bank)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    transactions = db.relationship('Transaction', backref='account', lazy=True)
+    transactions = db.relationship('Transaction', 
+                                      foreign_keys=[Transaction.account_id],
+                                      backref='account', 
+                                      lazy=True)
+    bank_transactions = db.relationship('Transaction',
+                                      foreign_keys=[Transaction.bank_account_id],
+                                      backref='bank_account',
+                                      lazy=True)
     is_active = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
