@@ -430,22 +430,48 @@ def output(file_id=None):
     
     trial_balance = {}
     selected_file = None
+    categories = []
     
     if file_id:
         selected_file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
-        transactions = Transaction.query.filter_by(
-            file_id=file_id,
-            user_id=current_user.id
-        ).all()
+        
+        # Get all unique categories for the filter dropdown
+        categories = db.session.query(Account.category).distinct().all()
+        categories = [cat[0] for cat in categories if cat[0]]  # Remove None values
+        
+        # Build the transaction query with filters
+        query = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id)
+        
+        # Apply date filters if provided
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        if date_from:
+            query = query.filter(Transaction.date >= date_from)
+        if date_to:
+            query = query.filter(Transaction.date <= date_to)
+            
+        # Get all transactions matching the filters
+        transactions = query.all()
+        
+        # Filter by category if provided
+        category_filter = request.args.get('category')
         
         for transaction in transactions:
             # Add the main account entry
             if transaction.account:
+                # Skip if category filter is active and doesn't match
+                if category_filter and transaction.account.category != category_filter:
+                    continue
+                    
                 account_name = transaction.account.name
                 trial_balance[account_name] = trial_balance.get(account_name, 0) + transaction.amount
                 
             # Add the corresponding bank account entry (double-entry)
             if transaction.bank_account:
+                # Skip if category filter is active and doesn't match
+                if category_filter and transaction.bank_account.category != category_filter:
+                    continue
+                    
                 bank_name = transaction.bank_account.name
                 # Reverse the amount for the bank account (double-entry)
                 trial_balance[bank_name] = trial_balance.get(bank_name, 0) - transaction.amount
@@ -453,4 +479,5 @@ def output(file_id=None):
     return render_template('output.html', 
                          trial_balance=trial_balance, 
                          files=files,
-                         selected_file=selected_file)
+                         selected_file=selected_file,
+                         categories=categories)
