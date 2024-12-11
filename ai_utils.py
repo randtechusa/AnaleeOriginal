@@ -1,20 +1,13 @@
 import openai
 import logging
 import json
-from datetime import datetime
-
-# Configure logging
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
-import openai
-from datetime import datetime
-import logging
-import json
 import os
+from datetime import datetime
 from typing import List, Dict
 
 # Configure logging
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
@@ -132,52 +125,130 @@ Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy an
 def analyze_historical_patterns(historical_data):
     """
     Analyze historical transaction data to identify patterns and establish baselines.
+    Includes advanced pattern recognition for seasonal trends and growth analysis.
     
     Args:
         historical_data: List of historical transactions
         
     Returns:
-        String containing summarized historical patterns
+        Dictionary containing detailed pattern analysis
     """
     try:
-        # Group transactions by category
+        # Group transactions by category and month
         category_data = {}
+        monthly_data = {}
+        
         for transaction in historical_data:
+            # Category grouping
             category = transaction.account.category if transaction.account else 'Uncategorized'
             if category not in category_data:
                 category_data[category] = []
             category_data[category].append(transaction)
+            
+            # Monthly grouping
+            month_key = transaction.date.strftime('%Y-%m')
+            if month_key not in monthly_data:
+                monthly_data[month_key] = []
+            monthly_data[month_key].append(transaction)
         
         # Analyze patterns for each category
-        patterns = []
+        category_patterns = {}
         for category, transactions in category_data.items():
-            # Calculate basic statistics
+            # Basic statistics
             amounts = [t.amount for t in transactions]
             avg_amount = sum(amounts) / len(amounts) if amounts else 0
             max_amount = max(amounts) if amounts else 0
             min_amount = min(amounts) if amounts else 0
             
-            # Identify common transaction frequencies
+            # Temporal analysis
             dates = sorted([t.date for t in transactions])
             if len(dates) > 1:
                 date_diffs = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
                 avg_frequency = sum(date_diffs) / len(date_diffs) if date_diffs else 0
+                
+                # Calculate growth rate
+                first_month = dates[0].strftime('%Y-%m')
+                last_month = dates[-1].strftime('%Y-%m')
+                if first_month in monthly_data and last_month in monthly_data:
+                    first_month_avg = sum(t.amount for t in monthly_data[first_month]) / len(monthly_data[first_month])
+                    last_month_avg = sum(t.amount for t in monthly_data[last_month]) / len(monthly_data[last_month])
+                    months_diff = (dates[-1].year - dates[0].year) * 12 + dates[-1].month - dates[0].month
+                    growth_rate = ((last_month_avg / first_month_avg) ** (1/months_diff) - 1) * 100 if months_diff > 0 and first_month_avg != 0 else 0
+                else:
+                    growth_rate = 0
             else:
                 avg_frequency = 0
+                growth_rate = 0
             
-            patterns.append(
-                f"Category: {category}\n"
-                f"- Average Amount: ${avg_amount:.2f}\n"
-                f"- Amount Range: ${min_amount:.2f} to ${max_amount:.2f}\n"
-                f"- Transaction Count: {len(transactions)}\n"
-                f"- Average Frequency: {avg_frequency:.1f} days\n"
-            )
+            # Seasonal pattern detection
+            seasonal_patterns = []
+            if len(monthly_data) >= 12:
+                month_averages = {}
+                for month_key, month_transactions in monthly_data.items():
+                    month = datetime.strptime(month_key, '%Y-%m').month
+                    if month not in month_averages:
+                        month_averages[month] = []
+                    month_transactions_in_category = [t for t in month_transactions if t.account and t.account.category == category]
+                    if month_transactions_in_category:
+                        month_averages[month].append(sum(t.amount for t in month_transactions_in_category) / len(month_transactions_in_category))
+                
+                for month, averages in month_averages.items():
+                    if len(averages) > 1:
+                        month_avg = sum(averages) / len(averages)
+                        overall_avg = avg_amount
+                        if overall_avg != 0:
+                            seasonal_factor = (month_avg / overall_avg - 1) * 100
+                            if abs(seasonal_factor) > 15:  # Significant seasonal variation threshold
+                                seasonal_patterns.append({
+                                    'month': datetime.strptime(str(month), '%m').strftime('%B'),
+                                    'variation': seasonal_factor,
+                                    'significance': 'high' if abs(seasonal_factor) > 30 else 'medium'
+                                })
+            
+            category_patterns[category] = {
+                'statistics': {
+                    'average_amount': avg_amount,
+                    'amount_range': {'min': min_amount, 'max': max_amount},
+                    'transaction_count': len(transactions),
+                    'average_frequency': avg_frequency
+                },
+                'trends': {
+                    'growth_rate': growth_rate,
+                    'seasonal_patterns': seasonal_patterns
+                },
+                'significance_score': min(100, (len(transactions) * abs(growth_rate) / 100) if growth_rate else len(transactions))
+            }
         
-        return "\n".join(patterns)
+        # Generate pattern summary
+        pattern_summary = []
+        for category, analysis in category_patterns.items():
+            summary = [
+                f"Category: {category}",
+                f"- Average Amount: ${analysis['statistics']['average_amount']:.2f}",
+                f"- Amount Range: ${analysis['statistics']['amount_range']['min']:.2f} to ${analysis['statistics']['amount_range']['max']:.2f}",
+                f"- Transaction Count: {analysis['statistics']['transaction_count']}",
+                f"- Average Frequency: {analysis['statistics']['average_frequency']:.1f} days",
+                f"- Growth Rate: {analysis['trends']['growth_rate']:.1f}% per month"
+            ]
+            
+            if analysis['trends']['seasonal_patterns']:
+                summary.append("- Seasonal Patterns:")
+                for pattern in analysis['trends']['seasonal_patterns']:
+                    summary.append(f"  * {pattern['month']}: {pattern['variation']:.1f}% variation ({pattern['significance']} significance)")
+            
+            pattern_summary.append("\n".join(summary))
+        
+        return {
+            'summary': "\n\n".join(pattern_summary),
+            'detailed_analysis': category_patterns
+        }
         
     except Exception as e:
         logger.error(f"Error analyzing historical patterns: {str(e)}")
-        return "Historical pattern analysis unavailable"
+        return {
+            'summary': "Historical pattern analysis unavailable",
+            'detailed_analysis': {}
+        }
 
 def detect_transaction_anomalies(transactions, historical_data=None):
     """
