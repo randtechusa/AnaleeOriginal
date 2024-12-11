@@ -342,7 +342,7 @@ def analyze(file_id):
                          file=file,
                          accounts=accounts,
                          transactions=transactions,
-                         bank_account_id=request.form.get('bank_account', type=int))
+                         bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int))
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required

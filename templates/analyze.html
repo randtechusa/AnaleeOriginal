@@ -14,7 +14,7 @@
                         {% for account in accounts %}
                             {% if account.category.lower() == 'bank' or 'bank' in account.name.lower() %}
                                 <option value="{{ account.id }}" 
-                                        {% if bank_account_id == account.id %}selected{% endif %}>
+                                        {% if bank_account_id and bank_account_id == account.id %}selected{% endif %}>
                                     {{ account.link }}:{{ account.name }} {% if account.sub_category %}({{ account.sub_category }}){% endif %}
                                 </option>
                             {% endif %}
