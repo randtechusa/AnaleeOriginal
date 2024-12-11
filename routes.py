@@ -5,7 +5,7 @@ import pandas as pd
 import logging
 import os
 from app import db
-from models import User, Account, Transaction, UploadedFile
+from models import User, Account, Transaction, UploadedFile, CompanySettings
 
 # Create blueprint
 main = Blueprint('main', __name__)
