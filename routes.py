@@ -236,12 +236,24 @@ def upload():
             else:
                 df = pd.read_excel(file)
                 
-            # Validate required columns
-            required_columns = ['Date', 'Description', 'Amount']
-            missing_columns = [col for col in required_columns if col not in df.columns]
+            # Convert column names to lowercase for case-insensitive comparison
+            df.columns = df.columns.str.lower()
+            required_columns = {'date', 'description', 'amount'}
+            existing_columns = set(df.columns)
+            
+            logger.debug(f"Found columns in file: {existing_columns}")
+            missing_columns = required_columns - existing_columns
+            
             if missing_columns:
-                flash(f'Missing required columns: {", ".join(missing_columns)}')
+                flash(f'Missing required columns: {", ".join(col.title() for col in missing_columns)}. Found columns: {", ".join(existing_columns)}')
                 return redirect(url_for('main.upload'))
+
+            # Map columns to expected names
+            df = df.rename(columns={
+                'date': 'Date',
+                'description': 'Description',
+                'amount': 'Amount'
+            })
                 
             # Process each row
             for _, row in df.iterrows():
