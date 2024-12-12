@@ -419,31 +419,43 @@ def upload():
                 db.session.add(uploaded_file)
                 db.session.commit()
                 
-                # Read file content in chunks
+                # Read file content in chunks with progress tracking
                 chunk_size = 1000  # Process 1000 rows at a time
                 total_rows = 0
                 processed_rows = 0
+                session['upload_progress'] = 0
 
-                # First get total rows for progress tracking
-                if file.filename.endswith('.csv'):
-                    total_rows = sum(1 for line in file) - 1  # Subtract header row
-                    file.seek(0)  # Reset file pointer
-                    df_iterator = pd.read_csv(file, chunksize=chunk_size)
-                else:
-                    df = pd.read_excel(file)
-                    total_rows = len(df)
-                    # Create chunk iterator for excel
-                    df_iterator = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
+                try:
+                    # First get total rows for progress tracking
+                    if file.filename.endswith('.csv'):
+                        total_rows = sum(1 for line in file) - 1  # Subtract header row
+                        file.seek(0)  # Reset file pointer
+                        df_iterator = pd.read_csv(file, chunksize=chunk_size)
+                        logger.info(f"Processing CSV file with {total_rows} rows")
+                    else:
+                        df = pd.read_excel(file)
+                        total_rows = len(df)
+                        # Create chunk iterator for excel
+                        df_iterator = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
+                        logger.info(f"Processing Excel file with {total_rows} rows")
 
-                logger.info(f"Processing file with {total_rows} rows")
+                    # Initialize progress in session
+                    session['upload_total_rows'] = total_rows
+                    session['upload_filename'] = file.filename
+                    logger.info(f"Started processing file: {file.filename}")
             
-                # Process each chunk
-                for chunk_idx, chunk in enumerate(df_iterator):
-                    try:
+                    # Process each chunk with detailed progress tracking
+                    for chunk_idx, chunk in enumerate(df_iterator):
                         # Clean and normalize column names
                         chunk.columns = chunk.columns.str.strip().str.lower()
                         processed_rows += len(chunk)
-                        logger.info(f"Processing chunk {chunk_idx + 1}, Progress: {(processed_rows/total_rows)*100:.2f}%")
+                        
+                        # Update progress
+                        progress = int((processed_rows / total_rows) * 100)
+                        session['upload_progress'] = progress
+                        logger.info(f"Processing chunk {chunk_idx + 1}/{(total_rows//chunk_size) + 1}, "
+                                  f"Progress: {progress}%, "
+                                  f"Processed rows: {processed_rows}/{total_rows}")
                         
                         transactions_to_add = []
                         for _, row in chunk.iterrows():
@@ -455,6 +467,7 @@ def upload():
                                 except:
                                     # Try specific formats if automatic parsing fails
                                     date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
+                                    parsed_date = None
                                     for date_format in date_formats:
                                         try:
                                             parsed_date = pd.to_datetime(date_str, format=date_format)
@@ -479,17 +492,21 @@ def upload():
                             except Exception as row_error:
                                 logger.error(f"Error processing row: {row} - {str(row_error)}")
                                 continue
-                        
+
                         # Batch save transactions for current chunk
                         if transactions_to_add:
-                            db.session.bulk_save_objects(transactions_to_add)
-                            db.session.commit()
-                            logger.info(f"Saved {len(transactions_to_add)} transactions from chunk {chunk_idx + 1}")
-                    
-                    except Exception as chunk_error:
-                        logger.error(f"Error processing chunk {chunk_idx + 1}: {str(chunk_error)}")
-                        db.session.rollback()
-                        continue
+                            try:
+                                db.session.bulk_save_objects(transactions_to_add)
+                                db.session.commit()
+                                logger.info(f"Saved {len(transactions_to_add)} transactions from chunk {chunk_idx + 1}")
+                            except Exception as save_error:
+                                logger.error(f"Error saving chunk {chunk_idx + 1}: {str(save_error)}")
+                                db.session.rollback()
+
+                except Exception as e:
+                    logger.error(f"Error reading file {file.filename}: {str(e)}")
+                    flash(f"Error reading file: {str(e)}")
+                    return redirect(url_for('main.upload'))
                 
                 flash('File uploaded and processed successfully')
                 return redirect(url_for('main.analyze', file_id=uploaded_file.id))
