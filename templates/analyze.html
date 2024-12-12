@@ -143,7 +143,8 @@
                                             data-transaction-id="{{ transaction.id }}"
                                             data-description="{{ transaction.description }}"
                                             data-explanation="{{ transaction.explanation }}">
-                                        <i class="fas fa-magic"></i> Suggest
+                                        <i class="fas fa-magic suggest-icon-{{ transaction.id }}"></i>
+                                        <span class="suggest-text-{{ transaction.id }}">Suggest</span>
                                     </button>
                                 </div>
                                 <div id="suggestions-{{ transaction.id }}" class="suggestions mt-2" style="display: none;">
@@ -173,6 +174,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('analyzeForm');
     const explanationInputs = document.querySelectorAll('.explanation-input');
     const analysisSelects = document.querySelectorAll('.analysis-select');
+    
+    // Cache for suggestions
+    const suggestionCache = new Map();
+    
+    // Debounce function
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
     
     // Handle bank account selection
     const bankAccountSelect = document.getElementById('bank_account');
@@ -205,7 +222,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         // Handle explanation changes and check for repetitive descriptions
-        input.addEventListener('change', async function() {
+        input.addEventListener('change', debounce(async function() {
             const currentDescription = this.dataset.description;
             const newExplanation = this.value.trim();
             
@@ -274,7 +291,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             form.submit();
-        });
+        }, 500));
     });
     
     // Handle analysis changes
@@ -284,7 +301,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Handle suggestion buttons
+    // Handle suggestion buttons with optimizations
     document.querySelectorAll('.suggest-account-btn').forEach(button => {
         button.addEventListener('click', async function() {
             const transactionId = this.dataset.transactionId;
@@ -292,6 +309,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const explanation = this.dataset.explanation;
             const suggestionsDiv = document.getElementById(`suggestions-${transactionId}`);
             const select = document.getElementById(`select-${transactionId}`);
+            const iconElement = document.querySelector(`.suggest-icon-${transactionId}`);
+            const textElement = document.querySelector(`.suggest-text-${transactionId}`);
+
+            // Check cache first
+            const cacheKey = `${description}:${explanation}`;
+            if (suggestionCache.has(cacheKey)) {
+                displaySuggestions(suggestionCache.get(cacheKey));
+                return;
+            }
+
+            // Show loading state
+            this.disabled = true;
+            iconElement.className = 'fas fa-spinner fa-spin';
+            textElement.textContent = 'Loading...';
 
             try {
                 const response = await fetch('/predict_account', {
@@ -309,6 +340,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 const suggestions = await response.json();
                 
+                // Cache the results
+                suggestionCache.set(cacheKey, suggestions);
+                
+                // Display suggestions
+                displaySuggestions(suggestions);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                suggestionsDiv.innerHTML = '<div class="alert alert-danger">Error getting suggestions</div>';
+                suggestionsDiv.style.display = 'block';
+            } finally {
+                // Reset button state
+                this.disabled = false;
+                iconElement.className = 'fas fa-magic';
+                textElement.textContent = 'Suggest';
+            }
+
+            function displaySuggestions(suggestions) {
                 // Clear previous suggestions
                 suggestionsDiv.innerHTML = '';
                 
@@ -350,11 +399,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     suggestionsDiv.innerHTML = '<div class="alert alert-info">No suggestions available</div>';
                     suggestionsDiv.style.display = 'block';
                 }
-                
-            } catch (error) {
-                console.error('Error:', error);
-                suggestionsDiv.innerHTML = '<div class="alert alert-danger">Error getting suggestions</div>';
-                suggestionsDiv.style.display = 'block';
             }
         });
     });
