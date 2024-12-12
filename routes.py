@@ -731,8 +731,68 @@ def delete_file(file_id):
         flash('Error deleting file')
 def process_transaction_analysis(user_id: int, file_id: int):
     """Background task to process and analyze transactions"""
+@main.route('/update_explanation', methods=['POST'])
+@login_required
+def update_explanation():
+    """Update transaction explanation asynchronously"""
     try:
-        logger.info(f"Starting transaction analysis for user {user_id}, file {file_id}")
+        data = request.get_json()
+        transaction_id = data.get('transaction_id')
+        explanation = data.get('explanation')
+        
+        if not transaction_id or explanation is None:
+            return jsonify({'error': 'Missing required fields'}), 400
+            
+        transaction = Transaction.query.filter_by(
+            id=transaction_id, 
+            user_id=current_user.id
+        ).first()
+        
+        if not transaction:
+            return jsonify({'error': 'Transaction not found'}), 404
+            
+        transaction.explanation = explanation
+        db.session.commit()
+        
+        logger.info(f"Updated explanation for transaction {transaction_id}")
+        return jsonify({'success': True, 'message': 'Explanation updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating explanation: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/predict_account', methods=['POST'])
+@login_required
+def predict_account_route():
+    """Predict account for transaction based on description and explanation"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '')
+        explanation = data.get('explanation', '')
+        
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+            
+        # Get available accounts for user
+        available_accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).all()
+        
+        # Get predictions using AI
+        predictions = predict_account(
+            description=description,
+            explanation=explanation,
+            available_accounts=available_accounts
+        )
+        
+        logger.info(f"Generated account predictions for description: {description}")
+        return jsonify(predictions)
+        
+    except Exception as e:
+        logger.error(f"Error predicting account: {str(e)}")
+        return jsonify({'error': str(e)}), 500
         
         # Get transactions for the file
         transactions = Transaction.query.filter_by(
@@ -808,73 +868,7 @@ def process_expense_forecast(user_id: int, start_date: str, end_date: str):
         raise
         db.session.rollback()
 
-@main.route('/predict_account', methods=['POST'])
-@login_required
-def predict_account_route():
-    """Handle prediction requests with improved error handling and logging"""
-    try:
-        # Validate request
-        if not request.is_json:
-            logger.warning("Invalid content type received")
-            return jsonify({'error': 'Invalid content type. Expected JSON.'}), 400
-            
-        data = request.get_json()
-        if not data:
-            logger.warning("Empty request data received")
-            return jsonify({'error': 'No data provided'}), 400
-            
-        description = data.get('description', '')
-        explanation = data.get('explanation', '')
-        
-        if not description:
-            logger.warning("Missing description in request")
-            return jsonify({'error': 'Description is required'}), 400
-            
-        logger.info(f"Processing prediction request for description: {description}")
-        
-        # Get accounts
-        accounts = Account.query.filter_by(user_id=current_user.id).all()
-        if not accounts:
-            logger.warning(f"No accounts found for user {current_user.id}")
-            return jsonify({'error': 'No accounts available for prediction'}), 404
-            
-        account_data = [{
-            'name': account.name,
-            'category': account.category,
-            'link': account.link,
-            'id': account.id,
-            'sub_category': account.sub_category
-        } for account in accounts]
-        
-        logger.debug(f"Found {len(account_data)} accounts for prediction")
-        
-        # Get predictions with detailed error handling
-        try:
-            predictions = predict_account(description, explanation, account_data)
-            if not predictions:
-                logger.warning("No predictions generated")
-                return jsonify({'error': 'No suitable predictions found'}), 404
-                
-            logger.info(f"Successfully generated {len(predictions)} predictions")
-            return jsonify(predictions)
-            
-        except ValueError as ve:
-            logger.error(f"Validation error in prediction: {str(ve)}")
-            return jsonify({'error': str(ve)}), 400
-            
-        except Exception as pred_error:
-            logger.error(f"Error during account prediction: {str(pred_error)}")
-            return jsonify({
-                'error': 'Failed to generate predictions',
-                'details': str(pred_error)
-            }), 500
-            
-    except Exception as e:
-        logger.error(f"Unexpected error in prediction route: {str(e)}")
-        return jsonify({
-            'error': 'Internal server error',
-            'details': str(e)
-        }), 500
+
 
 @main.route('/expense-forecast')
 @login_required
