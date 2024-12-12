@@ -14,7 +14,19 @@
                             Upload bank statement in CSV or Excel format
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary">Upload</button>
+                    <div class="progress mb-3 d-none" id="upload-progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" 
+                             aria-valuenow="0" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100">0%</div>
+                    </div>
+                    <div id="upload-status" class="alert d-none mb-3">
+                        <p class="mb-1"><strong>Status:</strong> <span id="status-text">Processing...</span></p>
+                        <p class="mb-1"><small>Processed: <span id="processed-rows">0</span> / <span id="total-rows">0</span> rows</small></p>
+                        <p class="mb-0"><small>Time remaining: <span id="time-remaining">Calculating...</span></small></p>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="upload-button">Upload</button>
                 </form>
             </div>
         </div>
