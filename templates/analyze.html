@@ -271,32 +271,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return similarDescriptions.size > 1;
         };
 
-        // Auto-save function with delay
-        const debouncedSave = () => {
-            clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => {
-                const description = textarea.closest('tr').querySelector('[data-description]').dataset.description;
-                
-                if (checkSimilarDescriptions(description)) {
-                    const shouldApplyToAll = confirm(
-                        'Similar transactions found. Would you like to apply this explanation to all transactions with the same description?'
-                    );
-                    
-                    if (shouldApplyToAll) {
-                        similarDescriptions.forEach(transactionId => {
-                            const similarTextarea = document.querySelector(`textarea[name="explanation_${transactionId}"]`);
-                            if (similarTextarea && similarTextarea !== textarea) {
-                                similarTextarea.value = textarea.value;
-                                similarTextarea.classList.add('has-content');
-                            }
-                        });
-                    }
-                }
-                
-                form.submit();
-            }, 1000);
-        };
-
         // Initial setup
         autoResize(textarea);
         updateCharCount(textarea.value);
@@ -306,15 +280,69 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Handle input events
         textarea.addEventListener('input', function() {
-            autoResize(this);
-            updateCharCount(this.value);
-            if (this.value.trim()) {
-                this.classList.add('has-content');
-            } else {
-                this.classList.remove('has-content');
-            }
-            debouncedSave();
-        });
+                        const transactionId = this.name.split('_')[1];
+                        autoResize(this);
+                        updateCharCount(this.value);
+                        if (this.value.trim()) {
+                            this.classList.add('has-content');
+                        } else {
+                            this.classList.remove('has-content');
+                        }
+                        
+                        // Save explanation asynchronously
+                        clearTimeout(timeoutId);
+                        timeoutId = setTimeout(async () => {
+                            try {
+                                const response = await fetch('/update_explanation', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({
+                                        transaction_id: transactionId,
+                                        explanation: this.value.trim()
+                                    })
+                                });
+                                
+                                if (!response.ok) {
+                                    throw new Error('Failed to save explanation');
+                                }
+                                
+                                // Update any similar transactions if user confirms
+                                const description = this.closest('tr').querySelector('[data-description]').dataset.description;
+                                if (checkSimilarDescriptions(description)) {
+                                    const shouldApplyToAll = confirm(
+                                        'Similar transactions found. Would you like to apply this explanation to all transactions with the same description?'
+                                    );
+                                    
+                                    if (shouldApplyToAll) {
+                                        similarDescriptions.forEach(async (similarId) => {
+                                            if (similarId !== transactionId) {
+                                                const similarTextarea = document.querySelector(`textarea[name="explanation_${similarId}"]`);
+                                                if (similarTextarea) {
+                                                    similarTextarea.value = this.value;
+                                                    similarTextarea.classList.add('has-content');
+                                                    
+                                                    await fetch('/update_explanation', {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'Content-Type': 'application/json',
+                                                        },
+                                                        body: JSON.stringify({
+                                                            transaction_id: similarId,
+                                                            explanation: this.value.trim()
+                                                        })
+                                                    });
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('Error saving explanation:', error);
+                            }
+                        }, 1000);
+                    });
         
         // Focus events
         textarea.addEventListener('focus', function() {
@@ -339,7 +367,7 @@ document.addEventListener('DOMContentLoaded', function() {
         textarea.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                debouncedSave();
+                // debouncedSave(); // Removed as saving is handled in 'input' event
             }
         });
     });
