@@ -767,9 +767,27 @@ def export_forecast_pdf():
             confidence_upper=session.get('confidence_upper', []),
             confidence_lower=session.get('confidence_lower', []),
             category_labels=session.get('category_labels', []),
-            category_amounts=session.get('category_amounts', []),
-            zip=zip  # Required for template iteration
+            category_amounts=session.get('category_amounts', [])
         )
+        
+        # Generate PDF using WeasyPrint
+        pdf = HTML(string=html_content).write_pdf()
+        
+        # Create response
+        response = make_response(pdf)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = 'attachment; filename=forecast_report.pdf'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF: {str(e)}")
+        flash('Error generating PDF report')
+        return redirect(url_for('main.expense_forecast'))
+            category_labels=session.get('category_labels', []),
+        category_amounts=session.get('category_amounts', []),
+        zip=zip  # Required for template iteration
+    )
         
         try:
             # Create PDF
@@ -787,6 +805,13 @@ def export_forecast_pdf():
                 'status': 'error',
                 'message': 'Error generating PDF report'
             }), 500
+
+    except Exception as e:
+        logger.error(f"Error preparing PDF content: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Error preparing PDF content'
+        }), 500
 
 @main.route('/upload-progress')
 @login_required
