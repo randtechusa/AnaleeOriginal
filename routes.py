@@ -1,4 +1,7 @@
 from datetime import datetime
+import logging
+import os
+
 from flask import (
     Blueprint, render_template, request, redirect, url_for,
     flash, session, make_response, jsonify
@@ -8,8 +11,6 @@ from flask_login import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from weasyprint import HTML
-import logging
-import os
 import pandas as pd
 
 from app import db
@@ -767,7 +768,8 @@ def export_forecast_pdf():
             confidence_upper=session.get('confidence_upper', []),
             confidence_lower=session.get('confidence_lower', []),
             category_labels=session.get('category_labels', []),
-            category_amounts=session.get('category_amounts', [])
+            category_amounts=session.get('category_amounts', []),
+            zip=zip  # Required for template iteration
         )
         
         # Generate PDF using WeasyPrint
@@ -776,7 +778,7 @@ def export_forecast_pdf():
         # Create response
         response = make_response(pdf)
         response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = 'attachment; filename=forecast_report.pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename=forecast_report_{datetime.now().strftime("%Y%m%d")}.pdf'
         
         return response
         
@@ -784,9 +786,6 @@ def export_forecast_pdf():
         logger.error(f"Error generating PDF: {str(e)}")
         flash('Error generating PDF report')
         return redirect(url_for('main.expense_forecast'))
-            category_labels=session.get('category_labels', []),
-            category_amounts=session.get('category_amounts', []),
-            zip=zip  # Required for template iteration
         )
         
         try:
