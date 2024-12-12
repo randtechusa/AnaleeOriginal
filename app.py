@@ -5,9 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from dotenv import load_dotenv
-import os
-import logging
-from datetime import datetime
+import sys
 
 # Load environment variables
 load_dotenv()
@@ -15,7 +13,8 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ def create_app():
     """Create and configure the Flask application"""
     try:
         app = Flask(__name__)
-        logger.debug("Flask app instance created")
+        logger.info("Starting Flask application initialization...")
         
         # Configure Flask application
         database_url = os.environ.get("DATABASE_URL")
@@ -36,80 +35,52 @@ def create_app():
             logger.error("DATABASE_URL environment variable is not set")
             raise ValueError("DATABASE_URL environment variable is not set")
 
+        # Handle legacy database URLs
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
-        logger.debug(f"Using database URL schema: {database_url.split('://')[0]}")
-
-        # Test database connection before configuring app
-        try:
-            from sqlalchemy import create_engine, text
-            test_engine = create_engine(database_url)
-            with test_engine.connect() as conn:
-                result = conn.execute(text("SELECT 1"))
-                result.scalar()
-            logger.info("Database connection test successful")
-        except Exception as db_test_error:
-            logger.error(f"Failed to connect to database: {str(db_test_error)}")
-            raise
-
+        
+        logger.debug(f"Database URL format validated")
+        
         # Configure Flask app
         app.config.update(
             SECRET_KEY=os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
             SQLALCHEMY_DATABASE_URI=database_url,
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
-            SQLALCHEMY_ENGINE_OPTIONS={
-                "pool_recycle": 300,
-                "pool_pre_ping": True,
-                "connect_args": {
-                    "connect_timeout": 10
-                }
-            }
+            TEMPLATES_AUTO_RELOAD=True,
         )
         logger.debug("Flask app configuration completed")
 
-        # Initialize Flask extensions
-        logger.debug("Initializing Flask extensions")
+        # Initialize Flask extensions with app context
         db.init_app(app)
-        logger.debug("SQLAlchemy initialized")
         migrate.init_app(app, db)
-        logger.debug("Flask-Migrate initialized")
         login_manager.init_app(app)
         login_manager.login_view = 'main.login'
-        logger.debug("Login manager initialized")
+        logger.debug("Flask extensions initialized")
 
         with app.app_context():
-            # Import models
-            logger.debug("Importing models...")
+            # Import models here to avoid circular imports
             from models import User, Account, Transaction, UploadedFile, CompanySettings
-            logger.info("Models imported successfully")
+            logger.debug("Models imported")
+
+            try:
+            # Initialize database
+            db.create_all()
+            logger.debug("Database tables created")
+            
+            # Create initial migration
+            with app.app_context():
+                migrate.init_app(app, db, directory='migrations')
+                logger.debug("Migration initialized")
+                
+        except Exception as db_error:
+            logger.error(f"Database initialization error: {str(db_error)}")
+            raise
             
             # Register blueprints
-            logger.debug("Registering blueprints...")
             from routes import main as main_blueprint
             app.register_blueprint(main_blueprint)
-            logger.info("Blueprints registered successfully")
-            
-            # Initialize database
-            logger.debug("Testing database connection...")
-            db.engine.connect()
-            logger.info("Database connection successful")
-            
-            # Create all tables
-            logger.debug("Creating database tables...")
-            db.create_all()
-            logger.info("Database tables created/verified successfully")
-            
-            # Run migrations
-            try:
-                logger.debug("Applying database migrations...")
-                from flask_migrate import upgrade
-                upgrade()
-                logger.info("Database migrations applied successfully")
-            except Exception as migration_error:
-                logger.warning(f"Migration warning: {str(migration_error)}")
-                logger.warning("Continuing without migrations...")
-            
-            logger.info("Application initialization completed")
+            logger.debug("Blueprints registered")
+
             return app
 
     except Exception as e:
@@ -117,15 +88,7 @@ def create_app():
         logger.exception("Full stack trace:")
         raise
 
-@login_manager.user_loader
-def load_user(user_id):
-    from models import User
-    try:
-        return User.query.get(int(user_id))
-    except Exception as e:
-        logger.error(f"Error loading user {user_id}: {str(e)}")
-        return None
-
 # Initialize the application (only if running directly)
 if __name__ == '__main__':
     app = create_app()
+    app.run(host='0.0.0.0', port=5000, debug=True)
