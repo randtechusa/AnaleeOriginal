@@ -358,9 +358,8 @@ Provide analysis in this JSON format:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
-                max_tokens=200,  # Further reduced for faster response
-                timeout=15,  # Slightly increased timeout with retries
-                request_timeout=15  # Explicit request timeout
+                max_tokens=150,  # Reduced for faster response
+                timeout=15  # Slightly increased timeout
             )
             
             analysis = json.loads(response.choices[0].message.content)
