@@ -4,25 +4,43 @@
 <style>
     .explanation-input {
         transition: all 0.3s ease;
-        background-color: var(--bs-dark);
+        background-color: var(--bs-gray-900);
         color: var(--bs-light);
         border: 1px solid var(--bs-gray-700);
+        font-size: 1rem;
+        line-height: 1.5;
+        padding: 0.75rem;
+        min-height: 80px;
     }
     
     .explanation-input:focus,
     .explanation-input.explanation-focused {
         border-color: var(--bs-primary);
         box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.25);
-        background-color: var(--bs-dark);
+        background-color: var(--bs-gray-800);
     }
     
     .explanation-input.has-content {
-        border-color: var(--bs-gray-500);
-        background-color: var(--bs-dark);
+        border-color: var(--bs-info);
+        background-color: var(--bs-gray-800);
+        color: var(--bs-light);
     }
     
     .explanation-input:hover {
         border-color: var(--bs-primary);
+        background-color: var(--bs-gray-800);
+    }
+
+    /* Add visual indicator for filled textareas */
+    .explanation-input.has-content::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 4px;
+        height: 100%;
+        background-color: var(--bs-info);
+        border-radius: 3px 0 0 3px;
     }
 </style>
 <div class="card mb-4">
@@ -132,12 +150,18 @@
                                 ${{ "%.2f"|format(transaction.amount) }}
                             </td>
                             <td>
-                                <textarea 
-                                       class="form-control explanation-input" 
-                                       name="explanation_{{ transaction.id }}" 
-                                       rows="2"
-                                       style="min-height: 60px; resize: vertical;"
-                                       placeholder="Enter explanation">{{ transaction.explanation }}</textarea>
+                                <div class="position-relative">
+                                    <textarea 
+                                        class="form-control explanation-input{% if transaction.explanation %} has-content{% endif %}" 
+                                        name="explanation_{{ transaction.id }}" 
+                                        rows="3"
+                                        aria-label="Transaction explanation"
+                                        placeholder="Enter explanation for this transaction..."
+                                    >{{ transaction.explanation }}</textarea>
+                                    <small class="form-text text-muted mt-1" style="display: none;">
+                                        Press Enter to save changes
+                                    </small>
+                                </div>
                             </td>
                             <td>
                                 <div class="input-group">
@@ -199,42 +223,63 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Handle explanation changes and enhance textarea behavior
     explanationInputs.forEach(textarea => {
+        const helpText = textarea.parentElement.querySelector('.form-text');
+        let timeoutId;
+
         // Auto-resize function
         const autoResize = (el) => {
             el.style.height = 'auto';
-            el.style.height = (el.scrollHeight) + 'px';
+            el.style.height = Math.max(80, el.scrollHeight) + 'px';
         };
         
-        // Initial resize and class
+        // Auto-save function with delay
+        const debouncedSave = () => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                form.submit();
+            }, 1000);
+        };
+
+        // Initial setup
         autoResize(textarea);
         if (textarea.value.trim()) {
             textarea.classList.add('has-content');
         }
         
-        // Handle input events for auto-resize
+        // Handle input events
         textarea.addEventListener('input', function() {
             autoResize(this);
-        });
-        
-        // Handle focus events
-        textarea.addEventListener('focus', function() {
-            this.classList.add('explanation-focused');
-        });
-        
-        // Handle blur events
-        textarea.addEventListener('blur', function() {
             if (this.value.trim()) {
                 this.classList.add('has-content');
             } else {
                 this.classList.remove('has-content');
             }
-            // Keep a subtle highlight if there's content
-            this.classList.remove('explanation-focused');
+            debouncedSave();
         });
         
-        // Handle change events
-        textarea.addEventListener('change', function() {
-            form.submit();
+        // Focus events
+        textarea.addEventListener('focus', function() {
+            this.classList.add('explanation-focused');
+            helpText.style.display = 'block';
+        });
+        
+        // Blur events
+        textarea.addEventListener('blur', function() {
+            this.classList.remove('explanation-focused');
+            helpText.style.display = 'none';
+            if (this.value.trim()) {
+                this.classList.add('has-content');
+            } else {
+                this.classList.remove('has-content');
+            }
+        });
+        
+        // Enter key handling
+        textarea.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                form.submit();
+            }
         });
     });
     
