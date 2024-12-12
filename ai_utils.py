@@ -20,12 +20,26 @@ def analyze_cross_field_patterns(transactions):
     Returns:
         Dictionary containing cross-field analysis results
     """
+    logger.info("Starting cross-field pattern analysis")
+    
+    if not transactions:
+        logger.warning("No transactions provided for cross-field analysis")
+        return {
+            "warning": "No transactions available for analysis",
+            "field_correlations": [],
+            "pattern_confidence": 0.0,
+            "identified_relationships": [],
+            "anomaly_indicators": []
+        }
+        
     patterns = {
         "field_correlations": [],
         "pattern_confidence": 0.0,
         "identified_relationships": [],
         "anomaly_indicators": []
     }
+    
+    logger.info(f"Analyzing {len(transactions)} transactions for patterns")
     
     try:
         # Group transactions by common patterns in descriptions
@@ -216,8 +230,21 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
         Dictionary containing detected anomalies and analysis results
     """
     try:
+        if not transactions:
+            logger.warning("No transactions provided for anomaly detection")
+            return {
+                "warning": "No transactions available for analysis",
+                "anomalies": [],
+                "pattern_insights": {}
+            }
+
+        logger.info(f"Starting anomaly detection for {len(transactions)} transactions")
+        
         # Set timeout for API calls
-        client = openai.OpenAI(timeout=30.0)
+        client = openai.OpenAI(
+            api_key=os.environ.get('OPENAI_API_KEY'),
+            timeout=30.0
+        )
         
         # Analyze only essential patterns first
         field_patterns = analyze_cross_field_patterns(transactions[:50])  # Limit initial analysis
