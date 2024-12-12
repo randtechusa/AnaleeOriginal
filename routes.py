@@ -424,11 +424,28 @@ def upload():
                 db.session.commit()
                 
                 # Enhanced chunked processing with memory optimization
-                chunk_size = 5000  # Increased chunk size for better performance
+                chunk_size = 1000  # Balanced chunk size for better memory usage
                 total_rows = 0
                 processed_rows = 0
                 error_rows = []
-                session['upload_progress'] = 0
+                
+                # Initialize progress tracking
+                upload_status = {
+                    'filename': file.filename,
+                    'total_rows': 0,
+                    'processed_rows': 0,
+                    'failed_rows': 0,
+                    'current_chunk': 0,
+                    'status': 'initializing',
+                    'start_time': datetime.utcnow().isoformat(),
+                    'last_update': datetime.utcnow().isoformat(),
+                    'errors': [],
+                    'progress_percentage': 0
+                }
+                session['upload_status'] = upload_status
+                session.modified = True
+                
+                logger.info(f"Initialized upload status tracking for {file.filename}")
 
                 try:
                     # Initialize progress tracking
