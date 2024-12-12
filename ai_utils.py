@@ -22,11 +22,15 @@ def predict_account(description: str, explanation: str, available_accounts: List
     Predict the most likely account classifications for a transaction based on its description and explanation.
     """
     try:
+        logger.debug(f"Starting account prediction for description: {description}")
+        
         # Format available accounts for the prompt
         account_info = "\n".join([
             f"- {acc['name']} (Category: {acc['category']}, Code: {acc['link']})"
             for acc in available_accounts
         ])
+        
+        logger.debug(f"Formatted {len(available_accounts)} accounts for prediction")
         
         # Construct the prompt
         prompt = f"""Analyze this financial transaction and provide comprehensive account classification with financial insights:
