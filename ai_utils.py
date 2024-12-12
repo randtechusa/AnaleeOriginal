@@ -1,10 +1,9 @@
+import os
 import openai
 import logging
 import json
-import os
-import statistics
-from datetime import datetime, timedelta
 from typing import List, Dict, Union, Any
+from datetime import datetime, timedelta
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -22,26 +21,51 @@ def analyze_cross_field_patterns(transactions):
     """
     logger.info("Starting cross-field pattern analysis")
     
-    if not transactions:
-        logger.warning("No transactions provided for cross-field analysis")
-        return {
-            "warning": "No transactions available for analysis",
+    try:
+        if not transactions:
+            logger.warning("No transactions provided for cross-field analysis")
+            return {
+                "warning": "No transactions available for analysis",
+                "field_correlations": [],
+                "pattern_confidence": 0.0,
+                "identified_relationships": [],
+                "anomaly_indicators": []
+            }
+            
+        # Validate transaction data structure
+        valid_transactions = []
+        for t in transactions:
+            try:
+                if (hasattr(t, 'description') and hasattr(t, 'amount') and 
+                    hasattr(t, 'date') and hasattr(t, 'explanation')):
+                    valid_transactions.append(t)
+                else:
+                    logger.warning(f"Invalid transaction structure: {vars(t) if hasattr(t, '__dict__') else str(t)}")
+            except Exception as e:
+                logger.warning(f"Error validating transaction: {str(e)}")
+                continue
+                
+        if not valid_transactions:
+            return {
+                "warning": "No valid transactions found for analysis",
+                "field_correlations": [],
+                "pattern_confidence": 0.0,
+                "identified_relationships": [],
+                "anomaly_indicators": []
+            }
+            
+        logger.info(f"Found {len(valid_transactions)} valid transactions for analysis")
+        transactions = valid_transactions
+        
+        patterns = {
             "field_correlations": [],
             "pattern_confidence": 0.0,
             "identified_relationships": [],
             "anomaly_indicators": []
         }
         
-    patterns = {
-        "field_correlations": [],
-        "pattern_confidence": 0.0,
-        "identified_relationships": [],
-        "anomaly_indicators": []
-    }
-    
-    logger.info(f"Analyzing {len(transactions)} transactions for patterns")
-    
-    try:
+        logger.info(f"Analyzing {len(transactions)} transactions for patterns")
+        
         # Group transactions by common patterns in descriptions
         description_patterns = {}
         explanation_patterns = {}
@@ -102,11 +126,17 @@ def analyze_cross_field_patterns(transactions):
                 }
                 patterns["anomaly_indicators"].append(anomaly)
                 
+        return patterns
+            
     except Exception as e:
         logger.error(f"Error in cross-field pattern analysis: {str(e)}")
-        patterns["error"] = str(e)
-    
-    return patterns
+        return {
+            "error": str(e),
+            "field_correlations": [],
+            "pattern_confidence": 0.0,
+            "identified_relationships": [],
+            "anomaly_indicators": []
+        }
 
 def analyze_temporal_patterns(transactions, time_window_days=30):
     """
@@ -118,11 +148,7 @@ def analyze_temporal_patterns(transactions, time_window_days=30):
         time_window_days: Number of days to consider for each analysis window
     
     Returns:
-        Dictionary containing detailed temporal pattern analysis results including:
-        - Recurring transaction patterns
-        - Seasonal trends
-        - Growth/decline indicators
-        - Confidence metrics for each pattern
+        Dictionary containing detailed temporal pattern analysis results
     """
     temporal_patterns = {
         "cycles": [],
@@ -210,12 +236,22 @@ def analyze_temporal_patterns(transactions, time_window_days=30):
             temporal_patterns["seasonal_patterns"] = seasonal_patterns
             if seasonal_patterns:
                 temporal_patterns["confidence_metrics"]["seasonality_confidence"] = sum(p["confidence"] for p in seasonal_patterns) / len(seasonal_patterns)
-                
+        
+        return temporal_patterns
+            
     except Exception as e:
         logger.error(f"Error in temporal pattern analysis: {str(e)}")
-        temporal_patterns["error"] = str(e)
-    
-    return temporal_patterns
+        return {
+            "error": str(e),
+            "cycles": [],
+            "trends": [],
+            "seasonal_patterns": [],
+            "confidence_metrics": {
+                "cycle_confidence": 0.0,
+                "trend_confidence": 0.0,
+                "seasonality_confidence": 0.0
+            }
+        }
 
 def detect_transaction_anomalies(transactions, historical_data=None, sensitivity_threshold=0.7):
     """
@@ -238,18 +274,42 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
                 "pattern_insights": {}
             }
 
+        # Validate transaction data
+        valid_transactions = [
+            t for t in transactions 
+            if hasattr(t, 'amount') and hasattr(t, 'description') and hasattr(t, 'date')
+        ]
+
+        if not valid_transactions:
+            logger.warning("No valid transactions found for analysis")
+            return {
+                "warning": "No valid transactions found for analysis",
+                "anomalies": [],
+                "pattern_insights": {}
+            }
+
         # Limit initial analysis to improve performance
         analysis_limit = 20
-        logger.info(f"Starting anomaly detection for {min(len(transactions), analysis_limit)} transactions (optimized)")
+        logger.info(f"Starting anomaly detection for {min(len(valid_transactions), analysis_limit)} transactions (optimized)")
         
         # Process transactions in smaller batches
-        transactions_to_analyze = transactions[:analysis_limit]
+        transactions_to_analyze = valid_transactions[:analysis_limit]
         
-        # Set timeout for API calls
-        client = openai.OpenAI(
-            api_key=os.environ.get('OPENAI_API_KEY'),
-            timeout=30.0
-        )
+        # Set timeout for API calls with retry logic
+        try:
+            client = openai.OpenAI(
+                api_key=os.environ.get('OPENAI_API_KEY'),
+                timeout=30.0
+            )
+            if not client:
+                raise ValueError("Failed to initialize OpenAI client")
+        except Exception as e:
+            logger.error(f"OpenAI client initialization error: {str(e)}")
+            return {
+                "error": "Unable to initialize AI analysis",
+                "anomalies": [],
+                "pattern_insights": {}
+            }
         
         # Analyze only essential patterns first
         field_patterns = analyze_cross_field_patterns(transactions[:50])  # Limit initial analysis
@@ -325,11 +385,11 @@ Provide analysis in JSON format."""
             analysis["pattern_insights"]["temporal_patterns"] = temporal_analysis["seasonal_patterns"]
 
         return analysis
-
+        
     except Exception as e:
         logger.error(f"Error detecting transaction anomalies: {str(e)}")
         return {
-            "error": "Failed to analyze transactions for anomalies",
+            "error": "Failed to analyze transactions",
             "details": str(e)
         }
 
@@ -459,7 +519,7 @@ Provide up to 3 suggestions, ranked by confidence."""
         valid_suggestions = []
         for suggestion in suggestions:
             matching_accounts = [acc for acc in available_accounts 
-                              if acc['name'].lower() == suggestion['account_name'].lower()]
+                               if acc['name'].lower() == suggestion['account_name'].lower()]
             if matching_accounts:
                 valid_suggestions.append({
                     **suggestion,
