@@ -1,473 +1,34 @@
 import openai
+from datetime import datetime
 import logging
 import json
 import os
-import statistics
-from datetime import datetime, timedelta
-from typing import List, Dict, Union, Any
+from typing import List, Dict
 
 # Configure logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
-
-def analyze_cross_field_patterns(transactions):
-    """
-    Analyze patterns across Description and Explanation fields to detect correlations and anomalies.
-    
-    Args:
-        transactions: List of transaction objects with Description and Explanation fields
-    
-    Returns:
-        Dictionary containing cross-field analysis results
-    """
-    patterns = {
-        "field_correlations": [],
-        "pattern_confidence": 0.0,
-        "identified_relationships": [],
-        "anomaly_indicators": []
-    }
-    
-    try:
-        # Group transactions by common patterns in descriptions
-        description_patterns = {}
-        explanation_patterns = {}
-        
-        for transaction in transactions:
-            # Analyze description patterns
-            desc_key = transaction.description.lower()
-            if desc_key not in description_patterns:
-                description_patterns[desc_key] = []
-            description_patterns[desc_key].append(transaction)
-            
-            # Analyze explanation patterns if available
-            if hasattr(transaction, 'explanation') and transaction.explanation:
-                exp_key = transaction.explanation.lower()
-                if exp_key not in explanation_patterns:
-                    explanation_patterns[exp_key] = []
-                explanation_patterns[exp_key].append(transaction)
-        
-        # Identify correlations between descriptions and explanations
-        for desc_key, desc_transactions in description_patterns.items():
-            related_explanations = set()
-            for trans in desc_transactions:
-                if hasattr(trans, 'explanation') and trans.explanation:
-                    related_explanations.add(trans.explanation.lower())
-            
-            if related_explanations:
-                correlation = {
-                    "description_pattern": desc_key,
-                    "related_explanations": list(related_explanations),
-                    "frequency": len(desc_transactions),
-                    "confidence": len(related_explanations) / len(desc_transactions)
-                }
-                patterns["field_correlations"].append(correlation)
-        
-        # Calculate overall pattern confidence
-        if patterns["field_correlations"]:
-            patterns["pattern_confidence"] = sum(c["confidence"] for c in patterns["field_correlations"]) / len(patterns["field_correlations"])
-        
-        # Identify relationship patterns
-        for correlation in patterns["field_correlations"]:
-            if correlation["confidence"] > 0.7:  # High confidence threshold
-                relationship = {
-                    "pattern": correlation["description_pattern"],
-                    "associated_explanations": correlation["related_explanations"],
-                    "strength": correlation["confidence"],
-                    "frequency": correlation["frequency"]
-                }
-                patterns["identified_relationships"].append(relationship)
-        
-        # Detect potential anomalies in relationships
-        for correlation in patterns["field_correlations"]:
-            if correlation["confidence"] < 0.3:  # Low confidence threshold
-                anomaly = {
-                    "pattern": correlation["description_pattern"],
-                    "inconsistency_level": 1 - correlation["confidence"],
-                    "frequency": correlation["frequency"],
-                    "recommendation": "Review transactions with inconsistent description-explanation patterns"
-                }
-                patterns["anomaly_indicators"].append(anomaly)
-                
-    except Exception as e:
-        logger.error(f"Error in cross-field pattern analysis: {str(e)}")
-        patterns["error"] = str(e)
-    
-    return patterns
-
-def analyze_temporal_patterns(transactions, time_window_days=30):
-    """
-    Analyze temporal patterns in transaction data to identify trends and cyclical behavior.
-    
-    Args:
-        transactions: List of transaction objects
-        time_window_days: Number of days to consider for each analysis window
-    
-    Returns:
-        Dictionary containing temporal pattern analysis results
-    """
-    temporal_patterns = {
-        "cycles": [],
-        "trends": [],
-        "seasonal_patterns": [],
-        "confidence_metrics": {
-            "cycle_confidence": 0.0,
-            "trend_confidence": 0.0,
-            "seasonality_confidence": 0.0
-        }
-    }
-    
-    try:
-        # Sort transactions by date
-        sorted_transactions = sorted(transactions, key=lambda x: x.date)
-        
-        # Group transactions by time windows
-        time_windows = {}
-        current_window = None
-        
-        for transaction in sorted_transactions:
-            window_start = transaction.date.replace(hour=0, minute=0, second=0, microsecond=0)
-            if current_window is None or (window_start - current_window).days >= time_window_days:
-                current_window = window_start
-                if current_window not in time_windows:
-                    time_windows[current_window] = []
-            time_windows[current_window].append(transaction)
-        
-        # Analyze patterns within each time window
-        for window_start, window_transactions in time_windows.items():
-            window_end = window_start + timedelta(days=time_window_days)
-            
-            # Calculate window metrics
-            total_amount = sum(t.amount for t in window_transactions)
-            avg_amount = total_amount / len(window_transactions) if window_transactions else 0
-            transaction_count = len(window_transactions)
-            
-            # Identify cyclical patterns
-            if transaction_count > 0:
-                cycle = {
-                    "period": f"{window_start.strftime('%Y-%m-%d')} to {window_end.strftime('%Y-%m-%d')}",
-                    "transaction_count": transaction_count,
-                    "average_amount": avg_amount,
-                    "total_amount": total_amount,
-                    "confidence": min(transaction_count / 10, 1.0)  # Confidence based on sample size
-                }
-                temporal_patterns["cycles"].append(cycle)
-        
-        # Calculate overall confidence metrics
-        if temporal_patterns["cycles"]:
-            temporal_patterns["confidence_metrics"]["cycle_confidence"] = (
-                sum(c["confidence"] for c in temporal_patterns["cycles"]) / 
-                len(temporal_patterns["cycles"])
-            )
-        
-        # Identify seasonal patterns if enough data
-        if len(temporal_patterns["cycles"]) >= 4:
-            cycle_amounts = [cycle["total_amount"] for cycle in temporal_patterns["cycles"]]
-            
-            # Simple seasonal pattern detection
-            for i in range(len(cycle_amounts) - 3):
-                if abs(cycle_amounts[i] - cycle_amounts[i + 3]) / max(abs(cycle_amounts[i]), 1) < 0.2:
-                    pattern = {
-                        "start_period": temporal_patterns["cycles"][i]["period"],
-                        "end_period": temporal_patterns["cycles"][i + 3]["period"],
-                        "pattern_type": "quarterly",
-                        "confidence": 0.8
-                    }
-                    temporal_patterns["seasonal_patterns"].append(pattern)
-            
-            if temporal_patterns["seasonal_patterns"]:
-                temporal_patterns["confidence_metrics"]["seasonality_confidence"] = (
-                    sum(p["confidence"] for p in temporal_patterns["seasonal_patterns"]) / 
-                    len(temporal_patterns["seasonal_patterns"])
-                )
-                
-    except Exception as e:
-        logger.error(f"Error in temporal pattern analysis: {str(e)}")
-        temporal_patterns["error"] = str(e)
-    
-    return temporal_patterns
-
-def detect_transaction_anomalies(transactions, historical_data=None, sensitivity_threshold=0.7):
-    """
-    Detect anomalies in transactions using AI analysis of Description and Explanation fields.
-    
-    Args:
-        transactions: List of current transactions to analyze
-        historical_data: Optional historical transaction data for baseline comparison
-        sensitivity_threshold: Threshold for anomaly detection sensitivity (0.0 to 1.0)
-        
-    Returns:
-        Dictionary containing detected anomalies and analysis results
-    """
-    try:
-        # Initialize OpenAI client
-        client = openai.OpenAI()
-        api_key = os.environ.get('OPENAI_API_KEY')
-        if not api_key:
-            logger.error("OpenAI API key not found in environment variables")
-            return {"error": "OpenAI API key not configured", "details": "Missing API key"}
-        
-        if not transactions:
-            logger.warning("No transactions provided for analysis")
-            return {"error": "No transactions to analyze", "details": "Empty transaction list"}
-            
-        logger.info(f"Starting transaction analysis with {len(transactions)} transactions")
-        
-        # Analyze cross-field patterns
-        logger.debug("Analyzing cross-field patterns...")
-        field_patterns = analyze_cross_field_patterns(transactions)
-        if "error" in field_patterns:
-            logger.error(f"Error in cross-field analysis: {field_patterns['error']}")
-            return field_patterns
-        
-        # Analyze temporal patterns
-        logger.debug("Analyzing temporal patterns...")
-        temporal_analysis = analyze_temporal_patterns(transactions)
-        if "error" in temporal_analysis:
-            logger.error(f"Error in temporal analysis: {temporal_analysis['error']}")
-            return temporal_analysis
-        
-        # Format transaction data for analysis
-        logger.debug("Formatting transaction data...")
-        try:
-            transaction_text = "\n".join([
-                f"Transaction {idx + 1}:\n"
-                f"- Amount: ${getattr(t, 'amount', 0)}\n"
-                f"- Description: {getattr(t, 'description', 'No description')}\n"
-                f"- Explanation: {getattr(t, 'explanation', 'No explanation provided')}\n"
-                f"- Date: {getattr(t, 'date', datetime.now()).strftime('%Y-%m-%d')}\n"
-                f"- Account: {t.account.name if hasattr(t, 'account') and t.account else 'Uncategorized'}\n"
-                f"- Category: {t.account.category if hasattr(t, 'account') and t.account else 'Unknown'}"
-                for idx, t in enumerate(transactions)
-            ])
-        except Exception as e:
-            logger.error(f"Error formatting transaction data: {str(e)}")
-            return {"error": "Failed to format transaction data", "details": str(e)}
-
-        # Format historical data if available
-        historical_context = ""
-        if historical_data:
-            logger.debug("Processing historical data...")
-            try:
-                historical_summary = analyze_historical_patterns(historical_data)
-                if "error" not in historical_summary:
-                    historical_context = f"\nHistorical Context:\n{historical_summary['summary']}"
-                else:
-                    logger.warning(f"Historical analysis warning: {historical_summary['error']}")
-            except Exception as e:
-                logger.error(f"Error processing historical data: {str(e)}")
-                historical_context = "\nHistorical Context: Analysis unavailable"
-
-        logger.debug("Preparing OpenAI analysis prompt...")
-        prompt = f"""As an expert financial analyst, perform a detailed anomaly detection and pattern analysis on these transactions.
-
-Input Data:
-1. Cross-Field Pattern Analysis:
-{json.dumps(field_patterns, indent=2)}
-
-2. Temporal Pattern Analysis:
-{json.dumps(temporal_analysis, indent=2)}
-
-3. Transaction Details:
-{transaction_text}
-{historical_context}
-
-Analysis Requirements:
-1. Anomaly Detection (Sensitivity: {sensitivity_threshold}):
-   - Identify unusual patterns in transaction amounts
-   - Detect irregular timing or frequency
-   - Flag unexpected category combinations
-   - Note description/explanation mismatches
-
-2. Pattern Recognition:
-   - Analyze transaction seasonality
-   - Identify recurring patterns
-   - Evaluate category distributions
-   - Assess temporal trends
-
-3. Risk Assessment:
-   - Calculate confidence scores (0-1)
-   - Evaluate pattern reliability
-   - Assess historical consistency
-   - Consider contextual factors
-
-Please provide the analysis in the following JSON structure:
-{
-    "anomalies": [
-        {
-            "type": "amount|timing|category|pattern",
-            "description": "Detailed explanation",
-            "confidence_score": 0.0-1.0,
-            "risk_level": "high|medium|low",
-            "recommendation": "Specific action item"
-        }
-    ],
-    "patterns": [
-        {
-            "type": "seasonal|recurring|trend",
-            "description": "Pattern description",
-            "reliability_score": 0.0-1.0,
-            "supporting_evidence": "Evidence from data"
-        }
-    ],
-    "risk_assessment": {
-        "overall_risk_level": "high|medium|low",
-        "key_factors": ["factor1", "factor2"],
-        "recommendations": ["recommendation1", "recommendation2"]
-    }
-}"""
-
-        # Make API call for anomaly detection
-        logger.debug("Making OpenAI API call...")
-        try:
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert financial analyst specialized in transaction analysis. Provide detailed, actionable insights with high accuracy. Format all responses as valid JSON."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-                max_tokens=2000,
-                presence_penalty=0.0,
-                frequency_penalty=0.0
-            )
-            
-            logger.debug("Processing OpenAI response...")
-            try:
-                # Parse the response content
-                content = response.choices[0].message.content.strip()
-                analysis = json.loads(content)
-                
-                # Validate required fields
-                required_fields = ["anomalies", "patterns", "risk_assessment"]
-                missing_fields = [field for field in required_fields if field not in analysis]
-                if missing_fields:
-                    logger.error(f"Missing required fields in analysis: {missing_fields}")
-                    analysis = {
-                        "error": "Incomplete analysis",
-                        "details": f"Missing fields: {', '.join(missing_fields)}",
-                        "partial_results": analysis
-                    }
-                
-                # Enhance analysis with pattern insights
-                if "error" not in analysis:
-                    analysis["pattern_insights"] = {
-                        "field_relationships": field_patterns.get("identified_relationships", []),
-                        "temporal_patterns": temporal_analysis.get("seasonal_patterns", [])
-                    }
-                    
-                    # Add confidence metrics
-                    analysis["metadata"] = {
-                        "analysis_timestamp": datetime.utcnow().isoformat(),
-                        "transaction_count": len(transactions),
-                        "historical_data_available": bool(historical_data),
-                        "confidence_metrics": {
-                            "field_pattern_confidence": field_patterns.get("pattern_confidence", 0.0),
-                            "temporal_pattern_confidence": temporal_analysis.get("confidence_metrics", {}).get("cycle_confidence", 0.0)
-                        }
-                    }
-                
-                logger.info("Analysis completed successfully")
-                return analysis
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse OpenAI response: {str(e)}")
-                return {
-                    "error": "Invalid analysis format",
-                    "details": str(e),
-                    "raw_response": content[:200] + "..." if len(content) > 200 else content
-                }
-                
-        except Exception as e:
-            logger.error(f"OpenAI API call failed: {str(e)}")
-            return {
-                "error": "Failed to get analysis from OpenAI",
-                "details": str(e)
-            }
-        
-    except Exception as e:
-        logger.error(f"Error detecting transaction anomalies: {str(e)}")
-        return {
-            "error": "Failed to analyze transactions for anomalies",
-            "details": str(e)
-        }
-
-def analyze_historical_patterns(historical_data):
-    """
-    Analyze historical transaction data to identify patterns and establish baselines.
-    
-    Args:
-        historical_data: List of historical transactions
-        
-    Returns:
-        Dictionary containing detailed pattern analysis
-    """
-    try:
-        # Group transactions by category and month
-        category_data = {}
-        monthly_data = {}
-        
-        for transaction in historical_data:
-            # Category grouping
-            category = transaction.account.category if transaction.account else 'Uncategorized'
-            if category not in category_data:
-                category_data[category] = []
-            category_data[category].append(transaction)
-            
-            # Monthly grouping
-            month_key = transaction.date.strftime('%Y-%m')
-            if month_key not in monthly_data:
-                monthly_data[month_key] = []
-            monthly_data[month_key].append(transaction)
-        
-        # Calculate statistics and patterns for each category
-        category_patterns = {}
-        for category, transactions in category_data.items():
-            amounts = [t.amount for t in transactions]
-            category_patterns[category] = {
-                'average_amount': sum(amounts) / len(amounts) if amounts else 0,
-                'transaction_count': len(transactions),
-                'total_amount': sum(amounts),
-                'min_amount': min(amounts) if amounts else 0,
-                'max_amount': max(amounts) if amounts else 0
-            }
-        
-        # Generate summary
-        summary = []
-        for category, stats in category_patterns.items():
-            summary.append(
-                f"Category: {category}\n"
-                f"- Transaction Count: {stats['transaction_count']}\n"
-                f"- Average Amount: ${stats['average_amount']:.2f}\n"
-                f"- Total Amount: ${stats['total_amount']:.2f}\n"
-                f"- Amount Range: ${stats['min_amount']:.2f} to ${stats['max_amount']:.2f}"
-            )
-        
-        return {
-            'summary': "\n\n".join(summary),
-            'category_patterns': category_patterns,
-            'monthly_data': monthly_data
-        }
-        
-    except Exception as e:
-        logger.error(f"Error analyzing historical patterns: {str(e)}")
-        return {
-            'summary': "Error analyzing historical patterns",
-            'category_patterns': {},
-            'monthly_data': {}
-        }
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
-    """Predict the most likely account classifications for a transaction."""
+    """
+    Predict the most likely account classifications for a transaction based on its description and explanation.
+    
+    Args:
+        description: Transaction description
+        explanation: User-provided explanation
+        available_accounts: List of available account dictionaries with 'name', 'category', and 'link' keys
+    
+    Returns:
+        List of predicted account matches with confidence scores
+    """
     try:
+        # Format available accounts for the prompt
         account_info = "\n".join([
             f"- {acc['name']} (Category: {acc['category']}, Code: {acc['link']})"
             for acc in available_accounts
         ])
         
-        prompt = f"""Analyze this financial transaction and provide comprehensive account classification:
+        # Construct the prompt
+        prompt = f"""Analyze this financial transaction and provide comprehensive account classification with financial insights:
 
 Transaction Details:
 - Description: {description}
@@ -477,70 +38,209 @@ Available Chart of Accounts:
 {account_info}
 
 Instructions:
-1. Analyze both transaction description and explanation
-2. Consider account categories and accounting principles
-3. Evaluate patterns and implications
-4. Provide confidence scores and reasoning
+1. Analyze both transaction description and explanation with equal weight for classification
+2. Consider account categories, sub-categories, and accounting principles
+3. Evaluate patterns and financial implications
+4. Provide confidence scores based on:
+   - Semantic similarity with account purposes
+   - Clarity and completeness of transaction information
+   - Historical accounting patterns
+   - Compliance with accounting principles
+5. Generate detailed reasoning that includes:
+   - Specific matching criteria met
+   - Financial implications
+   - Accounting principle alignment
+   - Alternative considerations
 
-Format response as JSON list with structure:
+Format your response as a JSON list with exactly this structure:
 [
     {{
         "account_name": "suggested account name",
         "confidence": 0.95,
-        "reasoning": "detailed explanation including principles"
+        "reasoning": "detailed explanation including category fit, accounting principles, and financial implications",
+        "financial_insight": "broader financial context and impact analysis"
+    }},
+    {{
+        "account_name": "alternative account",
+        "confidence": 0.75,
+        "reasoning": "explanation of alternative classification",
+        "financial_insight": "additional financial implications for this classification"
     }}
 ]
 
-Provide up to 3 suggestions, ranked by confidence."""
+Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy and detailed financial insights."""
 
+        # Make API call
         client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a financial accounting assistant helping to classify transactions."},
+                {"role": "system", "content": "You are a financial accounting assistant helping to classify transactions into the correct accounts."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
             max_tokens=500
         )
         
+        # Parse response
         content = response.choices[0].message.content.strip()
         suggestions = []
+        try:
+            # Safely evaluate the response content
+            import json
+            if content.startswith('[') and content.endswith(']'):
+                suggestions = json.loads(content)
+            else:
+                logger.error("Invalid response format from AI")
+        except Exception as e:
+            logger.error(f"Error parsing AI suggestions: {str(e)}")
+            logger.debug(f"Raw content received: {content}")
         
-        if content.startswith('[') and content.endswith(']'):
-            suggestions = json.loads(content)
-            
+        # Validate and format suggestions
         valid_suggestions = []
-        for suggestion in suggestions:
-            matching_accounts = [acc for acc in available_accounts 
-                              if acc['name'].lower() == suggestion['account_name'].lower()]
-            if matching_accounts:
-                valid_suggestions.append({
-                    **suggestion,
-                    'account': matching_accounts[0]
-                })
-        
-        return valid_suggestions[:3]
+        try:
+            for suggestion in suggestions:
+                # Only include suggestions that match existing accounts
+                matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
+                if matching_accounts:
+                    # Extract financial insight or use reasoning if insight not provided
+                    financial_insight = suggestion.get('financial_insight', suggestion.get('reasoning', ''))
+                    
+                    valid_suggestions.append({
+                        **suggestion,
+                        'account': matching_accounts[0],
+                        'financial_insight': financial_insight
+                    })
+            
+            return valid_suggestions[:3]  # Return top 3 suggestions
+        except Exception as e:
+            logger.error(f"Error processing suggestions: {str(e)}")
+            return []
         
     except Exception as e:
         logger.error(f"Error in account prediction: {str(e)}")
         return []
 
-def generate_financial_advice(transactions, accounts):
-    """Generate comprehensive financial advice based on transaction patterns."""
+def detect_transaction_anomalies(transactions, historical_data=None):
+    """
+    Detect anomalies in transactions using AI analysis of Description and Explanation fields.
+    
+    Args:
+        transactions: List of current transactions to analyze
+        historical_data: Optional historical transaction data for baseline comparison
+        
+    Returns:
+        List of dictionaries containing anomaly details
+    """
     try:
+        # Format transaction data for analysis
+        transaction_text = "\n".join([
+            f"Transaction {idx + 1}:\n"
+            f"- Amount: ${t.amount}\n"
+            f"- Description: {t.description}\n"
+            f"- Explanation: {t.explanation or 'No explanation provided'}\n"
+            f"- Date: {t.date.strftime('%Y-%m-%d')}\n"
+            f"- Account: {t.account.name if t.account else 'Uncategorized'}"
+            for idx, t in enumerate(transactions)
+        ])
+
+        prompt = f"""Analyze these transactions for potential anomalies and unusual patterns. Consider:
+
+1. Amount patterns:
+   - Unusually large or small amounts
+   - Irregular payment patterns
+   - Unexpected changes in regular amounts
+
+2. Description & Explanation analysis:
+   - Inconsistencies between description and explanation
+   - Unusual or unexpected descriptions
+   - Missing or vague explanations
+   - Semantic mismatches with account categories
+
+3. Timing patterns:
+   - Unusual transaction timing
+   - Irregular frequencies
+   - Unexpected date patterns
+
+4. Account usage:
+   - Unusual account assignments
+   - Inconsistent categorization
+   - Pattern deviations
+
+Transactions to analyze:
+{transaction_text}
+
+Provide analysis in this JSON structure:
+{{
+    "anomalies": [
+        {{
+            "transaction_index": <index>,
+            "anomaly_type": "amount|description|timing|account",
+            "confidence": <float between 0-1>,
+            "reason": "detailed explanation",
+            "severity": "high|medium|low",
+            "recommendation": "suggested action"
+        }}
+    ],
+    "pattern_insights": {{
+        "identified_patterns": ["string"],
+        "unusual_deviations": ["string"]
+    }}
+}}"""
+
+        # Make API call for anomaly detection
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert financial analyst specialized in detecting transaction anomalies and patterns. Focus on providing detailed, actionable insights while maintaining high accuracy. Format your response as valid JSON."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,  # Lower temperature for more consistent analysis
+            max_tokens=1000
+        )
+
+        # Parse and return the analysis
+        import json
+        analysis = json.loads(response.choices[0].message.content)
+        return analysis
+
+    except Exception as e:
+        logger.error(f"Error detecting transaction anomalies: {str(e)}")
+        return {
+            "error": "Failed to analyze transactions for anomalies",
+            "details": str(e)
+        }
+
+def generate_financial_advice(transactions, accounts):
+    """
+    Generate comprehensive financial advice based on transaction patterns and account usage.
+    
+    Args:
+        transactions: List of transaction dictionaries with amount, description, and account info
+        accounts: List of available accounts with categories and balances
+        
+    Returns:
+        Dictionary containing financial insights and recommendations
+    """
+    try:
+        # Format transaction data for the prompt
         transaction_summary = "\n".join([
             f"- Amount: ${t['amount']}, Description: {t['description']}, "
             f"Account: {t['account_name'] if 'account_name' in t else 'Uncategorized'}"
-            for t in transactions[:10]
+            for t in transactions[:10]  # Limit to recent transactions for context
         ])
         
+        # Format account balances
         account_summary = "\n".join([
             f"- {acc['name']}: ${acc.get('balance', 0):.2f} ({acc['category']})"
             for acc in accounts
         ])
         
-        prompt = f"""Analyze these financial transactions and account balances to provide insights:
+        prompt = f"""Analyze these financial transactions and account balances to provide comprehensive natural language insights and predictive advice:
 
 Transaction History:
 {transaction_summary}
@@ -549,41 +249,127 @@ Account Balances:
 {account_summary}
 
 Instructions:
-1. Analyze patterns and trends
-2. Evaluate financial health
-3. Provide actionable recommendations
-4. Consider risk factors
+1. Perform Detailed Pattern Analysis
+   - Identify and explain recurring transaction patterns
+   - Calculate and interpret growth rates with context
+   - Analyze seasonal variations and their business impact
+   - Evaluate account utilization efficiency with recommendations
+   - Provide natural language explanations for each pattern
 
-Format response as JSON with structure:
-{{
+2. Generate In-depth Financial Health Assessment
+   - Analyze cash flow stability with detailed commentary
+   - Track and explain account balance trends
+   - Break down spending patterns by category
+   - Assess revenue diversification opportunities
+   - Highlight key financial ratios and their implications
+
+3. Create Forward-looking Analysis
+   - Project growth trajectories with supporting data
+   - Conduct comprehensive risk assessment
+   - Generate detailed cash flow forecasts
+   - Identify specific budget optimization opportunities
+   - Explain market and industry context
+
+4. Develop Actionable Recommendations
+   - Provide specific short-term actions (next 30 days)
+   - Outline medium-term strategy (3-6 months)
+   - Detail long-term planning (6-12 months)
+   - Include implementation steps for each recommendation
+   - Explain expected outcomes and success metrics
+
+Provide a detailed financial analysis in this JSON structure:
+{
     "key_insights": [
-        {{
+        {
             "category": "string",
             "finding": "string",
-            "impact_level": "high|medium|low"
-        }}
+            "impact_level": "high|medium|low",
+            "trend": "increasing|stable|decreasing"
+        }
     ],
-    "recommendations": [
-        {{
+    "risk_factors": [
+        {
+            "risk_type": "string",
+            "probability": "high|medium|low",
+            "potential_impact": "string",
+            "mitigation_strategy": "string"
+        }
+    ],
+    "optimization_opportunities": [
+        {
+            "area": "string",
+            "potential_benefit": "string",
+            "implementation_difficulty": "high|medium|low",
+            "recommended_timeline": "string"
+        }
+    ],
+    "strategic_recommendations": [
+        {
+            "timeframe": "short|medium|long",
             "action": "string",
-            "priority": "high|medium|low",
-            "timeline": "short|medium|long"
-        }}
-    ]
-}}"""
+            "expected_outcome": "string",
+            "priority": "high|medium|low"
+        }
+    ],
+    "cash_flow_analysis": {
+        "current_status": "string",
+        "projected_trend": "string",
+        "key_drivers": ["string"],
+        "improvement_suggestions": ["string"]
+    }
+}
+"""
 
+        # Make API call for financial advice
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo",  # Using gpt-3.5-turbo for consistent API support
             messages=[
-                {"role": "system", "content": "You are an expert financial advisor."},
+                {
+                    "role": "system", 
+                    "content": "You are an expert financial advisor specializing in business accounting, financial strategy, and predictive analysis. Focus on providing actionable insights and quantitative metrics. Format your response as valid JSON."
+                },
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,
+            temperature=0.3,  # Lower temperature for more focused and consistent advice
             max_tokens=1000
         )
         
-        return json.loads(response.choices[0].message.content)
+        # Parse and return the financial advice
+        try:
+            import json
+            advice = json.loads(response.choices[0].message.content)
+            
+            # Enhance the advice with more detailed natural language summaries
+            enhanced_advice = {
+                "key_insights": advice.get("key_insights", []),
+                "risk_factors": advice.get("risk_factors", []),
+                "optimization_opportunities": advice.get("optimization_opportunities", []),
+                "strategic_recommendations": advice.get("strategic_recommendations", []),
+                "cash_flow_analysis": {
+                    "current_status": advice.get("cash_flow_analysis", {}).get("current_status", ""),
+                    "projected_trend": advice.get("cash_flow_analysis", {}).get("projected_trend", ""),
+                    "key_drivers": advice.get("cash_flow_analysis", {}).get("key_drivers", []),
+                    "improvement_suggestions": advice.get("cash_flow_analysis", {}).get("improvement_suggestions", [])
+                }
+            }
+            
+            return enhanced_advice
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return the raw text in a structured format
+            raw_advice = response.choices[0].message.content
+            return {
+                "key_insights": raw_advice,
+                "risk_factors": [],
+                "optimization_opportunities": [],
+                "strategic_recommendations": [],
+                "cash_flow_analysis": {
+                    "current_status": "",
+                    "projected_trend": "",
+                    "key_drivers": [],
+                    "improvement_suggestions": []
+                }
+            }
             
     except Exception as e:
         logger.error(f"Error generating financial advice: {str(e)}")
@@ -592,59 +378,171 @@ Format response as JSON with structure:
             "details": str(e)
         }
 
-def forecast_expenses(transactions, forecast_months=12):
-    """Generate expense forecasts based on historical patterns."""
+def forecast_expenses(transactions, accounts, forecast_months=12):
+    """
+    Generate expense forecasts based on historical transaction patterns.
+    
+    Args:
+        transactions: List of transaction dictionaries with amount, description, and dates
+        accounts: List of available accounts with categories and balances
+        forecast_months: Number of months to forecast (default 12)
+        
+    Returns:
+        Dictionary containing expense forecasts and confidence metrics
+    """
     try:
+        # Format transaction data for analysis
         transaction_summary = "\n".join([
             f"- Amount: ${t['amount']}, Description: {t['description']}, "
-            f"Date: {t.get('date', 'N/A')}"
-            for t in transactions[:50]
+            f"Date: {t.get('date', 'N/A')}, Account: {t.get('account_name', 'Uncategorized')}"
+            for t in transactions[:50]  # Use recent transactions for pattern analysis
         ])
         
-        prompt = f"""Analyze these transactions to generate expense forecasts:
+        # Format account information
+        account_summary = "\n".join([
+            f"- {acc['name']}: ${acc.get('balance', 0):.2f} ({acc['category']})"
+            for acc in accounts
+        ])
+        
+        prompt = f"""Analyze these financial transactions and accounts to generate detailed expense forecasts:
 
 Transaction History:
 {transaction_summary}
 
-Instructions:
-1. Analyze historical patterns
-2. Generate {forecast_months}-month forecast
-3. Include confidence metrics
-4. Consider seasonal factors
+Account Balances:
+{account_summary}
 
-Format response as JSON with structure:
+Instructions:
+1. Analyze Historical Patterns
+   - Identify recurring expenses and their frequencies
+   - Calculate growth rates and seasonal variations
+   - Consider account-specific trends
+   - Factor in both Description and Explanation fields for pattern recognition
+
+2. Generate Expense Forecasts
+   - Project monthly expenses for next {forecast_months} months
+   - Break down by expense categories
+   - Include confidence intervals
+   - Account for seasonality and trends
+   - Consider economic factors and business context
+
+3. Provide Risk Analysis
+   - Identify potential expense risks
+   - Calculate variance in projections
+   - Assess forecast reliability
+   - Consider external factors
+
+Format your response as a JSON object with this structure:
 {{
     "monthly_forecasts": [
         {{
             "month": "YYYY-MM",
-            "amount": float,
-            "confidence": float
+            "total_expenses": float,
+            "confidence": float,
+            "breakdown": [
+                {{
+                    "category": string,
+                    "amount": float,
+                    "trend": "increasing|stable|decreasing"
+                }}
+            ]
         }}
     ],
+    "forecast_factors": {{
+        "key_drivers": [string],
+        "risk_factors": [string],
+        "assumptions": [string]
+    }},
     "confidence_metrics": {{
         "overall_confidence": float,
+        "variance_range": {{
+            "min": float,
+            "max": float
+        }},
         "reliability_score": float
-    }}
+    }},
+    "recommendations": [
+        {{
+            "action": string,
+            "potential_impact": string,
+            "implementation_timeline": string
+        }}
+    ]
 }}"""
 
+        # Make API call
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo",  # Using gpt-3.5-turbo for consistent API support
             messages=[
-                {"role": "system", "content": "You are an expert financial analyst."},
+                {
+                    "role": "system",
+                    "content": "You are an expert financial analyst specializing in expense forecasting and predictive analysis. Focus on providing accurate, actionable forecasts with detailed supporting analysis. Format your response as valid JSON."
+                },
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
             max_tokens=1000
         )
         
-        forecast = json.loads(response.choices[0].message.content)
-        forecast["generated_at"] = datetime.utcnow().isoformat()
-        return forecast
+        # Parse and validate the forecast
+        try:
+            content = response.choices[0].message.content.strip()
+            if not content:
+                logger.error("Empty response from AI model")
+                return {
+                    "error": "Empty response from AI model",
+                    "monthly_forecasts": [],
+                    "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+                    "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+                    "recommendations": []
+                }
+
+            forecast = json.loads(content)
             
+            # Validate required fields
+            required_fields = ['monthly_forecasts', 'forecast_factors', 'confidence_metrics', 'recommendations']
+            missing_fields = [field for field in required_fields if field not in forecast]
+            
+            if missing_fields:
+                logger.warning(f"Missing required fields in forecast: {missing_fields}")
+                # Initialize missing fields with empty defaults
+                for field in missing_fields:
+                    if field == 'monthly_forecasts':
+                        forecast[field] = []
+                    elif field == 'forecast_factors':
+                        forecast[field] = {"key_drivers": [], "risk_factors": [], "assumptions": []}
+                    elif field == 'confidence_metrics':
+                        forecast[field] = {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0}
+                    elif field == 'recommendations':
+                        forecast[field] = []
+
+            # Add metadata about the forecast
+            forecast["generated_at"] = datetime.utcnow().isoformat()
+            forecast["forecast_period_months"] = forecast_months
+            forecast["data_points_analyzed"] = len(transactions)
+            
+            logger.info("Successfully generated and validated forecast")
+            return forecast
+            
+        except json.JSONDecodeError as je:
+            logger.error(f"JSON parsing error in forecast: {str(je)}")
+            return {
+                "error": "Invalid forecast format",
+                "details": str(je),
+                "monthly_forecasts": [],
+                "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+                "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+                "recommendations": []
+            }
+        
     except Exception as e:
-        logger.error(f"Error generating forecast: {str(e)}")
+        logger.error(f"Error generating expense forecast: {str(e)}")
         return {
-            "error": "Failed to generate forecast",
-            "details": str(e)
+            "error": "Failed to generate expense forecast",
+            "details": str(e),
+            "monthly_forecasts": [],
+            "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+            "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+            "recommendations": []
         }

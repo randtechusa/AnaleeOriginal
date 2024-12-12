@@ -361,26 +361,13 @@ def analyze(file_id):
             db.session.rollback()
             flash('Error saving changes', 'error')
     
-    # Perform comprehensive analysis including anomalies and historical patterns
+    # Perform anomaly detection on transactions
     try:
-        from ai_utils import detect_transaction_anomalies, analyze_historical_patterns
-        
-        # Get historical patterns
-        historical_analysis = analyze_historical_patterns(transactions)
-        logger.info("Historical pattern analysis completed")
-        logger.debug(f"Historical analysis results: {historical_analysis}")
-        
-        # Detect anomalies with historical context
-        anomalies = detect_transaction_anomalies(transactions, historical_data=transactions)
-        logger.info("Anomaly detection completed")
-        logger.debug(f"Detected anomalies: {anomalies}")
-        
+        from ai_utils import detect_transaction_anomalies
+        anomalies = detect_transaction_anomalies(transactions)
+        logger.info(f"Detected anomalies: {anomalies}")
     except Exception as e:
-        logger.error(f"Error in transaction analysis: {str(e)}")
-        historical_analysis = {
-            'summary': "Historical pattern analysis unavailable",
-            'detailed_analysis': {}
-        }
+        logger.error(f"Error detecting anomalies: {str(e)}")
         anomalies = {"error": str(e)}
     
     return render_template('analyze.html', 
@@ -388,8 +375,7 @@ def analyze(file_id):
                          accounts=accounts,
                          transactions=transactions,
                          bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int),
-                         anomalies=anomalies,
-                         historical_analysis=historical_analysis)
+                         anomalies=anomalies)
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
