@@ -201,81 +201,191 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
     try:
         # Initialize OpenAI client
         client = openai.OpenAI()
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            logger.error("OpenAI API key not found in environment variables")
+            return {"error": "OpenAI API key not configured", "details": "Missing API key"}
+        
+        if not transactions:
+            logger.warning("No transactions provided for analysis")
+            return {"error": "No transactions to analyze", "details": "Empty transaction list"}
+            
+        logger.info(f"Starting transaction analysis with {len(transactions)} transactions")
         
         # Analyze cross-field patterns
+        logger.debug("Analyzing cross-field patterns...")
         field_patterns = analyze_cross_field_patterns(transactions)
+        if "error" in field_patterns:
+            logger.error(f"Error in cross-field analysis: {field_patterns['error']}")
+            return field_patterns
         
         # Analyze temporal patterns
+        logger.debug("Analyzing temporal patterns...")
         temporal_analysis = analyze_temporal_patterns(transactions)
+        if "error" in temporal_analysis:
+            logger.error(f"Error in temporal analysis: {temporal_analysis['error']}")
+            return temporal_analysis
         
         # Format transaction data for analysis
-        transaction_text = "\n".join([
-            f"Transaction {idx + 1}:\n"
-            f"- Amount: ${t.amount}\n"
-            f"- Description: {t.description}\n"
-            f"- Explanation: {getattr(t, 'explanation', 'No explanation provided')}\n"
-            f"- Date: {t.date.strftime('%Y-%m-%d')}\n"
-            f"- Account: {t.account.name if t.account else 'Uncategorized'}\n"
-            f"- Category: {t.account.category if t.account else 'Unknown'}"
-            for idx, t in enumerate(transactions)
-        ])
+        logger.debug("Formatting transaction data...")
+        try:
+            transaction_text = "\n".join([
+                f"Transaction {idx + 1}:\n"
+                f"- Amount: ${getattr(t, 'amount', 0)}\n"
+                f"- Description: {getattr(t, 'description', 'No description')}\n"
+                f"- Explanation: {getattr(t, 'explanation', 'No explanation provided')}\n"
+                f"- Date: {getattr(t, 'date', datetime.now()).strftime('%Y-%m-%d')}\n"
+                f"- Account: {t.account.name if hasattr(t, 'account') and t.account else 'Uncategorized'}\n"
+                f"- Category: {t.account.category if hasattr(t, 'account') and t.account else 'Unknown'}"
+                for idx, t in enumerate(transactions)
+            ])
+        except Exception as e:
+            logger.error(f"Error formatting transaction data: {str(e)}")
+            return {"error": "Failed to format transaction data", "details": str(e)}
 
         # Format historical data if available
         historical_context = ""
         if historical_data:
-            historical_summary = analyze_historical_patterns(historical_data)
-            historical_context = f"\nHistorical Context:\n{historical_summary['summary']}"
+            logger.debug("Processing historical data...")
+            try:
+                historical_summary = analyze_historical_patterns(historical_data)
+                if "error" not in historical_summary:
+                    historical_context = f"\nHistorical Context:\n{historical_summary['summary']}"
+                else:
+                    logger.warning(f"Historical analysis warning: {historical_summary['error']}")
+            except Exception as e:
+                logger.error(f"Error processing historical data: {str(e)}")
+                historical_context = "\nHistorical Context: Analysis unavailable"
 
-        prompt = f"""Perform comprehensive anomaly detection and pattern analysis on these transactions,
-considering the following patterns and analyses:
+        logger.debug("Preparing OpenAI analysis prompt...")
+        prompt = f"""As an expert financial analyst, perform a detailed anomaly detection and pattern analysis on these transactions.
 
-Cross-Field Patterns:
+Input Data:
+1. Cross-Field Pattern Analysis:
 {json.dumps(field_patterns, indent=2)}
 
-Temporal Patterns:
+2. Temporal Pattern Analysis:
 {json.dumps(temporal_analysis, indent=2)}
 
-Transactions to analyze:
+3. Transaction Details:
 {transaction_text}
 {historical_context}
 
-Instructions:
-1. Consider both cross-field and temporal patterns in analysis
-2. Use sensitivity threshold of {sensitivity_threshold} for anomaly detection
-3. Provide confidence scores for each detected anomaly
-4. Generate specific recommendations for each anomaly
-5. Include pattern-based insights and risk assessment
+Analysis Requirements:
+1. Anomaly Detection (Sensitivity: {sensitivity_threshold}):
+   - Identify unusual patterns in transaction amounts
+   - Detect irregular timing or frequency
+   - Flag unexpected category combinations
+   - Note description/explanation mismatches
 
-Provide analysis in JSON format with comprehensive detection results."""
+2. Pattern Recognition:
+   - Analyze transaction seasonality
+   - Identify recurring patterns
+   - Evaluate category distributions
+   - Assess temporal trends
+
+3. Risk Assessment:
+   - Calculate confidence scores (0-1)
+   - Evaluate pattern reliability
+   - Assess historical consistency
+   - Consider contextual factors
+
+Please provide the analysis in the following JSON structure:
+{
+    "anomalies": [
+        {
+            "type": "amount|timing|category|pattern",
+            "description": "Detailed explanation",
+            "confidence_score": 0.0-1.0,
+            "risk_level": "high|medium|low",
+            "recommendation": "Specific action item"
+        }
+    ],
+    "patterns": [
+        {
+            "type": "seasonal|recurring|trend",
+            "description": "Pattern description",
+            "reliability_score": 0.0-1.0,
+            "supporting_evidence": "Evidence from data"
+        }
+    ],
+    "risk_assessment": {
+        "overall_risk_level": "high|medium|low",
+        "key_factors": ["factor1", "factor2"],
+        "recommendations": ["recommendation1", "recommendation2"]
+    }
+}"""
 
         # Make API call for anomaly detection
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert financial analyst specialized in detecting transaction anomalies and patterns. Focus on providing detailed, actionable insights while maintaining high accuracy."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,
-            max_tokens=1000
-        )
-        
-        # Parse and enhance the analysis
-        analysis = json.loads(response.choices[0].message.content)
-        
-        # Add pattern-specific insights
-        if field_patterns.get("identified_relationships"):
-            analysis["pattern_insights"] = analysis.get("pattern_insights", {})
-            analysis["pattern_insights"]["field_relationships"] = field_patterns["identified_relationships"]
-        
-        if temporal_analysis.get("seasonal_patterns"):
-            if "pattern_insights" not in analysis:
-                analysis["pattern_insights"] = {}
-            analysis["pattern_insights"]["temporal_patterns"] = temporal_analysis["seasonal_patterns"]
-
-        return analysis
+        logger.debug("Making OpenAI API call...")
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert financial analyst specialized in transaction analysis. Provide detailed, actionable insights with high accuracy. Format all responses as valid JSON."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=2000,
+                presence_penalty=0.0,
+                frequency_penalty=0.0
+            )
+            
+            logger.debug("Processing OpenAI response...")
+            try:
+                # Parse the response content
+                content = response.choices[0].message.content.strip()
+                analysis = json.loads(content)
+                
+                # Validate required fields
+                required_fields = ["anomalies", "patterns", "risk_assessment"]
+                missing_fields = [field for field in required_fields if field not in analysis]
+                if missing_fields:
+                    logger.error(f"Missing required fields in analysis: {missing_fields}")
+                    analysis = {
+                        "error": "Incomplete analysis",
+                        "details": f"Missing fields: {', '.join(missing_fields)}",
+                        "partial_results": analysis
+                    }
+                
+                # Enhance analysis with pattern insights
+                if "error" not in analysis:
+                    analysis["pattern_insights"] = {
+                        "field_relationships": field_patterns.get("identified_relationships", []),
+                        "temporal_patterns": temporal_analysis.get("seasonal_patterns", [])
+                    }
+                    
+                    # Add confidence metrics
+                    analysis["metadata"] = {
+                        "analysis_timestamp": datetime.utcnow().isoformat(),
+                        "transaction_count": len(transactions),
+                        "historical_data_available": bool(historical_data),
+                        "confidence_metrics": {
+                            "field_pattern_confidence": field_patterns.get("pattern_confidence", 0.0),
+                            "temporal_pattern_confidence": temporal_analysis.get("confidence_metrics", {}).get("cycle_confidence", 0.0)
+                        }
+                    }
+                
+                logger.info("Analysis completed successfully")
+                return analysis
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse OpenAI response: {str(e)}")
+                return {
+                    "error": "Invalid analysis format",
+                    "details": str(e),
+                    "raw_response": content[:200] + "..." if len(content) > 200 else content
+                }
+                
+        except Exception as e:
+            logger.error(f"OpenAI API call failed: {str(e)}")
+            return {
+                "error": "Failed to get analysis from OpenAI",
+                "details": str(e)
+            }
         
     except Exception as e:
         logger.error(f"Error detecting transaction anomalies: {str(e)}")
