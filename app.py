@@ -39,8 +39,6 @@ def create_app():
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
         
-        logger.debug(f"Database URL format validated")
-        
         # Configure Flask app
         app.config.update(
             SECRET_KEY=os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
@@ -50,7 +48,7 @@ def create_app():
         )
         logger.debug("Flask app configuration completed")
 
-        # Initialize Flask extensions with app context
+        # Initialize Flask extensions
         db.init_app(app)
         migrate.init_app(app, db)
         login_manager.init_app(app)
@@ -63,32 +61,22 @@ def create_app():
             logger.debug("Models imported")
 
             try:
-            # Initialize database
-            db.create_all()
-            logger.debug("Database tables created")
-            
-            # Create initial migration
-            with app.app_context():
-                migrate.init_app(app, db, directory='migrations')
-                logger.debug("Migration initialized")
+                # Initialize database
+                db.create_all()
+                logger.debug("Database tables created")
                 
-        except Exception as db_error:
-            logger.error(f"Database initialization error: {str(db_error)}")
-            raise
-            
-            # Register blueprints
-            from routes import main as main_blueprint
-            app.register_blueprint(main_blueprint)
-            logger.debug("Blueprints registered")
-
-            return app
+                # Register blueprints
+                from routes import main as main_blueprint
+                app.register_blueprint(main_blueprint)
+                logger.debug("Blueprints registered")
+                
+                return app
+                
+            except Exception as db_error:
+                logger.error(f"Database initialization error: {str(db_error)}")
+                raise
 
     except Exception as e:
         logger.error(f"Error during app creation: {str(e)}")
         logger.exception("Full stack trace:")
         raise
-
-# Initialize the application (only if running directly)
-if __name__ == '__main__':
-    app = create_app()
-    app.run(host='0.0.0.0', port=5000, debug=True)

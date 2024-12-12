@@ -32,6 +32,7 @@ if __name__ == "__main__":
             port=port,
             debug=True
         )
+        
     except Exception as e:
         logger.error(f"Failed to start application: {str(e)}")
         logger.exception("Full stack trace:")
