@@ -1,6 +1,30 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    .explanation-input {
+        transition: all 0.3s ease;
+        background-color: var(--bs-dark);
+        color: var(--bs-light);
+        border: 1px solid var(--bs-gray-700);
+    }
+    
+    .explanation-input:focus,
+    .explanation-input.explanation-focused {
+        border-color: var(--bs-primary);
+        box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.25);
+        background-color: var(--bs-dark);
+    }
+    
+    .explanation-input.has-content {
+        border-color: var(--bs-gray-500);
+        background-color: var(--bs-dark);
+    }
+    
+    .explanation-input:hover {
+        border-color: var(--bs-primary);
+    }
+</style>
 <div class="card mb-4">
     <div class="card-body">
         {% if anomalies and not anomalies.error %}
@@ -108,11 +132,12 @@
                                 ${{ "%.2f"|format(transaction.amount) }}
                             </td>
                             <td>
-                                <input type="text" 
+                                <textarea 
                                        class="form-control explanation-input" 
                                        name="explanation_{{ transaction.id }}" 
-                                       value="{{ transaction.explanation }}"
-                                       placeholder="Enter explanation">
+                                       rows="2"
+                                       style="min-height: 60px; resize: vertical;"
+                                       placeholder="Enter explanation">{{ transaction.explanation }}</textarea>
                             </td>
                             <td>
                                 <div class="input-group">
@@ -172,9 +197,43 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Handle explanation changes
-    explanationInputs.forEach(input => {
-        input.addEventListener('change', function() {
+    // Handle explanation changes and enhance textarea behavior
+    explanationInputs.forEach(textarea => {
+        // Auto-resize function
+        const autoResize = (el) => {
+            el.style.height = 'auto';
+            el.style.height = (el.scrollHeight) + 'px';
+        };
+        
+        // Initial resize and class
+        autoResize(textarea);
+        if (textarea.value.trim()) {
+            textarea.classList.add('has-content');
+        }
+        
+        // Handle input events for auto-resize
+        textarea.addEventListener('input', function() {
+            autoResize(this);
+        });
+        
+        // Handle focus events
+        textarea.addEventListener('focus', function() {
+            this.classList.add('explanation-focused');
+        });
+        
+        // Handle blur events
+        textarea.addEventListener('blur', function() {
+            if (this.value.trim()) {
+                this.classList.add('has-content');
+            } else {
+                this.classList.remove('has-content');
+            }
+            // Keep a subtle highlight if there's content
+            this.classList.remove('explanation-focused');
+        });
+        
+        // Handle change events
+        textarea.addEventListener('change', function() {
             form.submit();
         });
     });
