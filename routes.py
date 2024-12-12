@@ -1,6 +1,8 @@
 import logging
 import os
 from datetime import datetime
+from typing import Dict, List, Optional, Union
+
 from flask import (
     Blueprint, render_template, request, redirect, url_for,
     flash, session, make_response, jsonify
@@ -11,7 +13,13 @@ from flask_login import (
 from werkzeug.security import generate_password_hash, check_password_hash
 from weasyprint import HTML
 import pandas as pd
-from sqlalchemy import func
+from sqlalchemy import func, and_, text
+import json
+from itertools import zip_longest
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 from app import db
 from models import (
@@ -33,25 +41,9 @@ main = Blueprint('main', __name__)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 
-# Configure logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Create blueprint
-main = Blueprint('main', __name__)
-
 # Configure secret key for session management
-import os
 if not os.environ.get('FLASK_SECRET_KEY'):
     os.environ['FLASK_SECRET_KEY'] = os.urandom(24).hex()
-
-# Configure logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Configure pandas display options for debugging
-pd.set_option('display.max_columns', None)
-pd.set_option('display.max_rows', None)
 
 @main.route('/')
 def index():
@@ -750,6 +742,7 @@ def expense_forecast():
 @main.route('/export-forecast-pdf')
 @login_required
 def export_forecast_pdf():
+    """Generate and download a PDF report with financial forecasts."""
     try:
         # Get company settings
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
@@ -759,46 +752,10 @@ def export_forecast_pdf():
             
         # Get forecast data from session
         forecast = session.get('forecast', {})
-        monthly_labels = session.get('monthly_labels', [])
-        monthly_amounts = session.get('monthly_amounts', [])
-        confidence_upper = session.get('confidence_upper', [])
-        confidence_lower = session.get('confidence_lower', [])
-        category_labels = session.get('category_labels', [])
-        category_amounts = session.get('category_amounts', [])
-        
         if not forecast:
             flash('No forecast data available. Please generate a forecast first.')
             return redirect(url_for('main.expense_forecast'))
-        
-        # Render template to HTML
-        html = render_template(
-            'pdf_templates/forecast_pdf.html',
-            forecast=forecast,
-            monthly_labels=monthly_labels,
-            monthly_amounts=monthly_amounts,
-            confidence_upper=confidence_upper,
-            confidence_lower=confidence_lower,
-            category_labels=category_labels,
-            category_amounts=category_amounts,
-            company=company_settings,
-            datetime=datetime,
-            zip=zip
-        )
-        
-        # Generate PDF
-        pdf = HTML(string=html).write_pdf()
-        
-        # Create response
-        response = make_response(pdf)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = 'attachment; filename=expense_forecast.pdf'
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF: {str(e)}")
-        flash('Error generating PDF report. Please try again.')
-        return redirect(url_for('main.expense_forecast'))
+            
         # Prepare template data
         template_data = {
             'forecast': forecast,
@@ -812,6 +769,42 @@ def export_forecast_pdf():
             'category_amounts': session.get('category_amounts', []),
             'zip': zip  # Required for template iteration
         }
+        
+        try:
+            # Render template to HTML
+            html_content = render_template(
+                'pdf_templates/forecast_pdf.html',
+                forecast=forecast,
+                monthly_labels=monthly_labels,
+                monthly_amounts=monthly_amounts,
+                confidence_upper=confidence_upper,
+                confidence_lower=confidence_lower,
+                category_labels=category_labels,
+                category_amounts=category_amounts,
+                company=company_settings,
+                datetime=datetime,
+                zip=zip
+            )
+            
+            # Generate PDF using WeasyPrint
+            pdf = HTML(string=html_content).write_pdf()
+            
+            # Create response
+            response = make_response(pdf)
+            response.headers['Content-Type'] = 'application/pdf'
+            response.headers['Content-Disposition'] = f'attachment; filename=forecast_report_{datetime.now().strftime("%Y%m%d")}.pdf'
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error generating PDF: {str(e)}")
+            flash('Error generating PDF report')
+            return redirect(url_for('main.expense_forecast'))
+            
+    except Exception as e:
+        logger.error(f"Error preparing template data: {str(e)}")
+        flash('Error preparing report data')
+        return redirect(url_for('main.expense_forecast'))
         
         try:
             # Render template to HTML
