@@ -406,15 +406,32 @@ def upload():
             db.session.add(uploaded_file)
             db.session.commit()
             
-            # Read file content
+            # Read file content in chunks
+            chunk_size = 1000  # Process 1000 rows at a time
+            total_rows = 0
+            processed_rows = 0
+
+            # First get total rows for progress tracking
             if file.filename.endswith('.csv'):
-                df = pd.read_csv(file)
+                total_rows = sum(1 for line in file) - 1  # Subtract header row
+                file.seek(0)  # Reset file pointer
+                df_iterator = pd.read_csv(file, chunksize=chunk_size)
             else:
                 df = pd.read_excel(file)
+                total_rows = len(df)
+                # Create chunk iterator for excel
+                df_iterator = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
+
+            logger.info(f"Processing file with {total_rows} rows")
+            
+            for chunk_idx, chunk in enumerate(df_iterator):
+                # Clean and normalize column names for each chunk
+                chunk.columns = chunk.columns.str.strip().str.lower()
+                if chunk_idx == 0:
+                    logger.debug(f"Original columns in file: {chunk.columns.tolist()}")
                 
-            # Clean and normalize column names
-            df.columns = df.columns.str.strip().str.lower()
-            logger.debug(f"Original columns in file: {df.columns.tolist()}")
+                processed_rows += len(chunk)
+                logger.info(f"Processing chunk {chunk_idx + 1}, Progress: {(processed_rows/total_rows)*100:.2f}%")
             
             # Define required columns and their possible variations
             column_mappings = {
@@ -468,40 +485,52 @@ def upload():
             # Rename columns to standard names
             df = df.rename(columns=column_matches)
             
-            # Process each row
-            for _, row in df.iterrows():
-                try:
-                    date_str = str(row['date'])
+            # Process each chunk
+            for chunk in df_iterator:
+                transactions_to_add = []
+                for _, row in chunk.iterrows():
                     try:
-                        # First try parsing without explicit format
-                        parsed_date = pd.to_datetime(date_str)
-                    except:
-                        # If that fails, try specific formats
-                        date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
-                        parsed_date = None
-                        
-                        for date_format in date_formats:
-                            try:
-                                parsed_date = pd.to_datetime(date_str, format=date_format)
-                                break
-                            except ValueError:
+                        date_str = str(row['date'])
+                        try:
+                            # First try parsing without explicit format
+                            parsed_date = pd.to_datetime(date_str)
+                        except:
+                            # If that fails, try specific formats
+                            date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
+                            parsed_date = None
+                            
+                            for date_format in date_formats:
+                                try:
+                                    parsed_date = pd.to_datetime(date_str, format=date_format)
+                                    break
+                                except ValueError:
+                                    continue
+                            
+                            if parsed_date is None:
+                                logger.warning(f"Could not parse date: {date_str}")
                                 continue
                         
-                        if parsed_date is None:
-                            logger.warning(f"Could not parse date: {date_str}")
-                            continue
-                    
-                    transaction = Transaction(
-                        date=parsed_date,
-                        description=str(row['description']),
-                        amount=float(row['amount']),
-                        explanation='',  # Initially empty
-                        user_id=current_user.id,
-                        file_id=uploaded_file.id
-                    )
-                    db.session.add(transaction)
-                except Exception as row_error:
-                    logger.error(f"Error processing row: {row} - {str(row_error)}")
+                        transaction = Transaction(
+                            date=parsed_date,
+                            description=str(row['description']),
+                            amount=float(row['amount']),
+                            explanation='',  # Initially empty
+                            user_id=current_user.id,
+                            file_id=uploaded_file.id
+                        )
+                        transactions_to_add.append(transaction)
+                    except Exception as row_error:
+                        logger.error(f"Error processing row: {row} - {str(row_error)}")
+                        continue
+                
+                # Batch commit transactions for each chunk
+                try:
+                    db.session.bulk_save_objects(transactions_to_add)
+                    db.session.commit()
+                    logger.info(f"Successfully processed {len(transactions_to_add)} transactions")
+                except Exception as chunk_error:
+                    logger.error(f"Error saving chunk: {str(chunk_error)}")
+                    db.session.rollback()
                     continue
             
             db.session.commit()
