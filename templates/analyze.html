@@ -228,13 +228,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (!newExplanation) return;
 
-            // Find similar descriptions using optimized selector
-            const currentDescriptionNormalized = currentDescription.toLowerCase().trim();
-            const similarInputs = Array.from(document.querySelectorAll('.explanation-input'))
-                .filter(el => {
-                    const descNormalized = el.dataset.description.toLowerCase().trim();
-                    return el !== this && descNormalized === currentDescriptionNormalized;
-                });
+            // Find similar descriptions
+            const similarInputs = Array.from(document.querySelectorAll('.explanation-input')).filter(el => {
+                return el !== this && 
+                       el.dataset.description && 
+                       this.dataset.description &&
+                       el.dataset.description.trim() === this.dataset.description.trim();
+            });
             
             if (similarInputs.length > 0) {
                 const modal = document.createElement('div');
