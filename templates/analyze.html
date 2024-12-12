@@ -2,18 +2,10 @@
 
 {% block content %}
 <div class="card mb-4">
-    <div class="card-header bg-primary text-white">
-        <h3 class="card-title mb-0">
-            <i class="fas fa-chart-line me-2"></i>Transaction Analysis Dashboard
-        </h3>
-    </div>
     <div class="card-body">
         {% if anomalies and not anomalies.error %}
             <div class="alert alert-info">
-                <h4 class="alert-heading mb-3">
-                    <i class="fas fa-lightbulb me-2"></i>Transaction Analysis Insights
-                </h4>
-                <p class="text-muted mb-4">Below you'll find AI-powered analysis of your transactions, including detected patterns, anomalies, and recommendations.</p>
+                <h4 class="alert-heading mb-3">Transaction Analysis Insights</h4>
                 {% if anomalies.anomalies %}
                     <h5>Detected Anomalies:</h5>
                     <ul class="list-group mb-3">
@@ -116,13 +108,11 @@
                                 ${{ "%.2f"|format(transaction.amount) }}
                             </td>
                             <td>
-                                <textarea
+                                <input type="text" 
                                        class="form-control explanation-input" 
                                        name="explanation_{{ transaction.id }}" 
-                                       rows="3"
-                                       placeholder="Enter detailed explanation for this transaction"
-                                       style="min-height: 80px; resize: vertical; background-color: var(--bs-body-bg); color: var(--bs-body-color);"
-                                       data-description="{{ transaction.description }}">{{ transaction.explanation }}</textarea>
+                                       value="{{ transaction.explanation }}"
+                                       placeholder="Enter explanation">
                             </td>
                             <td>
                                 <div class="input-group">
@@ -143,8 +133,7 @@
                                             data-transaction-id="{{ transaction.id }}"
                                             data-description="{{ transaction.description }}"
                                             data-explanation="{{ transaction.explanation }}">
-                                        <i class="fas fa-magic suggest-icon-{{ transaction.id }}"></i>
-                                        <span class="suggest-text-{{ transaction.id }}">Suggest</span>
+                                        <i class="fas fa-magic"></i> Suggest
                                     </button>
                                 </div>
                                 <div id="suggestions-{{ transaction.id }}" class="suggestions mt-2" style="display: none;">
@@ -175,22 +164,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const explanationInputs = document.querySelectorAll('.explanation-input');
     const analysisSelects = document.querySelectorAll('.analysis-select');
     
-    // Cache for suggestions
-    const suggestionCache = new Map();
-    
-    // Debounce function
-    function debounce(func, wait) {
-        let timeout;
-        return function executedFunction(...args) {
-            const later = () => {
-                clearTimeout(timeout);
-                func(...args);
-            };
-            clearTimeout(timeout);
-            timeout = setTimeout(later, wait);
-        };
-    }
-    
     // Handle bank account selection
     const bankAccountSelect = document.getElementById('bank_account');
     if (bankAccountSelect) {
@@ -199,102 +172,11 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Handle explanation changes and repetitive descriptions
+    // Handle explanation changes
     explanationInputs.forEach(input => {
-        // Auto-expand on input
-        const adjustHeight = (element) => {
-            element.style.height = 'auto';
-            element.style.height = (element.scrollHeight) + 'px';
-        };
-
-        // Initial height adjustment
-        adjustHeight(input);
-
-        // Handle input changes for auto-expand
-        input.addEventListener('input', function() {
-            adjustHeight(this);
-        });
-
-        // Maintain visibility on blur
-        input.addEventListener('blur', function() {
-            this.style.backgroundColor = 'var(--bs-body-bg)';
-            this.style.color = 'var(--bs-body-color)';
-        });
-
-        // Handle explanation changes and check for repetitive descriptions
-        input.addEventListener('change', debounce(async function() {
-            const currentDescription = this.dataset.description;
-            const newExplanation = this.value.trim();
-            
-            if (!newExplanation) return;
-
-            // Find similar descriptions
-            const similarInputs = Array.from(document.querySelectorAll('.explanation-input')).filter(el => {
-                return el !== this && 
-                       el.dataset.description && 
-                       this.dataset.description &&
-                       el.dataset.description.trim() === this.dataset.description.trim();
-            });
-            
-            if (similarInputs.length > 0) {
-                const modal = document.createElement('div');
-                modal.className = 'modal fade';
-                modal.innerHTML = `
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title">Similar Transactions Found</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body">
-                                <div class="alert alert-info">
-                                    <p class="mb-2">Found ${similarInputs.length} other transaction(s) with the description:</p>
-                                    <p class="fw-bold mb-3">"${currentDescription}"</p>
-                                    <p class="mb-0">Would you like to apply this explanation to all similar transactions?</p>
-                                </div>
-                                <div class="mt-3">
-                                    <p class="fw-bold mb-2">New Explanation:</p>
-                                    <p class="bg-light p-2 rounded">${newExplanation}</p>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                                    <i class="fas fa-times me-1"></i> No, Just This One
-                                </button>
-                                <button type="button" class="btn btn-primary" id="applyToAll">
-                                    <i class="fas fa-check me-1"></i> Yes, Apply to All
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-                
-                const modalInstance = new bootstrap.Modal(modal);
-                modalInstance.show();
-                
-                const result = await new Promise(resolve => {
-                    modal.querySelector('#applyToAll').addEventListener('click', () => {
-                        modalInstance.hide();
-                        resolve(true);
-                    });
-                    
-                    modal.addEventListener('hidden.bs.modal', () => {
-                        resolve(false);
-                        modal.remove();
-                    });
-                });
-                
-                if (result) {
-                    similarInputs.forEach(explanationArea => {
-                        explanationArea.value = newExplanation;
-                        adjustHeight(explanationArea);
-                    });
-                }
-            }
-            
+        input.addEventListener('change', function() {
             form.submit();
-        }, 500));
+        });
     });
     
     // Handle analysis changes
@@ -304,7 +186,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Handle suggestion buttons with optimizations
+    // Handle suggestion buttons
     document.querySelectorAll('.suggest-account-btn').forEach(button => {
         button.addEventListener('click', async function() {
             const transactionId = this.dataset.transactionId;
@@ -312,29 +194,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const explanation = this.dataset.explanation;
             const suggestionsDiv = document.getElementById(`suggestions-${transactionId}`);
             const select = document.getElementById(`select-${transactionId}`);
-            const iconElement = document.querySelector(`.suggest-icon-${transactionId}`);
-            const textElement = document.querySelector(`.suggest-text-${transactionId}`);
-
-            // Check cache first
-            const cacheKey = `${description}:${explanation}`;
-            if (suggestionCache.has(cacheKey)) {
-                displaySuggestions(suggestionCache.get(cacheKey));
-                return;
-            }
-
-            // Show loading state
-            this.disabled = true;
-            iconElement.className = 'fas fa-spinner fa-spin';
-            textElement.textContent = 'Loading...';
 
             try {
-                // Show loading state immediately
-                suggestionsDiv.innerHTML = '<div class="alert alert-info">Loading suggestions...</div>';
-                suggestionsDiv.style.display = 'block';
-
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
                 const response = await fetch('/predict_account', {
                     method: 'POST',
                     headers: {
@@ -343,34 +204,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     body: JSON.stringify({
                         description: description,
                         explanation: explanation
-                    }),
-                    signal: controller.signal
+                    })
                 });
-
-                clearTimeout(timeoutId);
 
                 if (!response.ok) throw new Error('Network response was not ok');
                 
                 const suggestions = await response.json();
                 
-                // Cache the results
-                suggestionCache.set(cacheKey, suggestions);
-                
-                // Display suggestions
-                displaySuggestions(suggestions);
-                
-            } catch (error) {
-                console.error('Error:', error);
-                suggestionsDiv.innerHTML = '<div class="alert alert-danger">Error getting suggestions</div>';
-                suggestionsDiv.style.display = 'block';
-            } finally {
-                // Reset button state
-                this.disabled = false;
-                iconElement.className = 'fas fa-magic';
-                textElement.textContent = 'Suggest';
-            }
-
-            function displaySuggestions(suggestions) {
                 // Clear previous suggestions
                 suggestionsDiv.innerHTML = '';
                 
@@ -412,6 +252,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     suggestionsDiv.innerHTML = '<div class="alert alert-info">No suggestions available</div>';
                     suggestionsDiv.style.display = 'block';
                 }
+                
+            } catch (error) {
+                console.error('Error:', error);
+                suggestionsDiv.innerHTML = '<div class="alert alert-danger">Error getting suggestions</div>';
+                suggestionsDiv.style.display = 'block';
             }
         });
     });

@@ -331,7 +331,6 @@ def analyze(file_id):
     transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).all()
     bank_account_id = None
     anomalies = None
-    historical_analysis = None
 
     if request.method == 'POST':
         try:
@@ -357,16 +356,6 @@ def analyze(file_id):
             
             db.session.commit()
             flash('Changes saved successfully', 'success')
-            
-            # Perform quick analysis without blocking
-            try:
-                from ai_utils import detect_transaction_anomalies, analyze_historical_patterns
-                anomalies = detect_transaction_anomalies(transactions[:50])  # Analyze recent transactions
-                logger.info("Quick anomaly detection completed")
-            except Exception as analysis_error:
-                logger.error(f"Non-blocking analysis error: {str(analysis_error)}")
-                anomalies = {"status": "Analysis in progress"}
-                
         except Exception as e:
             logger.error(f"Error saving analysis changes: {str(e)}")
             db.session.rollback()
@@ -431,24 +420,15 @@ def upload():
             db.session.add(uploaded_file)
             db.session.commit()
             
-            # Read file content with optimized settings
+            # Read file content
             if file.filename.endswith('.csv'):
-                # Use chunked reading for CSV files
-                chunk_size = 1000  # Process 1000 rows at a time
-                chunks = pd.read_csv(file, chunksize=chunk_size)
-                df = pd.concat(chunks, ignore_index=True)
+                df = pd.read_csv(file)
             else:
-                # Use optimized Excel reading
-                df = pd.read_excel(
-                    file,
-                    engine='openpyxl',
-                    na_filter=False  # Disable NA filtering for better performance
-                )
-            
-            # Clean and normalize column names efficiently
+                df = pd.read_excel(file)
+                
+            # Clean and normalize column names
             df.columns = df.columns.str.strip().str.lower()
-            logger.info(f"Processing file with {len(df)} rows")
-            logger.debug(f"Detected columns: {df.columns.tolist()}")
+            logger.debug(f"Original columns in file: {df.columns.tolist()}")
             
             # Define required columns and their possible variations
             column_mappings = {
@@ -502,72 +482,44 @@ def upload():
             # Rename columns to standard names
             df = df.rename(columns=column_matches)
             
-            # Process rows in batches
-            BATCH_SIZE = 100
-            total_rows = len(df)
-            processed = 0
-            
-            # Pre-compile date formats for better performance
-            date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
-            
-            for batch_start in range(0, total_rows, BATCH_SIZE):
-                batch_end = min(batch_start + BATCH_SIZE, total_rows)
-                batch = df.iloc[batch_start:batch_end]
-                
-                # Process batch
-                transactions_to_add = []
-                for _, row in batch.iterrows():
+            # Process each row
+            for _, row in df.iterrows():
+                try:
+                    date_str = str(row['date'])
                     try:
-                        date_str = str(row['date'])
+                        # First try parsing without explicit format
+                        parsed_date = pd.to_datetime(date_str)
+                    except:
+                        # If that fails, try specific formats
+                        date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
+                        parsed_date = None
                         
-                        # Try parsing with pandas first (fastest)
-                        try:
-                            parsed_date = pd.to_datetime(date_str)
-                        except:
-                            # Fall back to explicit formats
-                            parsed_date = None
-                            for date_format in date_formats:
-                                try:
-                                    parsed_date = pd.to_datetime(date_str, format=date_format)
-                                    break
-                                except ValueError:
-                                    continue
-                            
-                            if parsed_date is None:
-                                logger.warning(f"Could not parse date: {date_str}")
+                        for date_format in date_formats:
+                            try:
+                                parsed_date = pd.to_datetime(date_str, format=date_format)
+                                break
+                            except ValueError:
                                 continue
-                    
-                    # Create transaction object
-                        transaction = Transaction(
-                            date=parsed_date,
-                            description=str(row['description']),
-                            amount=float(row['amount']),
-                            explanation='',  # Initially empty
-                            user_id=current_user.id,
-                            file_id=uploaded_file.id
-                        )
-                        transactions_to_add.append(transaction)
                         
-                    except Exception as row_error:
-                        logger.error(f"Error processing row: {row} - {str(row_error)}")
-                        continue
-                
-                # Batch commit transactions
-                if transactions_to_add:
-                    try:
-                        db.session.bulk_save_objects(transactions_to_add)
-                        db.session.commit()
-                        processed += len(transactions_to_add)
-                        logger.info(f"Processed {processed}/{total_rows} rows")
-                    except Exception as batch_error:
-                        logger.error(f"Error saving batch: {str(batch_error)}")
-                        db.session.rollback()
-                        continue
+                        if parsed_date is None:
+                            logger.warning(f"Could not parse date: {date_str}")
+                            continue
+                    
+                    transaction = Transaction(
+                        date=parsed_date,
+                        description=str(row['description']),
+                        amount=float(row['amount']),
+                        explanation='',  # Initially empty
+                        user_id=current_user.id,
+                        file_id=uploaded_file.id
+                    )
+                    db.session.add(transaction)
+                except Exception as row_error:
+                    logger.error(f"Error processing row: {row} - {str(row_error)}")
+                    continue
             
-            if processed > 0:
-                flash(f'File uploaded and processed successfully. Imported {processed} transactions.')
-            else:
-                flash('No valid transactions found in file.', 'warning')
+            db.session.commit()
+            flash('File uploaded and processed successfully')
             return redirect(url_for('main.analyze', file_id=uploaded_file.id))
             
         except Exception as e:
@@ -592,7 +544,6 @@ def delete_file(file_id):
         logger.error(f'Error deleting file: {str(e)}')
         flash('Error deleting file')
         db.session.rollback()
-    return redirect(url_for('main.upload'))
 
 @main.route('/predict_account', methods=['POST'])
 @login_required
