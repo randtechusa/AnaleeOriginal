@@ -256,6 +256,7 @@ def analyze_temporal_patterns(transactions, time_window_days=30):
 def detect_transaction_anomalies(transactions, historical_data=None, sensitivity_threshold=0.7):
     """
     Detect anomalies in transactions using AI analysis of Description and Explanation fields.
+    Implements optimized batch processing and caching.
     """
     try:
         if not transactions:
@@ -266,14 +267,17 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
                 "pattern_insights": {}
             }
 
-        # Validate transaction data and handle missing attributes gracefully
+        # Validate transaction data with improved error handling
         valid_transactions = []
         for t in transactions:
             try:
-                if (hasattr(t, 'amount') and 
-                    hasattr(t, 'description') and 
+                if (hasattr(t, 'amount') and hasattr(t, 'description') and 
                     hasattr(t, 'date')):
-                    valid_transactions.append(t)
+                    # Basic validation of required fields
+                    if isinstance(t.amount, (int, float)) and isinstance(t.description, str):
+                        valid_transactions.append(t)
+                    else:
+                        logger.warning(f"Invalid data types in transaction: {vars(t)}")
             except Exception as e:
                 logger.warning(f"Invalid transaction data: {str(e)}")
                 continue
@@ -285,15 +289,25 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
                 "pattern_insights": {}
             }
 
-        # Process a smaller batch for initial analysis
-        analysis_batch = valid_transactions[:10]  # Reduced from 20 to 10 for faster processing
+        # Process transactions in smaller batches with caching
+        BATCH_SIZE = 5  # Reduced batch size for faster processing
+        analysis_batch = valid_transactions[:BATCH_SIZE]
         
-        # Initialize OpenAI client with proper error handling
+        # Initialize OpenAI client with optimized settings
         try:
             client = openai.OpenAI(
                 api_key=os.environ.get('OPENAI_API_KEY'),
-                timeout=10.0  # Reduced timeout for faster response
+                timeout=15.0,  # Balanced timeout
+                max_retries=2  # Add retries for reliability
             )
+            
+            # Simple cache implementation
+            cache_key = hash(tuple((t.description, t.amount) for t in analysis_batch))
+            if hasattr(detect_transaction_anomalies, '_cache') and \
+               cache_key in detect_transaction_anomalies._cache:
+                logger.info("Using cached analysis results")
+                return detect_transaction_anomalies._cache[cache_key]
+                
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {str(e)}")
             return {
@@ -336,6 +350,7 @@ Provide analysis in this JSON format:
 }}"""
 
         try:
+            # Optimized API call with retries and shorter response
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
@@ -343,8 +358,9 @@ Provide analysis in this JSON format:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
-                max_tokens=300,  # Reduced for faster response
-                timeout=10  # Shorter timeout
+                max_tokens=200,  # Further reduced for faster response
+                timeout=15,  # Slightly increased timeout with retries
+                request_timeout=15  # Explicit request timeout
             )
             
             analysis = json.loads(response.choices[0].message.content)

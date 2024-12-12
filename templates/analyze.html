@@ -228,10 +228,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (!newExplanation) return;
 
-            // Find similar descriptions
-            const similarInputs = Array.from(document.querySelectorAll('.explanation-input')).filter(el => 
-                el !== this && el.dataset.description === currentDescription
-            );
+            // Find similar descriptions using optimized selector
+            const currentDescriptionNormalized = currentDescription.toLowerCase().trim();
+            const similarInputs = Array.from(document.querySelectorAll('.explanation-input'))
+                .filter(el => {
+                    const descNormalized = el.dataset.description.toLowerCase().trim();
+                    return el !== this && descNormalized === currentDescriptionNormalized;
+                });
             
             if (similarInputs.length > 0) {
                 const modal = document.createElement('div');
@@ -325,6 +328,13 @@ document.addEventListener('DOMContentLoaded', function() {
             textElement.textContent = 'Loading...';
 
             try {
+                // Show loading state immediately
+                suggestionsDiv.innerHTML = '<div class="alert alert-info">Loading suggestions...</div>';
+                suggestionsDiv.style.display = 'block';
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
                 const response = await fetch('/predict_account', {
                     method: 'POST',
                     headers: {
@@ -333,8 +343,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     body: JSON.stringify({
                         description: description,
                         explanation: explanation
-                    })
+                    }),
+                    signal: controller.signal
                 });
+
+                clearTimeout(timeoutId);
 
                 if (!response.ok) throw new Error('Network response was not ok');
                 
