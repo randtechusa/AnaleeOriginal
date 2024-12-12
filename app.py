@@ -1,11 +1,12 @@
 import os
 import logging
+import sys
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from dotenv import load_dotenv
-import sys
+from sqlalchemy import text # Added import statement
 
 # Load environment variables
 load_dotenv()
@@ -26,6 +27,7 @@ login_manager = LoginManager()
 def create_app():
     """Create and configure the Flask application"""
     try:
+        # Create Flask app
         app = Flask(__name__)
         logger.info("Starting Flask application initialization...")
         
@@ -45,6 +47,7 @@ def create_app():
             SQLALCHEMY_DATABASE_URI=database_url,
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
             TEMPLATES_AUTO_RELOAD=True,
+            DEBUG=True
         )
         logger.debug("Flask app configuration completed")
 
@@ -56,12 +59,12 @@ def create_app():
         logger.debug("Flask extensions initialized")
 
         with app.app_context():
-            # Import models here to avoid circular imports
-            from models import User, Account, Transaction, UploadedFile, CompanySettings
-            logger.debug("Models imported")
-
             try:
-                # Initialize database
+                # Import models here to avoid circular imports
+                from models import User, Account, Transaction, UploadedFile, CompanySettings
+                logger.debug("Models imported")
+
+                # Initialize database tables
                 db.create_all()
                 logger.debug("Database tables created")
                 
@@ -69,11 +72,19 @@ def create_app():
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
                 logger.debug("Blueprints registered")
+
+                # Test database connection
+                try:
+                    db.session.execute(text('SELECT 1'))
+                    logger.debug("Database connection test successful")
+                except Exception as db_error:
+                    logger.error(f"Database connection test failed: {str(db_error)}")
+                    raise
                 
                 return app
                 
-            except Exception as db_error:
-                logger.error(f"Database initialization error: {str(db_error)}")
+            except Exception as context_error:
+                logger.error(f"Error in application context: {str(context_error)}")
                 raise
 
     except Exception as e:
