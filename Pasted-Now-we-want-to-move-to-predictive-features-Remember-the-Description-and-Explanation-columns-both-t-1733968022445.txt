@@ -1,0 +1,15 @@
+Now we want to move to predictive features. Remember, the Description and Explanation columns both together have Prompt quality and serve as what the AI rely on to predict the appropriate possible accounts in the charts of accounts for the users. I will leave the creativity of it to you. Please Let us do this without destroying anything or damaging any feature. As you do your tasks, please keep the Chart of Accounts implementation, the users and users’ data intact. Note that what we have achieved so far is the fundamentals of the application, every other enhancement, features and qualities can only enhance these basic arrangements and not to change it
+
+I have some ideas that I want you to work on and we can come back here later. The first one is the Explanation dialog, when I type in a long explanation, I cannot see what I typed in (the content) as soon as I removed my mouse. I want us to have a more user-friendly process, so that when the user finishes typing into the explanation box and remove the mouse, the user can read what is written there. The huge metric in judging the success of this application is the ‘Analyze Data’ menu; it must be super user-friendly. Supper easy and fun to prepare accounts. Think of users that are not accountants/bookkeepers. I want anyone to prepare an account. 
+
+The second one is repetitive descriptions. When I/users write an explanation for a Description that is repeated multiple times down the spreadsheet, the AI/LLM/NLP should pick that up and ask the user if the same explanation should apply to all transactions that have similar contents in the Description column. This is to avoid analysis or giving explanations multiple times for repetitive expenses that occur multiple times or frequently.
+ Please let us address these issues systematically while preserving core functionality:
+1.	The slow file loading
+2.	The request timeout in analysis
+3.	The broken repetitive transaction recognition
+4.	The suggestion button errors
+
+Please carefully accomplish these tasks paying attention to our standing instruction throughout this project, please heed to it; "Please Let us do this without destroying anything or damaging any feature, or the core functionality. As you do your tasks, please keep the Chart of Accounts implementation, preserve the core functionality, and the users and users’ data intact. Note that what we have achieved so far is the fundamentals of the application, every other enhancement, features and qualities can only enhance these basic core functionalities and not to change it"
+
+
+

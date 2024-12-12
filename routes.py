@@ -380,49 +380,133 @@ def analyze(file_id):
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
-    # Get list of uploaded files
-    files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-    
-    if request.method == 'POST':
-        if 'file' not in request.files:
-            flash('No file uploaded')
-            return redirect(url_for('main.upload'))
+    try:
+        # Get list of uploaded files
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+        logger.info(f"Retrieved {len(files)} existing files for user {current_user.id}")
+        
+        if request.method == 'POST':
+            logger.debug("Processing file upload request")
+            if 'file' not in request.files:
+                logger.warning("No file found in request")
+                flash('No file uploaded')
+                return redirect(url_for('main.upload'))
+                
+            file = request.files['file']
+            if not file.filename:
+                logger.warning("Empty filename received")
+                flash('No file selected')
+                return redirect(url_for('main.upload'))
             
-        file = request.files['file']
-        if not file.filename:
-            flash('No file selected')
-            return redirect(url_for('main.upload'))
+            logger.info(f"Processing uploaded file: {file.filename}")
             
-        if not file.filename.endswith(('.csv', '.xlsx')):
-            flash('Invalid file format. Please upload a CSV or Excel file.')
-            return redirect(url_for('main.upload'))
+            if not file.filename.endswith(('.csv', '.xlsx')):
+                logger.warning(f"Invalid file format: {file.filename}")
+                flash('Invalid file format. Please upload a CSV or Excel file.')
+                return redirect(url_for('main.upload'))
+                
+            # Log file details
+            logger.info(f"File name: {file.filename}")
+            logger.info(f"File content type: {file.content_type}")
             
-        try:
-            # Create uploaded file record first
-            uploaded_file = UploadedFile(
-                filename=file.filename,
-                user_id=current_user.id
-            )
-            db.session.add(uploaded_file)
-            db.session.commit()
-            
-            # Read file content in chunks
-            chunk_size = 1000  # Process 1000 rows at a time
-            total_rows = 0
-            processed_rows = 0
+            # Handle file upload POST request
+            if request.method == 'POST':
+                try:
+                    # Create uploaded file record first
+                    uploaded_file = UploadedFile(
+                        filename=file.filename,
+                        user_id=current_user.id
+                    )
+                    db.session.add(uploaded_file)
+                    db.session.commit()
+                    
+                    # Read file content in chunks
+                    chunk_size = 1000  # Process 1000 rows at a time
+                    total_rows = 0
+                    processed_rows = 0
 
-            # First get total rows for progress tracking
-            if file.filename.endswith('.csv'):
-                total_rows = sum(1 for line in file) - 1  # Subtract header row
-                file.seek(0)  # Reset file pointer
-                df_iterator = pd.read_csv(file, chunksize=chunk_size)
-            else:
-                df = pd.read_excel(file)
-                total_rows = len(df)
-                # Create chunk iterator for excel
-                df_iterator = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
+                    # First get total rows for progress tracking
+                    if file.filename.endswith('.csv'):
+                        total_rows = sum(1 for line in file) - 1  # Subtract header row
+                        file.seek(0)  # Reset file pointer
+                        df_iterator = pd.read_csv(file, chunksize=chunk_size)
+                    else:
+                        df = pd.read_excel(file)
+                        total_rows = len(df)
+                        # Create chunk iterator for excel
+                        df_iterator = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
 
-            logger.info(f"Processing file with {total_rows} rows")
+                    logger.info(f"Processing file with {total_rows} rows")
+                
+                # Process each chunk
+                for chunk_idx, chunk in enumerate(df_iterator):
+                    try:
+                        # Clean and normalize column names
+                        chunk.columns = chunk.columns.str.strip().str.lower()
+                        processed_rows += len(chunk)
+                        logger.info(f"Processing chunk {chunk_idx + 1}, Progress: {(processed_rows/total_rows)*100:.2f}%")
+                        
+                        transactions_to_add = []
+                        for _, row in chunk.iterrows():
+                            try:
+                                # Parse date with flexible format handling
+                                date_str = str(row['date'])
+                                try:
+                                    parsed_date = pd.to_datetime(date_str)
+                                except:
+                                    # Try specific formats if automatic parsing fails
+                                    date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
+                                    for date_format in date_formats:
+                                        try:
+                                            parsed_date = pd.to_datetime(date_str, format=date_format)
+                                            break
+                                        except ValueError:
+                                            continue
+                                    
+                                    if not parsed_date:
+                                        logger.warning(f"Could not parse date: {date_str}")
+                                        continue
+
+                                # Create transaction object
+                                transaction = Transaction(
+                                    date=parsed_date,
+                                    description=str(row['description']),
+                                    amount=float(row['amount']),
+                                    explanation='',
+                                    user_id=current_user.id,
+                                    file_id=uploaded_file.id
+                                )
+                                transactions_to_add.append(transaction)
+                            except Exception as row_error:
+                                logger.error(f"Error processing row: {row} - {str(row_error)}")
+                                continue
+                        
+                        # Batch save transactions for current chunk
+                        if transactions_to_add:
+                            db.session.bulk_save_objects(transactions_to_add)
+                            db.session.commit()
+                            logger.info(f"Saved {len(transactions_to_add)} transactions from chunk {chunk_idx + 1}")
+                    
+                    except Exception as chunk_error:
+                        logger.error(f"Error processing chunk {chunk_idx + 1}: {str(chunk_error)}")
+                        db.session.rollback()
+                        continue
+                
+                flash('File uploaded and processed successfully')
+                return redirect(url_for('main.analyze', file_id=uploaded_file.id))
+                
+            except Exception as file_error:
+                logger.error(f"Error processing file: {str(file_error)}")
+                db.session.rollback()
+                flash(f"Error processing file: {str(file_error)}")
+                return redirect(url_for('main.upload'))
+                
+    except Exception as e:
+        logger.error(f"Error in upload route: {str(e)}")
+        flash('An error occurred during file upload')
+        return redirect(url_for('main.upload'))
+        
+    return render_template('upload.html', files=files)
             
             for chunk_idx, chunk in enumerate(df_iterator):
                 # Clean and normalize column names for each chunk
