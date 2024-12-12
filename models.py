@@ -1,11 +1,6 @@
 from flask_login import UserMixin
 from datetime import datetime
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
-
-# Initialize Flask extensions
-db = SQLAlchemy()
-login_manager = LoginManager()
+from app import db, login_manager
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
@@ -14,8 +9,8 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(64), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256))
-    transactions = db.relationship('Transaction', backref='user', lazy=True, cascade='all, delete-orphan')
-    accounts = db.relationship('Account', backref='user', lazy=True, cascade='all, delete-orphan')
+    transactions = db.relationship('Transaction', backref='user', lazy=True)
+    accounts = db.relationship('Account', backref='user', lazy=True)
 
     def __repr__(self):
         return f'<User {self.username}>'
