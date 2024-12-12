@@ -543,25 +543,31 @@ def delete_file(file_id):
 @main.route('/predict_account', methods=['POST'])
 @login_required
 def predict_account_route():
+    """Handle prediction requests with improved error handling and logging"""
     try:
+        # Validate request
         if not request.is_json:
+            logger.warning("Invalid content type received")
             return jsonify({'error': 'Invalid content type. Expected JSON.'}), 400
             
         data = request.get_json()
         if not data:
+            logger.warning("Empty request data received")
             return jsonify({'error': 'No data provided'}), 400
             
         description = data.get('description', '')
         explanation = data.get('explanation', '')
         
         if not description:
+            logger.warning("Missing description in request")
             return jsonify({'error': 'Description is required'}), 400
             
-        logger.debug(f"Received prediction request for description: {description}")
+        logger.info(f"Processing prediction request for description: {description}")
         
-        # Get all available accounts for the current user
+        # Get accounts
         accounts = Account.query.filter_by(user_id=current_user.id).all()
         if not accounts:
+            logger.warning(f"No accounts found for user {current_user.id}")
             return jsonify({'error': 'No accounts available for prediction'}), 404
             
         account_data = [{
@@ -572,18 +578,35 @@ def predict_account_route():
             'sub_category': account.sub_category
         } for account in accounts]
         
-        # Get predictions
+        logger.debug(f"Found {len(account_data)} accounts for prediction")
+        
+        # Get predictions with detailed error handling
         try:
             predictions = predict_account(description, explanation, account_data)
-            logger.debug(f"Generated predictions: {predictions}")
+            if not predictions:
+                logger.warning("No predictions generated")
+                return jsonify({'error': 'No suitable predictions found'}), 404
+                
+            logger.info(f"Successfully generated {len(predictions)} predictions")
             return jsonify(predictions)
+            
+        except ValueError as ve:
+            logger.error(f"Validation error in prediction: {str(ve)}")
+            return jsonify({'error': str(ve)}), 400
+            
         except Exception as pred_error:
             logger.error(f"Error during account prediction: {str(pred_error)}")
-            return jsonify({'error': 'Failed to generate predictions'}), 500
+            return jsonify({
+                'error': 'Failed to generate predictions',
+                'details': str(pred_error)
+            }), 500
             
     except Exception as e:
-        logger.error(f"Error in account prediction route: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logger.error(f"Unexpected error in prediction route: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error',
+            'details': str(e)
+        }), 500
 
 @main.route('/expense-forecast')
 @login_required
