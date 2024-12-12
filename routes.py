@@ -785,9 +785,9 @@ def export_forecast_pdf():
         flash('Error generating PDF report')
         return redirect(url_for('main.expense_forecast'))
             category_labels=session.get('category_labels', []),
-        category_amounts=session.get('category_amounts', []),
-        zip=zip  # Required for template iteration
-    )
+            category_amounts=session.get('category_amounts', []),
+            zip=zip  # Required for template iteration
+        )
         
         try:
             # Create PDF
