@@ -290,31 +290,31 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
             }
 
         # Process transactions in smaller batches with caching
-        BATCH_SIZE = 5  # Reduced batch size for faster processing
+        BATCH_SIZE = 2  # Minimal batch size for faster processing
         analysis_batch = valid_transactions[:BATCH_SIZE]
         
-        # Initialize OpenAI client with optimized settings
-        try:
-            client = openai.OpenAI(
-                api_key=os.environ.get('OPENAI_API_KEY'),
-                timeout=15.0,  # Balanced timeout
-                max_retries=2  # Add retries for reliability
-            )
+        # Initialize cache if needed
+        if not hasattr(detect_transaction_anomalies, '_cache'):
+            detect_transaction_anomalies._cache = {}
             
-            # Simple cache implementation
-            cache_key = hash(tuple((t.description, t.amount) for t in analysis_batch))
-            if hasattr(detect_transaction_anomalies, '_cache') and \
-               cache_key in detect_transaction_anomalies._cache:
-                logger.info("Using cached analysis results")
-                return detect_transaction_anomalies._cache[cache_key]
-                
-        except Exception as e:
-            logger.error(f"Failed to initialize OpenAI client: {str(e)}")
-            return {
-                "error": "Unable to initialize analysis",
-                "anomalies": [],
-                "pattern_insights": {}
-            }
+        # Generate cache key
+        cache_key = hash(tuple((t.description, t.amount) for t in analysis_batch))
+        
+        # Check cache
+        if cache_key in detect_transaction_anomalies._cache:
+            logger.info("Using cached analysis results")
+            return detect_transaction_anomalies._cache[cache_key]
+        
+        # Initialize OpenAI client
+        client = openai.OpenAI()
+        
+        # In-memory cache implementation
+        cache_key = hash(tuple((t.description, t.amount) for t in analysis_batch))
+        cache_dict = getattr(detect_transaction_anomalies, '_cache', {})
+        
+        if cache_key in cache_dict:
+            logger.info("Using cached analysis results")
+            return cache_dict[cache_key]
 
         # Prepare transaction data for analysis
         transaction_summary = "\n".join([
@@ -367,7 +367,12 @@ Provide analysis in this JSON format:
             # Add basic validation for the analysis
             if not isinstance(analysis, dict):
                 raise ValueError("Invalid analysis format")
-                
+            
+            # Cache the results
+            if not hasattr(detect_transaction_anomalies, '_cache'):
+                detect_transaction_anomalies._cache = {}
+            detect_transaction_anomalies._cache[cache_key] = analysis
+            
             return analysis
             
         except Exception as e:
@@ -457,10 +462,19 @@ def predict_account(description: str, explanation: str, available_accounts: List
         # Cache key for suggestions
         cache_key = f"{description}:{explanation}"
         
-        # Format account information (limited to top 10 most relevant)
+        # Initialize cache if needed
+        if not hasattr(predict_account, '_cache'):
+            predict_account._cache = {}
+            
+        # Check cache
+        if cache_key in predict_account._cache:
+            logger.info("Using cached account prediction")
+            return predict_account._cache[cache_key]
+        
+        # Format account information (limited to top 5 most relevant)
         account_info = "\n".join([
             f"- {acc['name']} (Category: {acc['category']}, Code: {acc['link']})"
-            for acc in available_accounts[:10]
+            for acc in available_accounts[:5]  # Limited for faster processing
         ])
         
         prompt = f"""Analyze this transaction and suggest account classification:
@@ -472,18 +486,18 @@ Transaction:
 Available Accounts:
 {account_info}
 
-Provide up to 2 suggestions in JSON format."""
+Provide ONE best suggestion in JSON format with structure:
+{{"account_name": "string", "confidence": float, "reasoning": "string"}}"""
 
         client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a financial accounting expert."},
+                {"role": "system", "content": "You are a financial accounting expert. Be concise."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,
-            max_tokens=200,
-            timeout=10
+            temperature=0.1,
+            max_tokens=100
         )
         
         suggestions = json.loads(response.choices[0].message.content)
