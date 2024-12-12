@@ -555,6 +555,7 @@ def delete_file(file_id):
         logger.error(f'Error deleting file: {str(e)}')
         flash('Error deleting file')
         db.session.rollback()
+    return redirect(url_for('main.upload'))
 
 @main.route('/predict_account', methods=['POST'])
 @login_required
