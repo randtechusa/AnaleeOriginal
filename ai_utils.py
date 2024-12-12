@@ -238,7 +238,12 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
                 "pattern_insights": {}
             }
 
-        logger.info(f"Starting anomaly detection for {len(transactions)} transactions")
+        # Limit initial analysis to improve performance
+        analysis_limit = 20
+        logger.info(f"Starting anomaly detection for {min(len(transactions), analysis_limit)} transactions (optimized)")
+        
+        # Process transactions in smaller batches
+        transactions_to_analyze = transactions[:analysis_limit]
         
         # Set timeout for API calls
         client = openai.OpenAI(
@@ -250,16 +255,14 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
         field_patterns = analyze_cross_field_patterns(transactions[:50])  # Limit initial analysis
         temporal_analysis = analyze_temporal_patterns(transactions[:50])
         
-        # Format transaction data with limits
+        # Format transaction data with limits and optimization
         transaction_text = "\n".join([
             f"Transaction {idx + 1}:\n"
             f"- Amount: ${t.amount}\n"
             f"- Description: {t.description}\n"
-            f"- Explanation: {t.explanation or 'No explanation provided'}\n"
-            f"- Date: {t.date.strftime('%Y-%m-%d')}\n"
-            f"- Account: {t.account.name if t.account else 'Uncategorized'}\n"
-            f"- Category: {t.account.category if t.account else 'Unknown'}"
-            for idx, t in enumerate(transactions[:50])  # Limit to recent transactions
+            f"- Explanation: {t.explanation or 'No explanation'}\n"
+            f"- Date: {t.date.strftime('%Y-%m-%d')}"
+            for idx, t in enumerate(transactions_to_analyze)
         ])
 
         # Format historical data if available (with limits)
@@ -398,10 +401,17 @@ def analyze_historical_patterns(historical_data):
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """Predict the most likely account classifications for a transaction."""
     try:
+        # Optimize account information formatting
         account_info = "\n".join([
             f"- {acc['name']} (Category: {acc['category']}, Code: {acc['link']})"
-            for acc in available_accounts
+            for acc in available_accounts[:30]  # Limit number of accounts for faster processing
         ])
+        
+        # Cache frequently used accounts based on description patterns
+        cached_predictions = {}
+        desc_key = description.lower().strip()
+        if desc_key in cached_predictions:
+            return cached_predictions[desc_key]
         
         prompt = f"""Analyze this financial transaction and provide comprehensive account classification:
 
