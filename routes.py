@@ -423,35 +423,57 @@ def upload():
                 db.session.add(uploaded_file)
                 db.session.commit()
                 
-                # Read file content in chunks with progress tracking
-                chunk_size = 1000  # Process 1000 rows at a time
+                # Enhanced chunked processing with memory optimization
+                chunk_size = 5000  # Increased chunk size for better performance
                 total_rows = 0
                 processed_rows = 0
+                error_rows = []
                 session['upload_progress'] = 0
 
                 try:
-                    # Configure progress tracking
+                    # Initialize detailed progress tracking with improved metrics
                     session['upload_status'] = {
                         'filename': file.filename,
                         'total_rows': 0,
                         'processed_rows': 0,
+                        'failed_rows': 0,
                         'current_chunk': 0,
-                        'status': 'counting'
+                        'status': 'counting',
+                        'start_time': datetime.utcnow().isoformat(),
+                        'last_update': datetime.utcnow().isoformat(),
+                        'errors': [],
+                        'progress_percentage': 0,
+                        'estimated_time_remaining': None,
+                        'processing_speed': 0  # rows per second
                     }
+                    session.modified = True
                     
-                    # First get total rows for progress tracking
+                    # Optimized row counting and chunk processing
                     if file.filename.endswith('.csv'):
-                        total_rows = sum(1 for line in file) - 1  # Subtract header row
+                        # Use generator expression for memory-efficient counting
+                        with pd.read_csv(file, chunksize=chunk_size) as reader:
+                            total_rows = sum(len(chunk.index) for chunk in reader)
                         file.seek(0)  # Reset file pointer
                         df_iterator = pd.read_csv(file, chunksize=chunk_size)
-                        logger.info(f"Processing CSV file with {total_rows} rows")
+                        logger.info(f"Processing CSV file with {total_rows} rows using chunked reading")
                     else:
-                        # Use openpyxl for Excel files to support streaming
-                        df = pd.read_excel(file, engine='openpyxl')
-                        total_rows = len(df)
-                        # Create chunk iterator for excel
-                        df_iterator = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
-                        logger.info(f"Processing Excel file with {total_rows} rows")
+                        # Use optimized Excel reading with streaming
+                        df_iterator = pd.read_excel(
+                            file,
+                            engine='openpyxl',
+                            chunksize=chunk_size,
+                            stream=True
+                        )
+                        # Count rows efficiently
+                        total_rows = sum(1 for _ in df_iterator)
+                        file.seek(0)  # Reset for processing
+                        df_iterator = pd.read_excel(
+                            file,
+                            engine='openpyxl',
+                            chunksize=chunk_size,
+                            stream=True
+                        )
+                        logger.info(f"Processing Excel file with {total_rows} rows using streaming")
                     
                     # Update session with total rows
                     session['upload_status']['total_rows'] = total_rows
@@ -463,28 +485,73 @@ def upload():
                     session['upload_filename'] = file.filename
                     logger.info(f"Started processing file: {file.filename}")
             
-                    # Process each chunk with detailed progress tracking
+                    # Enhanced chunk processing with error handling and memory optimization
                     for chunk_idx, chunk in enumerate(df_iterator):
-                        # Clean and normalize column names
-                        chunk.columns = chunk.columns.str.strip().str.lower()
-                        processed_rows += len(chunk)
+                        chunk_start_time = datetime.utcnow()
+                        chunk_errors = []
                         
-                        # Update progress with detailed status
-                        session['upload_status'].update({
-                            'processed_rows': processed_rows,
-                            'current_chunk': chunk_idx + 1,
-                            'progress': int((processed_rows / total_rows) * 100),
-                            'last_update': datetime.utcnow().isoformat()
-                        })
-                        session.modified = True
-                        
-                        logger.info(f"Processing chunk {chunk_idx + 1}/{(total_rows//chunk_size) + 1}, "
-                                  f"Progress: {session['upload_status']['progress']}%, "
-                                  f"Processed rows: {processed_rows}/{total_rows}")
-                        
-                        # Add a small delay to prevent database overload
-                        if chunk_idx % 5 == 0:  # Every 5 chunks
-                            db.session.commit()  # Commit current progress
+                        try:
+                            # Clean and normalize column names
+                            chunk.columns = chunk.columns.str.strip().str.lower()
+                            
+                            # Process chunk with error tracking
+                            valid_rows = []
+                            for idx, row in chunk.iterrows():
+                                try:
+                                    # Validate required columns
+                                    if not all(col in row.index for col in ['date', 'description', 'amount']):
+                                        raise ValueError(f"Missing required columns in row {idx}")
+                                    
+                                    # Parse date with flexible format handling
+                                    parsed_date = pd.to_datetime(str(row['date']))
+                                    
+                                    # Validate amount
+                                    amount = float(row['amount'])
+                                    
+                                    valid_rows.append({
+                                        'date': parsed_date,
+                                        'description': str(row['description']),
+                                        'amount': amount,
+                                        'explanation': '',
+                                        'user_id': current_user.id,
+                                        'file_id': uploaded_file.id
+                                    })
+                                except Exception as row_error:
+                                    error_msg = f"Row {idx}: {str(row_error)}"
+                                    chunk_errors.append(error_msg)
+                                    logger.warning(error_msg)
+                            
+                            # Batch insert valid rows
+                            if valid_rows:
+                                db.session.bulk_insert_mappings(Transaction, valid_rows)
+                            
+                            processed_rows += len(valid_rows)
+                            
+                            # Commit every chunk to prevent memory buildup
+                            db.session.commit()
+                            
+                            # Update detailed progress status
+                            chunk_process_time = (datetime.utcnow() - chunk_start_time).total_seconds()
+                            session['upload_status'].update({
+                                'processed_rows': processed_rows,
+                                'failed_rows': len(error_rows) + len(chunk_errors),
+                                'current_chunk': chunk_idx + 1,
+                                'progress': int((processed_rows / total_rows) * 100),
+                                'last_update': datetime.utcnow().isoformat(),
+                                'chunk_processing_time': chunk_process_time,
+                                'errors': error_rows + chunk_errors[-5:]  # Keep last 5 errors
+                            })
+                            session.modified = True
+                            
+                            logger.info(f"Chunk {chunk_idx + 1}/{(total_rows//chunk_size) + 1} processed: "
+                                      f"{len(valid_rows)} valid rows, {len(chunk_errors)} errors, "
+                                      f"Time: {chunk_process_time:.2f}s")
+                            
+                        except Exception as chunk_error:
+                            logger.error(f"Error processing chunk {chunk_idx}: {str(chunk_error)}")
+                            db.session.rollback()
+                            error_rows.append(f"Chunk {chunk_idx}: {str(chunk_error)}")
+                            continue
                         
                         transactions_to_add = []
                         for _, row in chunk.iterrows():
@@ -764,47 +831,21 @@ def export_forecast_pdf():
             'monthly_labels': session.get('monthly_labels', []),
             'monthly_amounts': session.get('monthly_amounts', []),
             'confidence_upper': session.get('confidence_upper', []),
-            'confidence_lower': session.get('confidence_lower', []),
+            'confidence_lower': session.get('confidence_lower', [])
+        }
+
+        template_data = {
+            'forecast': forecast,
+            'monthly_labels': monthly_labels,
+            'monthly_amounts': monthly_amounts,
+            'confidence_upper': confidence_upper,
+            'confidence_lower': confidence_lower,
             'category_labels': session.get('category_labels', []),
             'category_amounts': session.get('category_amounts', []),
+            'company': company_settings,
+            'datetime': datetime,
             'zip': zip  # Required for template iteration
         }
-        
-        try:
-            # Render template to HTML
-            html_content = render_template(
-                'pdf_templates/forecast_pdf.html',
-                forecast=forecast,
-                monthly_labels=monthly_labels,
-                monthly_amounts=monthly_amounts,
-                confidence_upper=confidence_upper,
-                confidence_lower=confidence_lower,
-                category_labels=category_labels,
-                category_amounts=category_amounts,
-                company=company_settings,
-                datetime=datetime,
-                zip=zip
-            )
-            
-            # Generate PDF using WeasyPrint
-            pdf = HTML(string=html_content).write_pdf()
-            
-            # Create response
-            response = make_response(pdf)
-            response.headers['Content-Type'] = 'application/pdf'
-            response.headers['Content-Disposition'] = f'attachment; filename=forecast_report_{datetime.now().strftime("%Y%m%d")}.pdf'
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"Error generating PDF: {str(e)}")
-            flash('Error generating PDF report')
-            return redirect(url_for('main.expense_forecast'))
-            
-    except Exception as e:
-        logger.error(f"Error preparing template data: {str(e)}")
-        flash('Error preparing report data')
-        return redirect(url_for('main.expense_forecast'))
         
         try:
             # Render template to HTML
