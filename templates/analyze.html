@@ -293,6 +293,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         clearTimeout(timeoutId);
                         timeoutId = setTimeout(async () => {
                             try {
+                                const description = this.closest('tr').querySelector('[data-description]').dataset.description;
                                 const response = await fetch('/update_explanation', {
                                     method: 'POST',
                                     headers: {
@@ -300,9 +301,46 @@ document.addEventListener('DOMContentLoaded', function() {
                                     },
                                     body: JSON.stringify({
                                         transaction_id: transactionId,
-                                        explanation: this.value.trim()
+                                        explanation: this.value.trim(),
+                                        description: description
                                     })
                                 });
+                                
+                                if (!response.ok) {
+                                    throw new Error('Failed to save explanation');
+                                }
+
+                                const result = await response.json();
+                                
+                                // Handle similar transactions
+                                if (result.similar_transactions && result.similar_transactions.length > 0) {
+                                    const similarCount = result.similar_transactions.length;
+                                    const shouldApplyToAll = confirm(
+                                        `Found ${similarCount} similar transaction(s) with 70% or higher description similarity. Would you like to apply this explanation to them as well?`
+                                    );
+                                    
+                                    if (shouldApplyToAll) {
+                                        for (const similar of result.similar_transactions) {
+                                            const similarTextarea = document.querySelector(`textarea[name="explanation_${similar.id}"]`);
+                                            if (similarTextarea) {
+                                                similarTextarea.value = this.value;
+                                                similarTextarea.classList.add('has-content');
+                                                
+                                                await fetch('/update_explanation', {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Content-Type': 'application/json',
+                                                    },
+                                                    body: JSON.stringify({
+                                                        transaction_id: similar.id,
+                                                        explanation: this.value.trim(),
+                                                        description: similar.description
+                                                    })
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
                                 
                                 if (!response.ok) {
                                     throw new Error('Failed to save explanation');
