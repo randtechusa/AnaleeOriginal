@@ -731,18 +731,50 @@ def delete_file(file_id):
         flash('Error deleting file')
 def process_transaction_analysis(user_id: int, file_id: int):
     """Background task to process and analyze transactions"""
+def calculate_description_similarity(desc1, desc2):
+    """Calculate similarity between two descriptions using a combination of exact match and fuzzy matching"""
+    from difflib import SequenceMatcher
+    import re
+    
+    if not desc1 or not desc2:
+        return 0.0
+        
+    # Normalize descriptions
+    def normalize_text(text):
+        # Convert to lowercase and remove special characters
+        text = re.sub(r'[^\w\s]', '', text.lower())
+        # Remove extra whitespace
+        return ' '.join(text.split())
+    
+    norm_desc1 = normalize_text(desc1)
+    norm_desc2 = normalize_text(desc2)
+    
+    # If exact match after normalization
+    if norm_desc1 == norm_desc2:
+        return 1.0
+        
+    # Calculate similarity using SequenceMatcher
+    try:
+        similarity = SequenceMatcher(None, norm_desc1, norm_desc2).ratio()
+        return similarity
+    except Exception as e:
+        logger.error(f"Error calculating similarity: {str(e)}")
+        return 0.0
+
 @main.route('/update_explanation', methods=['POST'])
 @login_required
 def update_explanation():
-    """Update transaction explanation asynchronously"""
+    """Update transaction explanation asynchronously and find similar descriptions"""
     try:
         data = request.get_json()
         transaction_id = data.get('transaction_id')
-        explanation = data.get('explanation')
+        explanation = data.get('explanation', '').strip()
+        description = data.get('description', '').strip()
         
-        if not transaction_id or explanation is None:
+        if not transaction_id or not description:
             return jsonify({'error': 'Missing required fields'}), 400
             
+        # Update current transaction
         transaction = Transaction.query.filter_by(
             id=transaction_id, 
             user_id=current_user.id
@@ -754,8 +786,37 @@ def update_explanation():
         transaction.explanation = explanation
         db.session.commit()
         
-        logger.info(f"Updated explanation for transaction {transaction_id}")
-        return jsonify({'success': True, 'message': 'Explanation updated successfully'})
+        # Only search for similar transactions if an explanation is provided
+        similar_transactions = []
+        if explanation:
+            # Find similar descriptions (70% or higher similarity)
+            all_transactions = Transaction.query.filter(
+                Transaction.user_id == current_user.id,
+                Transaction.id != transaction_id,  # Skip the current transaction
+                Transaction.explanation.is_(None)  # Only get transactions without explanations
+            ).all()
+            
+            for trans in all_transactions:
+                try:
+                    similarity = calculate_description_similarity(description, trans.description)
+                    if similarity >= 0.7:  # 70% similarity threshold
+                        similar_transactions.append({
+                            'id': trans.id,
+                            'description': trans.description,
+                            'similarity': round(similarity * 100, 1)
+                        })
+                except Exception as e:
+                    logger.error(f"Error calculating similarity for transaction {trans.id}: {str(e)}")
+                    continue
+            
+            similar_transactions.sort(key=lambda x: x['similarity'], reverse=True)
+            logger.info(f"Updated explanation for transaction {transaction_id} and found {len(similar_transactions)} similar transactions")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Explanation updated successfully',
+            'similar_transactions': similar_transactions
+        })
         
     except Exception as e:
         logger.error(f"Error updating explanation: {str(e)}")
@@ -768,8 +829,8 @@ def predict_account_route():
     """Predict account for transaction based on description and explanation"""
     try:
         data = request.get_json()
-        description = data.get('description', '')
-        explanation = data.get('explanation', '')
+        description = data.get('description', '').strip()
+        explanation = data.get('explanation', '').strip()
         
         if not description:
             return jsonify({'error': 'Description is required'}), 400
@@ -780,15 +841,30 @@ def predict_account_route():
             is_active=True
         ).all()
         
-        # Get predictions using AI
+        if not available_accounts:
+            return jsonify({'error': 'No active accounts found'}), 400
+        
+        # Find similar transactions with successful predictions
+        similar_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.account_id.isnot(None),  # Only get transactions with assigned accounts
+            Transaction.description.ilike(f"%{description}%")  # Fuzzy match on description
+        ).order_by(Transaction.date.desc()).limit(5).all()
+        
+        # Get predictions using AI, including historical data
         predictions = predict_account(
             description=description,
             explanation=explanation,
-            available_accounts=available_accounts
+            available_accounts=available_accounts,
+            similar_transactions=similar_transactions
         )
         
         logger.info(f"Generated account predictions for description: {description}")
         return jsonify(predictions)
+        
+    except Exception as e:
+        logger.error(f"Error predicting account: {str(e)}")
+        return jsonify({'error': 'Error generating predictions'}), 500
         
     except Exception as e:
         logger.error(f"Error predicting account: {str(e)}")
