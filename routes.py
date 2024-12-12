@@ -1,7 +1,6 @@
-from datetime import datetime
 import logging
 import os
-
+from datetime import datetime
 from flask import (
     Blueprint, render_template, request, redirect, url_for,
     flash, session, make_response, jsonify
@@ -12,6 +11,7 @@ from flask_login import (
 from werkzeug.security import generate_password_hash, check_password_hash
 from weasyprint import HTML
 import pandas as pd
+from sqlalchemy import func
 
 from app import db
 from models import (
@@ -21,6 +21,17 @@ from ai_utils import (
     predict_account, detect_transaction_anomalies,
     generate_financial_advice, forecast_expenses
 )
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Create blueprint
+main = Blueprint('main', __name__)
+
+# Configure pandas display options for debugging
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -740,11 +751,6 @@ def expense_forecast():
 @login_required
 def export_forecast_pdf():
     try:
-        from weasyprint import HTML
-        from flask import make_response
-        from datetime import datetime
-        import os
-        
         # Get company settings
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
         if not company_settings:
@@ -752,65 +758,87 @@ def export_forecast_pdf():
             return redirect(url_for('main.company_settings'))
             
         # Get forecast data from session
-        forecast_data = session.get('forecast', {})
-        if not forecast_data:
+        forecast = session.get('forecast', {})
+        monthly_labels = session.get('monthly_labels', [])
+        monthly_amounts = session.get('monthly_amounts', [])
+        confidence_upper = session.get('confidence_upper', [])
+        confidence_lower = session.get('confidence_lower', [])
+        category_labels = session.get('category_labels', [])
+        category_amounts = session.get('category_amounts', [])
+        
+        if not forecast:
             flash('No forecast data available. Please generate a forecast first.')
             return redirect(url_for('main.expense_forecast'))
-            
-        # Generate the HTML content
-        html_content = render_template(
+        
+        # Render template to HTML
+        html = render_template(
             'pdf_templates/forecast_pdf.html',
+            forecast=forecast,
+            monthly_labels=monthly_labels,
+            monthly_amounts=monthly_amounts,
+            confidence_upper=confidence_upper,
+            confidence_lower=confidence_lower,
+            category_labels=category_labels,
+            category_amounts=category_amounts,
             company=company_settings,
             datetime=datetime,
-            forecast=forecast_data,
-            monthly_labels=session.get('monthly_labels', []),
-            monthly_amounts=session.get('monthly_amounts', []),
-            confidence_upper=session.get('confidence_upper', []),
-            confidence_lower=session.get('confidence_lower', []),
-            category_labels=session.get('category_labels', []),
-            category_amounts=session.get('category_amounts', []),
-            zip=zip  # Required for template iteration
+            zip=zip
         )
         
-        # Generate PDF using WeasyPrint
-        pdf = HTML(string=html_content).write_pdf()
+        # Generate PDF
+        pdf = HTML(string=html).write_pdf()
         
         # Create response
         response = make_response(pdf)
         response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename=forecast_report_{datetime.now().strftime("%Y%m%d")}.pdf'
+        response.headers['Content-Disposition'] = 'attachment; filename=expense_forecast.pdf'
         
         return response
         
     except Exception as e:
         logger.error(f"Error generating PDF: {str(e)}")
-        flash('Error generating PDF report')
+        flash('Error generating PDF report. Please try again.')
         return redirect(url_for('main.expense_forecast'))
-        )
+        # Prepare template data
+        template_data = {
+            'forecast': forecast,
+            'company': company_settings,
+            'datetime': datetime,
+            'monthly_labels': session.get('monthly_labels', []),
+            'monthly_amounts': session.get('monthly_amounts', []),
+            'confidence_upper': session.get('confidence_upper', []),
+            'confidence_lower': session.get('confidence_lower', []),
+            'category_labels': session.get('category_labels', []),
+            'category_amounts': session.get('category_amounts', []),
+            'zip': zip  # Required for template iteration
+        }
         
         try:
-            # Create PDF
+            # Render template to HTML
+            html_content = render_template(
+                'pdf_templates/forecast_pdf.html',
+                **template_data
+            )
+            
+            # Generate PDF using WeasyPrint
             pdf = HTML(string=html_content).write_pdf()
             
-            # Create response with PDF
+            # Create response
             response = make_response(pdf)
             response.headers['Content-Type'] = 'application/pdf'
             response.headers['Content-Disposition'] = f'attachment; filename=forecast_report_{datetime.now().strftime("%Y%m%d")}.pdf'
+            
             return response
             
         except Exception as e:
-            logger.error(f"Error generating PDF report: {str(e)}")
-            return jsonify({
-                'status': 'error',
-                'message': 'Error generating PDF report'
-            }), 500
-
+            logger.error(f"Error generating PDF: {str(e)}")
+            flash('Error generating PDF report')
+            return redirect(url_for('main.expense_forecast'))
+            
     except Exception as e:
-        logger.error(f"Error preparing PDF content: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': 'Error preparing PDF content'
-        }), 500
+        logger.error(f"Error preparing template data: {str(e)}")
+        flash('Error preparing report data')
+        return redirect(url_for('main.expense_forecast'))
 
 @main.route('/upload-progress')
 @login_required
