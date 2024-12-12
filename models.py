@@ -1,6 +1,11 @@
 from flask_login import UserMixin
 from datetime import datetime
-from app import db, login_manager
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager
+
+# Initialize Flask extensions
+db = SQLAlchemy()
+login_manager = LoginManager()
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'

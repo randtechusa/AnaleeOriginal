@@ -40,7 +40,7 @@ def analyze_cross_field_patterns(transactions):
             description_patterns[desc_key].append(transaction)
             
             # Analyze explanation patterns if available
-            if transaction.explanation:
+            if hasattr(transaction, 'explanation') and transaction.explanation:
                 exp_key = transaction.explanation.lower()
                 if exp_key not in explanation_patterns:
                     explanation_patterns[exp_key] = []
@@ -50,10 +50,10 @@ def analyze_cross_field_patterns(transactions):
         for desc_key, desc_transactions in description_patterns.items():
             related_explanations = set()
             for trans in desc_transactions:
-                if trans.explanation:
+                if hasattr(trans, 'explanation') and trans.explanation:
                     related_explanations.add(trans.explanation.lower())
             
-            if len(related_explanations) > 0:
+            if related_explanations:
                 correlation = {
                     "description_pattern": desc_key,
                     "related_explanations": list(related_explanations),
@@ -151,46 +151,34 @@ def analyze_temporal_patterns(transactions, time_window_days=30):
                     "confidence": min(transaction_count / 10, 1.0)  # Confidence based on sample size
                 }
                 temporal_patterns["cycles"].append(cycle)
-            
-            # Analyze trends
-            if len(temporal_patterns["cycles"]) > 1:
-                prev_cycle = temporal_patterns["cycles"][-2]
-                current_cycle = temporal_patterns["cycles"][-1]
-                
-                trend = {
-                    "period": current_cycle["period"],
-                    "change_in_frequency": current_cycle["transaction_count"] - prev_cycle["transaction_count"],
-                    "change_in_amount": current_cycle["total_amount"] - prev_cycle["total_amount"],
-                    "confidence": min(current_cycle["confidence"], prev_cycle["confidence"])
-                }
-                temporal_patterns["trends"].append(trend)
         
         # Calculate overall confidence metrics
         if temporal_patterns["cycles"]:
-            temporal_patterns["confidence_metrics"]["cycle_confidence"] = sum(c["confidence"] for c in temporal_patterns["cycles"]) / len(temporal_patterns["cycles"])
+            temporal_patterns["confidence_metrics"]["cycle_confidence"] = (
+                sum(c["confidence"] for c in temporal_patterns["cycles"]) / 
+                len(temporal_patterns["cycles"])
+            )
         
-        if temporal_patterns["trends"]:
-            temporal_patterns["confidence_metrics"]["trend_confidence"] = sum(t["confidence"] for t in temporal_patterns["trends"]) / len(temporal_patterns["trends"])
-        
-        # Identify seasonal patterns
-        if len(temporal_patterns["cycles"]) >= 4:  # Need at least 4 cycles for seasonal analysis
-            seasonal_patterns = []
+        # Identify seasonal patterns if enough data
+        if len(temporal_patterns["cycles"]) >= 4:
             cycle_amounts = [cycle["total_amount"] for cycle in temporal_patterns["cycles"]]
             
             # Simple seasonal pattern detection
             for i in range(len(cycle_amounts) - 3):
-                if abs(cycle_amounts[i] - cycle_amounts[i + 3]) / max(abs(cycle_amounts[i]), 1) < 0.2:  # 20% threshold
+                if abs(cycle_amounts[i] - cycle_amounts[i + 3]) / max(abs(cycle_amounts[i]), 1) < 0.2:
                     pattern = {
                         "start_period": temporal_patterns["cycles"][i]["period"],
                         "end_period": temporal_patterns["cycles"][i + 3]["period"],
                         "pattern_type": "quarterly",
                         "confidence": 0.8
                     }
-                    seasonal_patterns.append(pattern)
+                    temporal_patterns["seasonal_patterns"].append(pattern)
             
-            temporal_patterns["seasonal_patterns"] = seasonal_patterns
-            if seasonal_patterns:
-                temporal_patterns["confidence_metrics"]["seasonality_confidence"] = sum(p["confidence"] for p in seasonal_patterns) / len(seasonal_patterns)
+            if temporal_patterns["seasonal_patterns"]:
+                temporal_patterns["confidence_metrics"]["seasonality_confidence"] = (
+                    sum(p["confidence"] for p in temporal_patterns["seasonal_patterns"]) / 
+                    len(temporal_patterns["seasonal_patterns"])
+                )
                 
     except Exception as e:
         logger.error(f"Error in temporal pattern analysis: {str(e)}")
@@ -211,6 +199,9 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
         Dictionary containing detected anomalies and analysis results
     """
     try:
+        # Initialize OpenAI client
+        client = openai.OpenAI()
+        
         # Analyze cross-field patterns
         field_patterns = analyze_cross_field_patterns(transactions)
         
@@ -222,7 +213,7 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
             f"Transaction {idx + 1}:\n"
             f"- Amount: ${t.amount}\n"
             f"- Description: {t.description}\n"
-            f"- Explanation: {t.explanation or 'No explanation provided'}\n"
+            f"- Explanation: {getattr(t, 'explanation', 'No explanation provided')}\n"
             f"- Date: {t.date.strftime('%Y-%m-%d')}\n"
             f"- Account: {t.account.name if t.account else 'Uncategorized'}\n"
             f"- Category: {t.account.category if t.account else 'Unknown'}"
@@ -258,7 +249,6 @@ Instructions:
 Provide analysis in JSON format with comprehensive detection results."""
 
         # Make API call for anomaly detection
-        client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -271,7 +261,7 @@ Provide analysis in JSON format with comprehensive detection results."""
             temperature=0.2,
             max_tokens=1000
         )
-
+        
         # Parse and enhance the analysis
         analysis = json.loads(response.choices[0].message.content)
         
@@ -286,7 +276,7 @@ Provide analysis in JSON format with comprehensive detection results."""
             analysis["pattern_insights"]["temporal_patterns"] = temporal_analysis["seasonal_patterns"]
 
         return analysis
-
+        
     except Exception as e:
         logger.error(f"Error detecting transaction anomalies: {str(e)}")
         return {

@@ -20,9 +20,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize Flask extensions
-db = SQLAlchemy()
+from models import db, login_manager
 migrate = Migrate()
-login_manager = LoginManager()
 
 def create_app():
     """Create and configure the Flask application"""
