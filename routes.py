@@ -732,39 +732,53 @@ def delete_file(file_id):
 def process_transaction_analysis(user_id: int, file_id: int):
     """Background task to process and analyze transactions"""
 def calculate_description_similarity(desc1, desc2):
-    """Calculate similarity between two descriptions using a combination of exact match and fuzzy matching"""
+    """Calculate similarity between descriptions using text similarity and semantic meaning"""
     from difflib import SequenceMatcher
     import re
+    import openai
+    import os
     
     if not desc1 or not desc2:
-        return 0.0
+        return 0.0, 0.0
         
     # Normalize descriptions
     def normalize_text(text):
-        # Convert to lowercase and remove special characters
         text = re.sub(r'[^\w\s]', '', text.lower())
-        # Remove extra whitespace
         return ' '.join(text.split())
     
     norm_desc1 = normalize_text(desc1)
     norm_desc2 = normalize_text(desc2)
     
-    # If exact match after normalization
-    if norm_desc1 == norm_desc2:
-        return 1.0
-        
-    # Calculate similarity using SequenceMatcher
+    # Calculate text similarity
     try:
-        similarity = SequenceMatcher(None, norm_desc1, norm_desc2).ratio()
-        return similarity
+        text_similarity = SequenceMatcher(None, norm_desc1, norm_desc2).ratio()
     except Exception as e:
-        logger.error(f"Error calculating similarity: {str(e)}")
-        return 0.0
+        logger.error(f"Error calculating text similarity: {str(e)}")
+        text_similarity = 0.0
+    
+    # Calculate semantic similarity using OpenAI
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system",
+                "content": "You are a financial transaction analyzer. Rate the semantic similarity of these two transaction descriptions on a scale of 0 to 1, where 1 means they refer to the same type of transaction and 0 means completely different types."
+            }, {
+                "role": "user",
+                "content": f"Description 1: {desc1}\nDescription 2: {desc2}\nProvide only the numerical score."
+            }]
+        )
+        semantic_similarity = float(response.choices[0].message.content.strip())
+    except Exception as e:
+        logger.error(f"Error calculating semantic similarity: {str(e)}")
+        semantic_similarity = 0.0
+        
+    return text_similarity, semantic_similarity
 
 @main.route('/update_explanation', methods=['POST'])
 @login_required
 def update_explanation():
-    """Update transaction explanation asynchronously and find similar descriptions"""
+    """Update transaction explanation and implement Explanation Recognition Feature (ERF)"""
     try:
         data = request.get_json()
         transaction_id = data.get('transaction_id')
@@ -786,31 +800,40 @@ def update_explanation():
         transaction.explanation = explanation
         db.session.commit()
         
-        # Only search for similar transactions if an explanation is provided
+        # ERF: Find similar transactions if explanation is provided
         similar_transactions = []
         if explanation:
-            # Find similar descriptions (70% or higher similarity)
             all_transactions = Transaction.query.filter(
                 Transaction.user_id == current_user.id,
-                Transaction.id != transaction_id,  # Skip the current transaction
-                Transaction.explanation.is_(None)  # Only get transactions without explanations
+                Transaction.id != transaction_id,
+                Transaction.explanation.is_(None)
             ).all()
             
             for trans in all_transactions:
                 try:
-                    similarity = calculate_description_similarity(description, trans.description)
-                    if similarity >= 0.7:  # 70% similarity threshold
+                    text_similarity, semantic_similarity = calculate_description_similarity(
+                        description, 
+                        trans.description
+                    )
+                    
+                    # ERF criteria: 70% text similarity OR 95% semantic similarity
+                    if text_similarity >= 0.7 or semantic_similarity >= 0.95:
                         similar_transactions.append({
                             'id': trans.id,
                             'description': trans.description,
-                            'similarity': round(similarity * 100, 1)
+                            'text_similarity': round(text_similarity * 100, 1),
+                            'semantic_similarity': round(semantic_similarity * 100, 1)
                         })
                 except Exception as e:
-                    logger.error(f"Error calculating similarity for transaction {trans.id}: {str(e)}")
+                    logger.error(f"ERF: Error analyzing transaction {trans.id}: {str(e)}")
                     continue
             
-            similar_transactions.sort(key=lambda x: x['similarity'], reverse=True)
-            logger.info(f"Updated explanation for transaction {transaction_id} and found {len(similar_transactions)} similar transactions")
+            # Sort by overall similarity (weighted average of text and semantic similarity)
+            similar_transactions.sort(
+                key=lambda x: (x['text_similarity'] + x['semantic_similarity']) / 2,
+                reverse=True
+            )
+            logger.info(f"ERF: Found {len(similar_transactions)} similar transactions for explanation replication")
         
         return jsonify({
             'success': True,
