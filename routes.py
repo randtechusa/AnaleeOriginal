@@ -431,8 +431,8 @@ def upload():
                 session['upload_progress'] = 0
 
                 try:
-                    # Initialize detailed progress tracking with improved metrics
-                    session['upload_status'] = {
+                    # Initialize progress tracking
+                    upload_status = {
                         'filename': file.filename,
                         'total_rows': 0,
                         'processed_rows': 0,
@@ -442,11 +442,12 @@ def upload():
                         'start_time': datetime.utcnow().isoformat(),
                         'last_update': datetime.utcnow().isoformat(),
                         'errors': [],
-                        'progress_percentage': 0,
-                        'estimated_time_remaining': None,
-                        'processing_speed': 0  # rows per second
+                        'progress_percentage': 0
                     }
+                    session['upload_status'] = upload_status
                     session.modified = True
+                    
+                    logger.info(f"Initialized upload status tracking for {file.filename}")
                     
                     # Optimized row counting and chunk processing
                     if file.filename.endswith('.csv'):
@@ -485,7 +486,7 @@ def upload():
                     session['upload_filename'] = file.filename
                     logger.info(f"Started processing file: {file.filename}")
             
-                    # Enhanced chunk processing with error handling and memory optimization
+                    # Optimized chunk processing with improved error handling
                     for chunk_idx, chunk in enumerate(df_iterator):
                         chunk_start_time = datetime.utcnow()
                         chunk_errors = []
@@ -493,29 +494,45 @@ def upload():
                         try:
                             # Clean and normalize column names
                             chunk.columns = chunk.columns.str.strip().str.lower()
+                            required_columns = ['date', 'description', 'amount']
                             
-                            # Process chunk with error tracking
-                            valid_rows = []
-                            for idx, row in chunk.iterrows():
+                            # Validate chunk structure
+                            missing_columns = [col for col in required_columns if col not in chunk.columns]
+                            if missing_columns:
+                                raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+                            
+                            # Process chunk with vectorized operations where possible
+                            chunk['date'] = pd.to_datetime(chunk['date'], errors='coerce')
+                            chunk['amount'] = pd.to_numeric(chunk['amount'], errors='coerce')
+                            
+                            # Filter valid rows
+                            valid_mask = (
+                                chunk['date'].notna() & 
+                                chunk['amount'].notna() & 
+                                chunk['description'].notna()
+                            )
+                            valid_chunk = chunk[valid_mask]
+                            
+                            # Prepare batch insert data
+                            valid_rows = [
+                                {
+                                    'date': row['date'].to_pydatetime(),
+                                    'description': str(row['description']),
+                                    'amount': float(row['amount']),
+                                    'explanation': '',
+                                    'user_id': current_user.id,
+                                    'file_id': uploaded_file.id
+                                }
+                                for _, row in valid_chunk.iterrows()
+                            ]
+                            
+                            # Track invalid rows
+                            invalid_rows = chunk[~valid_mask]
+                            for idx, row in invalid_rows.iterrows():
                                 try:
-                                    # Validate required columns
-                                    if not all(col in row.index for col in ['date', 'description', 'amount']):
-                                        raise ValueError(f"Missing required columns in row {idx}")
-                                    
-                                    # Parse date with flexible format handling
-                                    parsed_date = pd.to_datetime(str(row['date']))
-                                    
-                                    # Validate amount
-                                    amount = float(row['amount'])
-                                    
-                                    valid_rows.append({
-                                        'date': parsed_date,
-                                        'description': str(row['description']),
-                                        'amount': amount,
-                                        'explanation': '',
-                                        'user_id': current_user.id,
-                                        'file_id': uploaded_file.id
-                                    })
+                                    error_msg = f"Row {idx}: Invalid data format"
+                                    chunk_errors.append(error_msg)
+                                    logger.warning(error_msg)
                                 except Exception as row_error:
                                     error_msg = f"Row {idx}: {str(row_error)}"
                                     chunk_errors.append(error_msg)
@@ -530,18 +547,29 @@ def upload():
                             # Commit every chunk to prevent memory buildup
                             db.session.commit()
                             
-                            # Update detailed progress status
+                            # Update progress tracking
+                            processed_rows += len(valid_rows)
                             chunk_process_time = (datetime.utcnow() - chunk_start_time).total_seconds()
+                            
+                            # Calculate progress metrics
+                            progress_percentage = min(int((processed_rows / total_rows) * 100), 100)
+                            processing_rate = len(valid_rows) / chunk_process_time if chunk_process_time > 0 else 0
+                            
+                            # Update session status
                             session['upload_status'].update({
                                 'processed_rows': processed_rows,
                                 'failed_rows': len(error_rows) + len(chunk_errors),
                                 'current_chunk': chunk_idx + 1,
-                                'progress': int((processed_rows / total_rows) * 100),
+                                'progress_percentage': progress_percentage,
                                 'last_update': datetime.utcnow().isoformat(),
-                                'chunk_processing_time': chunk_process_time,
-                                'errors': error_rows + chunk_errors[-5:]  # Keep last 5 errors
+                                'processing_rate': round(processing_rate, 2),
+                                'errors': chunk_errors[-5:] if chunk_errors else []  # Keep only recent errors
                             })
                             session.modified = True
+                            
+                            # Log progress
+                            logger.info(f"Processed chunk {chunk_idx + 1}: {len(valid_rows)} valid rows, "
+                                      f"{len(chunk_errors)} errors, Progress: {progress_percentage}%")
                             
                             logger.info(f"Chunk {chunk_idx + 1}/{(total_rows//chunk_size) + 1} processed: "
                                       f"{len(valid_rows)} valid rows, {len(chunk_errors)} errors, "
