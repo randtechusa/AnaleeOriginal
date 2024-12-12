@@ -7,18 +7,19 @@ from typing import List, Dict
 
 # Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Initialize OpenAI client globally with error handling
+try:
+    client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+    logger.info("OpenAI client initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing OpenAI client: {str(e)}")
+    raise
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
     Predict the most likely account classifications for a transaction based on its description and explanation.
-    
-    Args:
-        description: Transaction description
-        explanation: User-provided explanation
-        available_accounts: List of available account dictionaries with 'name', 'category', and 'link' keys
-    
-    Returns:
-        List of predicted account matches with confidence scores
     """
     try:
         # Format available accounts for the prompt
@@ -59,19 +60,12 @@ Format your response as a JSON list with exactly this structure:
         "confidence": 0.95,
         "reasoning": "detailed explanation including category fit, accounting principles, and financial implications",
         "financial_insight": "broader financial context and impact analysis"
-    }},
-    {{
-        "account_name": "alternative account",
-        "confidence": 0.75,
-        "reasoning": "explanation of alternative classification",
-        "financial_insight": "additional financial implications for this classification"
     }}
 ]
 
 Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy and detailed financial insights."""
 
         # Make API call
-        client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -87,7 +81,6 @@ Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy an
         suggestions = []
         try:
             # Safely evaluate the response content
-            import json
             if content.startswith('[') and content.endswith(']'):
                 suggestions = json.loads(content)
             else:
@@ -98,40 +91,27 @@ Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy an
         
         # Validate and format suggestions
         valid_suggestions = []
-        try:
-            for suggestion in suggestions:
-                # Only include suggestions that match existing accounts
-                matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
-                if matching_accounts:
-                    # Extract financial insight or use reasoning if insight not provided
-                    financial_insight = suggestion.get('financial_insight', suggestion.get('reasoning', ''))
-                    
-                    valid_suggestions.append({
-                        **suggestion,
-                        'account': matching_accounts[0],
-                        'financial_insight': financial_insight
-                    })
-            
-            return valid_suggestions[:3]  # Return top 3 suggestions
-        except Exception as e:
-            logger.error(f"Error processing suggestions: {str(e)}")
-            return []
+        for suggestion in suggestions:
+            # Only include suggestions that match existing accounts
+            matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
+            if matching_accounts:
+                # Extract financial insight or use reasoning if insight not provided
+                financial_insight = suggestion.get('financial_insight', suggestion.get('reasoning', ''))
+                
+                valid_suggestions.append({
+                    **suggestion,
+                    'account': matching_accounts[0],
+                    'financial_insight': financial_insight
+                })
+        
+        return valid_suggestions[:3]  # Return top 3 suggestions
         
     except Exception as e:
         logger.error(f"Error in account prediction: {str(e)}")
         return []
 
 def detect_transaction_anomalies(transactions, historical_data=None):
-    """
-    Detect anomalies in transactions using AI analysis of Description and Explanation fields.
-    
-    Args:
-        transactions: List of current transactions to analyze
-        historical_data: Optional historical transaction data for baseline comparison
-        
-    Returns:
-        List of dictionaries containing anomaly details
-    """
+    """Detect anomalies in transactions using AI analysis."""
     try:
         # Format transaction data for analysis
         transaction_text = "\n".join([
@@ -188,31 +168,165 @@ Provide analysis in this JSON structure:
     }}
 }}"""
 
-        # Make API call for anomaly detection
-        client = openai.OpenAI()
+        # Make API call
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert financial analyst specialized in detecting transaction anomalies and patterns. Focus on providing detailed, actionable insights while maintaining high accuracy. Format your response as valid JSON."
-                },
+                {"role": "system", "content": "You are a financial analyst specialized in detecting transaction anomalies and patterns."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,  # Lower temperature for more consistent analysis
+            temperature=0.2,
             max_tokens=1000
         )
 
-        # Parse and return the analysis
-        import json
-        analysis = json.loads(response.choices[0].message.content)
-        return analysis
+        # Parse response
+        content = response.choices[0].message.content.strip()
+        try:
+            analysis = json.loads(content)
+            return analysis
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing anomaly detection response: {str(e)}")
+            return {
+                "error": "Failed to parse anomaly detection results",
+                "details": str(e)
+            }
 
     except Exception as e:
-        logger.error(f"Error detecting transaction anomalies: {str(e)}")
+        logger.error(f"Error in anomaly detection: {str(e)}")
         return {
             "error": "Failed to analyze transactions for anomalies",
             "details": str(e)
+        }
+
+def forecast_expenses(transactions, accounts, forecast_months=12):
+    """Generate expense forecasts based on historical transaction patterns."""
+    try:
+        # Format transaction data for analysis
+        transaction_summary = "\n".join([
+            f"- Amount: ${t['amount']}, Description: {t['description']}, "
+            f"Date: {t.get('date', 'N/A')}, Account: {t.get('account_name', 'Uncategorized')}"
+            for t in transactions[:50]  # Use recent transactions for pattern analysis
+        ])
+        
+        # Format account information
+        account_summary = "\n".join([
+            f"- {acc['name']}: ${acc.get('balance', 0):.2f} ({acc['category']})"
+            for acc in accounts
+        ])
+        
+        prompt = f"""Analyze these financial transactions and accounts to generate detailed expense forecasts:
+
+Transaction History:
+{transaction_summary}
+
+Account Balances:
+{account_summary}
+
+Instructions:
+1. Analyze Historical Patterns
+   - Identify recurring expenses and their frequencies
+   - Calculate growth rates and seasonal variations
+   - Consider account-specific trends
+   - Factor in both Description and Explanation fields for pattern recognition
+
+2. Generate Expense Forecasts
+   - Project monthly expenses for next {forecast_months} months
+   - Break down by expense categories
+   - Include confidence intervals
+   - Account for seasonality and trends
+   - Consider economic factors and business context
+
+3. Provide Risk Analysis
+   - Identify potential expense risks
+   - Calculate variance in projections
+   - Assess forecast reliability
+   - Consider external factors
+
+Format your response as a JSON object with this structure:
+{{
+    "monthly_forecasts": [
+        {{
+            "month": "YYYY-MM",
+            "total_expenses": float,
+            "confidence": float,
+            "breakdown": [
+                {{
+                    "category": string,
+                    "amount": float,
+                    "trend": "increasing|stable|decreasing"
+                }}
+            ]
+        }}
+    ],
+    "forecast_factors": {{
+        "key_drivers": [string],
+        "risk_factors": [string],
+        "assumptions": [string]
+    }},
+    "confidence_metrics": {{
+        "overall_confidence": float,
+        "variance_range": {{
+            "min": float,
+            "max": float
+        }},
+        "reliability_score": float
+    }},
+    "recommendations": [
+        {{
+            "action": string,
+            "potential_impact": string,
+            "implementation_timeline": string
+        }}
+    ]
+}}"""
+
+        # Make API call
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an expert financial analyst specializing in expense forecasting and predictive analysis."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=1000
+        )
+        
+        # Parse and validate the forecast
+        try:
+            content = response.choices[0].message.content.strip()
+            if not content:
+                logger.error("Empty response from AI model")
+                return {
+                    "error": "Empty response from AI model",
+                    "monthly_forecasts": [],
+                    "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+                    "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+                    "recommendations": []
+                }
+
+            forecast = json.loads(content)
+            return forecast
+            
+        except json.JSONDecodeError as je:
+            logger.error(f"JSON parsing error in forecast: {str(je)}")
+            return {
+                "error": "Invalid forecast format",
+                "details": str(je),
+                "monthly_forecasts": [],
+                "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+                "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+                "recommendations": []
+            }
+        
+    except Exception as e:
+        logger.error(f"Error generating expense forecast: {str(e)}")
+        return {
+            "error": "Failed to generate expense forecast",
+            "details": str(e),
+            "monthly_forecasts": [],
+            "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+            "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+            "recommendations": []
         }
 
 def generate_financial_advice(transactions, accounts):
@@ -321,7 +435,6 @@ Provide a detailed financial analysis in this JSON structure:
 """
 
         # Make API call for financial advice
-        client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",  # Using gpt-3.5-turbo for consistent API support
             messages=[
@@ -376,173 +489,4 @@ Provide a detailed financial analysis in this JSON structure:
         return {
             "error": "Failed to generate financial advice",
             "details": str(e)
-        }
-
-def forecast_expenses(transactions, accounts, forecast_months=12):
-    """
-    Generate expense forecasts based on historical transaction patterns.
-    
-    Args:
-        transactions: List of transaction dictionaries with amount, description, and dates
-        accounts: List of available accounts with categories and balances
-        forecast_months: Number of months to forecast (default 12)
-        
-    Returns:
-        Dictionary containing expense forecasts and confidence metrics
-    """
-    try:
-        # Format transaction data for analysis
-        transaction_summary = "\n".join([
-            f"- Amount: ${t['amount']}, Description: {t['description']}, "
-            f"Date: {t.get('date', 'N/A')}, Account: {t.get('account_name', 'Uncategorized')}"
-            for t in transactions[:50]  # Use recent transactions for pattern analysis
-        ])
-        
-        # Format account information
-        account_summary = "\n".join([
-            f"- {acc['name']}: ${acc.get('balance', 0):.2f} ({acc['category']})"
-            for acc in accounts
-        ])
-        
-        prompt = f"""Analyze these financial transactions and accounts to generate detailed expense forecasts:
-
-Transaction History:
-{transaction_summary}
-
-Account Balances:
-{account_summary}
-
-Instructions:
-1. Analyze Historical Patterns
-   - Identify recurring expenses and their frequencies
-   - Calculate growth rates and seasonal variations
-   - Consider account-specific trends
-   - Factor in both Description and Explanation fields for pattern recognition
-
-2. Generate Expense Forecasts
-   - Project monthly expenses for next {forecast_months} months
-   - Break down by expense categories
-   - Include confidence intervals
-   - Account for seasonality and trends
-   - Consider economic factors and business context
-
-3. Provide Risk Analysis
-   - Identify potential expense risks
-   - Calculate variance in projections
-   - Assess forecast reliability
-   - Consider external factors
-
-Format your response as a JSON object with this structure:
-{{
-    "monthly_forecasts": [
-        {{
-            "month": "YYYY-MM",
-            "total_expenses": float,
-            "confidence": float,
-            "breakdown": [
-                {{
-                    "category": string,
-                    "amount": float,
-                    "trend": "increasing|stable|decreasing"
-                }}
-            ]
-        }}
-    ],
-    "forecast_factors": {{
-        "key_drivers": [string],
-        "risk_factors": [string],
-        "assumptions": [string]
-    }},
-    "confidence_metrics": {{
-        "overall_confidence": float,
-        "variance_range": {{
-            "min": float,
-            "max": float
-        }},
-        "reliability_score": float
-    }},
-    "recommendations": [
-        {{
-            "action": string,
-            "potential_impact": string,
-            "implementation_timeline": string
-        }}
-    ]
-}}"""
-
-        # Make API call
-        client = openai.OpenAI()
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",  # Using gpt-3.5-turbo for consistent API support
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert financial analyst specializing in expense forecasting and predictive analysis. Focus on providing accurate, actionable forecasts with detailed supporting analysis. Format your response as valid JSON."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,
-            max_tokens=1000
-        )
-        
-        # Parse and validate the forecast
-        try:
-            content = response.choices[0].message.content.strip()
-            if not content:
-                logger.error("Empty response from AI model")
-                return {
-                    "error": "Empty response from AI model",
-                    "monthly_forecasts": [],
-                    "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
-                    "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
-                    "recommendations": []
-                }
-
-            forecast = json.loads(content)
-            
-            # Validate required fields
-            required_fields = ['monthly_forecasts', 'forecast_factors', 'confidence_metrics', 'recommendations']
-            missing_fields = [field for field in required_fields if field not in forecast]
-            
-            if missing_fields:
-                logger.warning(f"Missing required fields in forecast: {missing_fields}")
-                # Initialize missing fields with empty defaults
-                for field in missing_fields:
-                    if field == 'monthly_forecasts':
-                        forecast[field] = []
-                    elif field == 'forecast_factors':
-                        forecast[field] = {"key_drivers": [], "risk_factors": [], "assumptions": []}
-                    elif field == 'confidence_metrics':
-                        forecast[field] = {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0}
-                    elif field == 'recommendations':
-                        forecast[field] = []
-
-            # Add metadata about the forecast
-            forecast["generated_at"] = datetime.utcnow().isoformat()
-            forecast["forecast_period_months"] = forecast_months
-            forecast["data_points_analyzed"] = len(transactions)
-            
-            logger.info("Successfully generated and validated forecast")
-            return forecast
-            
-        except json.JSONDecodeError as je:
-            logger.error(f"JSON parsing error in forecast: {str(je)}")
-            return {
-                "error": "Invalid forecast format",
-                "details": str(je),
-                "monthly_forecasts": [],
-                "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
-                "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
-                "recommendations": []
-            }
-        
-    except Exception as e:
-        logger.error(f"Error generating expense forecast: {str(e)}")
-        return {
-            "error": "Failed to generate expense forecast",
-            "details": str(e),
-            "monthly_forecasts": [],
-            "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
-            "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
-            "recommendations": []
         }

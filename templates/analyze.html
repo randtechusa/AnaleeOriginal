@@ -194,7 +194,7 @@
                                             class="btn btn-outline-secondary suggest-account-btn"
                                             data-transaction-id="{{ transaction.id }}"
                                             data-description="{{ transaction.description }}"
-                                            data-explanation="{{ transaction.explanation }}">
+                                            data-explanation="{{ transaction.explanation or '' }}">
                                         <i class="fas fa-magic"></i> Suggest
                                     </button>
                                 </div>
@@ -351,6 +351,36 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // Add styles for suggestions
+    const style = document.createElement('style');
+    style.textContent = `
+        .suggestions {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 1rem;
+        }
+        .suggestion-item {
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-left: 4px solid transparent;
+        }
+        .suggestion-item:hover {
+            border-left-color: var(--bs-primary);
+            background-color: var(--bs-gray-700);
+        }
+        .suggestion-confidence {
+            font-size: 0.875rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+        }
+        .suggestion-reasoning {
+            font-size: 0.875rem;
+            color: var(--bs-gray-400);
+            margin-top: 0.5rem;
+        }
+    `;
+    document.head.appendChild(style);
+
     // Handle suggestion buttons
     document.querySelectorAll('.suggest-account-btn').forEach(button => {
         button.addEventListener('click', async function() {
@@ -359,6 +389,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const explanation = this.dataset.explanation;
             const suggestionsDiv = document.getElementById(`suggestions-${transactionId}`);
             const select = document.getElementById(`select-${transactionId}`);
+            
+            // Show loading state
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
+            suggestionsDiv.innerHTML = '<div class="alert alert-info">Loading suggestions...</div>';
+            suggestionsDiv.style.display = 'block';
 
             try {
                 const response = await fetch('/predict_account', {
@@ -372,27 +408,40 @@ document.addEventListener('DOMContentLoaded', function() {
                     })
                 });
 
-                if (!response.ok) throw new Error('Network response was not ok');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 
                 const suggestions = await response.json();
+                
+                if (suggestions.error) {
+                    throw new Error(suggestions.error);
+                }
                 
                 // Clear previous suggestions
                 suggestionsDiv.innerHTML = '';
                 
-                if (suggestions.length > 0) {
+                if (suggestions && suggestions.length > 0) {
                     const suggestionsList = document.createElement('div');
-                    suggestionsList.className = 'list-group';
+                    suggestionsList.className = 'list-group suggestions';
                     
                     suggestions.forEach(suggestion => {
+                        const confidenceLevel = suggestion.confidence >= 0.8 ? 'success' : 
+                                             suggestion.confidence >= 0.6 ? 'info' : 'warning';
+                        
                         const item = document.createElement('button');
                         item.type = 'button';
-                        item.className = 'list-group-item list-group-item-action';
+                        item.className = 'list-group-item list-group-item-action suggestion-item';
                         item.innerHTML = `
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">${suggestion.account.name}</h6>
-                                <small>${Math.round(suggestion.confidence * 100)}% match</small>
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">${suggestion.account.name}</h6>
+                                    <div class="suggestion-reasoning">${suggestion.reasoning}</div>
+                                </div>
+                                <span class="badge bg-${confidenceLevel} suggestion-confidence">
+                                    ${Math.round(suggestion.confidence * 100)}% match
+                                </span>
                             </div>
-                            <small>${suggestion.reasoning}</small>
                         `;
                         
                         item.addEventListener('click', function() {
@@ -412,16 +461,27 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                     
                     suggestionsDiv.appendChild(suggestionsList);
-                    suggestionsDiv.style.display = 'block';
                 } else {
-                    suggestionsDiv.innerHTML = '<div class="alert alert-info">No suggestions available</div>';
-                    suggestionsDiv.style.display = 'block';
+                    suggestionsDiv.innerHTML = `
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            No suggestions available for this transaction
+                        </div>
+                    `;
                 }
                 
             } catch (error) {
                 console.error('Error:', error);
-                suggestionsDiv.innerHTML = '<div class="alert alert-danger">Error getting suggestions</div>';
-                suggestionsDiv.style.display = 'block';
+                suggestionsDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        Error getting suggestions: ${error.message}
+                    </div>
+                `;
+            } finally {
+                // Reset button state
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-magic"></i> Suggest';
             }
         });
     });

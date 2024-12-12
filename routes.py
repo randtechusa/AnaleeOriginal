@@ -544,12 +544,26 @@ def delete_file(file_id):
 @login_required
 def predict_account_route():
     try:
+        if not request.is_json:
+            return jsonify({'error': 'Invalid content type. Expected JSON.'}), 400
+            
         data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
         description = data.get('description', '')
         explanation = data.get('explanation', '')
         
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+            
+        logger.debug(f"Received prediction request for description: {description}")
+        
         # Get all available accounts for the current user
         accounts = Account.query.filter_by(user_id=current_user.id).all()
+        if not accounts:
+            return jsonify({'error': 'No accounts available for prediction'}), 404
+            
         account_data = [{
             'name': account.name,
             'category': account.category,
@@ -559,13 +573,17 @@ def predict_account_route():
         } for account in accounts]
         
         # Get predictions
-        predictions = predict_account(description, explanation, account_data)
-        
-        return jsonify(predictions)
+        try:
+            predictions = predict_account(description, explanation, account_data)
+            logger.debug(f"Generated predictions: {predictions}")
+            return jsonify(predictions)
+        except Exception as pred_error:
+            logger.error(f"Error during account prediction: {str(pred_error)}")
+            return jsonify({'error': 'Failed to generate predictions'}), 500
+            
     except Exception as e:
         logger.error(f"Error in account prediction route: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-    return redirect(url_for('main.upload'))
+        return jsonify({'error': 'Internal server error'}), 500
 
 @main.route('/expense-forecast')
 @login_required
