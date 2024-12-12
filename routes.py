@@ -17,6 +17,41 @@ from sqlalchemy import func, and_, text
 import json
 from itertools import zip_longest
 
+# Task management functions
+def schedule_analysis_task(task_type: str, user_id: int, **kwargs) -> str:
+    """Schedule a background analysis task"""
+    task_id = f"{task_type}_{datetime.utcnow().timestamp()}"
+    
+    if task_type == 'transaction_analysis':
+        scheduler.add_job(
+            func=process_transaction_analysis,
+            trigger='date',
+            args=[user_id, kwargs.get('file_id')],
+            id=task_id,
+            name=f"Transaction Analysis - User {user_id}"
+        )
+    elif task_type == 'forecast':
+        scheduler.add_job(
+            func=process_expense_forecast,
+            trigger='date',
+            args=[user_id, kwargs.get('start_date'), kwargs.get('end_date')],
+            id=task_id,
+            name=f"Expense Forecast - User {user_id}"
+        )
+    
+    return task_id
+
+def get_task_status(task_id: str) -> dict:
+    """Get the status of a scheduled task"""
+    job = scheduler.get_job(task_id)
+    if not job:
+        return {'status': 'not_found'}
+    
+    return {
+        'status': 'scheduled' if job.next_run_time else 'completed',
+        'name': job.name,
+        'next_run_time': job.next_run_time.isoformat() if job.next_run_time else None
+    }
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -335,6 +370,21 @@ def analyze(file_id):
     transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).all()
     bank_account_id = None
     anomalies = None
+    
+    # Get task status from session
+    task_id = session.get('analysis_task_id')
+    task_status = None
+    if task_id:
+        task = scheduler.get_job(task_id)
+        if task:
+            task_status = {
+                'status': 'in_progress',
+                'progress': session.get('analysis_progress', 0)
+            }
+        else:
+            # Clear task ID if job is complete
+            session.pop('analysis_task_id', None)
+            session.pop('analysis_progress', None)
 
     if request.method == 'POST':
         try:
@@ -679,6 +729,83 @@ def delete_file(file_id):
     except Exception as e:
         logger.error(f'Error deleting file: {str(e)}')
         flash('Error deleting file')
+def process_transaction_analysis(user_id: int, file_id: int):
+    """Background task to process and analyze transactions"""
+    try:
+        logger.info(f"Starting transaction analysis for user {user_id}, file {file_id}")
+        
+        # Get transactions for the file
+        transactions = Transaction.query.filter_by(
+            user_id=user_id,
+            file_id=file_id
+        ).all()
+        
+        total_transactions = len(transactions)
+        processed = 0
+        
+        for transaction in transactions:
+            try:
+                # Predict account and detect anomalies
+                predicted_account = predict_account(
+                    transaction.description,
+                    transaction.explanation
+                )
+                anomaly_result = detect_transaction_anomalies([transaction])
+                
+                # Update transaction with AI predictions
+                if predicted_account:
+                    account = Account.query.filter_by(
+                        user_id=user_id,
+                        name=predicted_account
+                    ).first()
+                    if account:
+                        transaction.account_id = account.id
+                
+                processed += 1
+                
+                # Update progress in session
+                progress = (processed / total_transactions) * 100
+                session['analysis_progress'] = progress
+                session.modified = True
+                
+            except Exception as e:
+                logger.error(f"Error processing transaction {transaction.id}: {str(e)}")
+                continue
+        
+        logger.info(f"Completed transaction analysis for user {user_id}, file {file_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in transaction analysis task: {str(e)}")
+        raise
+
+def process_expense_forecast(user_id: int, start_date: str, end_date: str):
+    """Background task to generate expense forecasts"""
+    try:
+        logger.info(f"Starting expense forecast for user {user_id}")
+        
+        # Convert string dates to datetime
+        start = datetime.strptime(start_date, '%Y-%m-%d')
+        end = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        # Get historical transactions
+        transactions = Transaction.query.filter(
+            Transaction.user_id == user_id,
+            Transaction.date <= end,
+            Transaction.amount < 0  # Only expenses
+        ).order_by(Transaction.date.asc()).all()
+        
+        # Generate forecast data
+        forecast_data = forecast_expenses(transactions, start, end)
+        
+        # Store results in session for retrieval
+        session[f'forecast_result_{user_id}'] = forecast_data
+        session.modified = True
+        
+        logger.info(f"Completed expense forecast for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in expense forecast task: {str(e)}")
+        raise
         db.session.rollback()
 
 @main.route('/predict_account', methods=['POST'])

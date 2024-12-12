@@ -20,4 +20,5 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "flask-migrate>=4.0.7",
     "weasyprint>=63.1",
+    "flask-apscheduler>=1.13.1",
 ]
