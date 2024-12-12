@@ -9,13 +9,20 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-# Initialize OpenAI client globally with error handling
-try:
-    client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
-    logger.info("OpenAI client initialized successfully")
-except Exception as e:
-    logger.error(f"Error initializing OpenAI client: {str(e)}")
-    raise
+# Initialize OpenAI client function to ensure fresh client on each request
+def get_openai_client():
+    try:
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            logger.error("OpenAI API key not found in environment variables")
+            raise ValueError("OpenAI API key not configured")
+        
+        client = openai.OpenAI(api_key=api_key)
+        logger.info("OpenAI client initialized successfully")
+        return client
+    except Exception as e:
+        logger.error(f"Error initializing OpenAI client: {str(e)}")
+        raise
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
@@ -23,6 +30,9 @@ def predict_account(description: str, explanation: str, available_accounts: List
     """
     try:
         logger.debug(f"Starting account prediction for description: {description}")
+        
+        # Initialize OpenAI client
+        client = get_openai_client()
         
         # Format available accounts for the prompt
         account_info = "\n".join([
@@ -33,7 +43,7 @@ def predict_account(description: str, explanation: str, available_accounts: List
         logger.debug(f"Formatted {len(available_accounts)} accounts for prediction")
         
         # Construct the prompt
-        prompt = f"""Analyze this financial transaction and provide comprehensive account classification with financial insights:
+        prompt = f"""Analyze this financial transaction and provide account classification suggestions:
 
 Transaction Details:
 - Description: {description}
@@ -43,73 +53,72 @@ Available Chart of Accounts:
 {account_info}
 
 Instructions:
-1. Analyze both transaction description and explanation with equal weight for classification
-2. Consider account categories, sub-categories, and accounting principles
-3. Evaluate patterns and financial implications
-4. Provide confidence scores based on:
-   - Semantic similarity with account purposes
-   - Clarity and completeness of transaction information
-   - Historical accounting patterns
-   - Compliance with accounting principles
-5. Generate detailed reasoning that includes:
-   - Specific matching criteria met
-   - Financial implications
-   - Accounting principle alignment
-   - Alternative considerations
+1. Analyze the transaction description and explanation
+2. Consider account categories and accounting principles
+3. Provide confidence scores and reasoning
+4. Focus on accuracy and matching criteria
 
 Format your response as a JSON list with exactly this structure:
 [
     {{
         "account_name": "suggested account name",
         "confidence": 0.95,
-        "reasoning": "detailed explanation including category fit, accounting principles, and financial implications",
-        "financial_insight": "broader financial context and impact analysis"
+        "reasoning": "explanation of why this account matches",
+        "financial_insight": "brief financial impact note"
     }}
 ]
 
-Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy and detailed financial insights."""
+Provide up to 3 suggestions, ranked by confidence (0 to 1)."""
 
-        # Make API call
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a financial accounting assistant helping to classify transactions into the correct accounts."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=500
-        )
-        
-        # Parse response
-        content = response.choices[0].message.content.strip()
-        suggestions = []
+        # Make API call with error handling
         try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial accounting assistant helping to classify transactions into the correct accounts."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=500
+            )
+            logger.debug("Successfully received response from OpenAI")
+            
+            # Parse response
+            content = response.choices[0].message.content.strip()
+            suggestions = []
+            
             # Safely evaluate the response content
             if content.startswith('[') and content.endswith(']'):
                 suggestions = json.loads(content)
             else:
                 logger.error("Invalid response format from AI")
-        except Exception as e:
+                
+            # Validate and format suggestions
+            valid_suggestions = []
+            for suggestion in suggestions:
+                # Only include suggestions that match existing accounts
+                matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
+                if matching_accounts:
+                    # Extract financial insight or use reasoning if insight not provided
+                    financial_insight = suggestion.get('financial_insight', suggestion.get('reasoning', ''))
+                    
+                    valid_suggestions.append({
+                        **suggestion,
+                        'account': matching_accounts[0],
+                        'financial_insight': financial_insight
+                    })
+            
+            return valid_suggestions[:3]  # Return top 3 suggestions
+            
+        except json.JSONDecodeError as e:
             logger.error(f"Error parsing AI suggestions: {str(e)}")
             logger.debug(f"Raw content received: {content}")
-        
-        # Validate and format suggestions
-        valid_suggestions = []
-        for suggestion in suggestions:
-            # Only include suggestions that match existing accounts
-            matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
-            if matching_accounts:
-                # Extract financial insight or use reasoning if insight not provided
-                financial_insight = suggestion.get('financial_insight', suggestion.get('reasoning', ''))
-                
-                valid_suggestions.append({
-                    **suggestion,
-                    'account': matching_accounts[0],
-                    'financial_insight': financial_insight
-                })
-        
-        return valid_suggestions[:3]  # Return top 3 suggestions
-        
+            raise ValueError("Failed to parse AI response")
+            
+        except Exception as e:
+            logger.error(f"Error in OpenAI API call: {str(e)}")
+            raise
+            
     except Exception as e:
         logger.error(f"Error in account prediction: {str(e)}")
         return []
@@ -117,6 +126,8 @@ Provide up to 3 suggestions, ranked by confidence (0 to 1). Focus on accuracy an
 def detect_transaction_anomalies(transactions, historical_data=None):
     """Detect anomalies in transactions using AI analysis."""
     try:
+        client = get_openai_client()
+        
         # Format transaction data for analysis
         transaction_text = "\n".join([
             f"Transaction {idx + 1}:\n"
@@ -173,27 +184,32 @@ Provide analysis in this JSON structure:
 }}"""
 
         # Make API call
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a financial analyst specialized in detecting transaction anomalies and patterns."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,
-            max_tokens=1000
-        )
-
-        # Parse response
-        content = response.choices[0].message.content.strip()
         try:
-            analysis = json.loads(content)
-            return analysis
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing anomaly detection response: {str(e)}")
-            return {
-                "error": "Failed to parse anomaly detection results",
-                "details": str(e)
-            }
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial analyst specialized in detecting transaction anomalies and patterns."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=1000
+            )
+
+            # Parse response
+            content = response.choices[0].message.content.strip()
+            try:
+                analysis = json.loads(content)
+                return analysis
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing anomaly detection response: {str(e)}")
+                return {
+                    "error": "Failed to parse anomaly detection results",
+                    "details": str(e)
+                }
+
+        except Exception as e:
+            logger.error(f"Error in OpenAI API call: {str(e)}")
+            raise
 
     except Exception as e:
         logger.error(f"Error in anomaly detection: {str(e)}")
@@ -205,6 +221,8 @@ Provide analysis in this JSON structure:
 def forecast_expenses(transactions, accounts, forecast_months=12):
     """Generate expense forecasts based on historical transaction patterns."""
     try:
+        client = get_openai_client()
+        
         # Format transaction data for analysis
         transaction_summary = "\n".join([
             f"- Amount: ${t['amount']}, Description: {t['description']}, "
@@ -285,43 +303,48 @@ Format your response as a JSON object with this structure:
 }}"""
 
         # Make API call
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert financial analyst specializing in expense forecasting and predictive analysis."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,
-            max_tokens=1000
-        )
-        
-        # Parse and validate the forecast
         try:
-            content = response.choices[0].message.content.strip()
-            if not content:
-                logger.error("Empty response from AI model")
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are an expert financial analyst specializing in expense forecasting and predictive analysis."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=1000
+            )
+            
+            # Parse and validate the forecast
+            try:
+                content = response.choices[0].message.content.strip()
+                if not content:
+                    logger.error("Empty response from AI model")
+                    return {
+                        "error": "Empty response from AI model",
+                        "monthly_forecasts": [],
+                        "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
+                        "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
+                        "recommendations": []
+                    }
+
+                forecast = json.loads(content)
+                return forecast
+                
+            except json.JSONDecodeError as je:
+                logger.error(f"JSON parsing error in forecast: {str(je)}")
                 return {
-                    "error": "Empty response from AI model",
+                    "error": "Invalid forecast format",
+                    "details": str(je),
                     "monthly_forecasts": [],
                     "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
                     "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
                     "recommendations": []
                 }
-
-            forecast = json.loads(content)
-            return forecast
             
-        except json.JSONDecodeError as je:
-            logger.error(f"JSON parsing error in forecast: {str(je)}")
-            return {
-                "error": "Invalid forecast format",
-                "details": str(je),
-                "monthly_forecasts": [],
-                "forecast_factors": {"key_drivers": [], "risk_factors": [], "assumptions": []},
-                "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
-                "recommendations": []
-            }
-        
+        except Exception as e:
+            logger.error(f"Error in OpenAI API call: {str(e)}")
+            raise
+            
     except Exception as e:
         logger.error(f"Error generating expense forecast: {str(e)}")
         return {
@@ -336,15 +359,10 @@ Format your response as a JSON object with this structure:
 def generate_financial_advice(transactions, accounts):
     """
     Generate comprehensive financial advice based on transaction patterns and account usage.
-    
-    Args:
-        transactions: List of transaction dictionaries with amount, description, and account info
-        accounts: List of available accounts with categories and balances
-        
-    Returns:
-        Dictionary containing financial insights and recommendations
     """
     try:
+        client = get_openai_client()
+        
         # Format transaction data for the prompt
         transaction_summary = "\n".join([
             f"- Amount: ${t['amount']}, Description: {t['description']}, "
@@ -396,97 +414,89 @@ Instructions:
    - Explain expected outcomes and success metrics
 
 Provide a detailed financial analysis in this JSON structure:
-{
+{{
     "key_insights": [
-        {
+        {{
             "category": "string",
             "finding": "string",
             "impact_level": "high|medium|low",
             "trend": "increasing|stable|decreasing"
-        }
+        }}
     ],
     "risk_factors": [
-        {
+        {{
             "risk_type": "string",
             "probability": "high|medium|low",
             "potential_impact": "string",
             "mitigation_strategy": "string"
-        }
+        }}
     ],
     "optimization_opportunities": [
-        {
+        {{
             "area": "string",
             "potential_benefit": "string",
             "implementation_difficulty": "high|medium|low",
             "recommended_timeline": "string"
-        }
+        }}
     ],
     "strategic_recommendations": [
-        {
+        {{
             "timeframe": "short|medium|long",
             "action": "string",
             "expected_outcome": "string",
             "priority": "high|medium|low"
-        }
+        }}
     ],
-    "cash_flow_analysis": {
+    "cash_flow_analysis": {{
         "current_status": "string",
         "projected_trend": "string",
         "key_drivers": ["string"],
         "improvement_suggestions": ["string"]
-    }
-}
-"""
+    }}
+}}"""
 
-        # Make API call for financial advice
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",  # Using gpt-3.5-turbo for consistent API support
-            messages=[
-                {
-                    "role": "system", 
-                    "content": "You are an expert financial advisor specializing in business accounting, financial strategy, and predictive analysis. Focus on providing actionable insights and quantitative metrics. Format your response as valid JSON."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,  # Lower temperature for more focused and consistent advice
-            max_tokens=1000
-        )
-        
-        # Parse and return the financial advice
+        # Make API call with error handling
         try:
-            import json
-            advice = json.loads(response.choices[0].message.content)
-            
-            # Enhance the advice with more detailed natural language summaries
-            enhanced_advice = {
-                "key_insights": advice.get("key_insights", []),
-                "risk_factors": advice.get("risk_factors", []),
-                "optimization_opportunities": advice.get("optimization_opportunities", []),
-                "strategic_recommendations": advice.get("strategic_recommendations", []),
-                "cash_flow_analysis": {
-                    "current_status": advice.get("cash_flow_analysis", {}).get("current_status", ""),
-                    "projected_trend": advice.get("cash_flow_analysis", {}).get("projected_trend", ""),
-                    "key_drivers": advice.get("cash_flow_analysis", {}).get("key_drivers", []),
-                    "improvement_suggestions": advice.get("cash_flow_analysis", {}).get("improvement_suggestions", [])
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are an expert financial advisor specializing in business accounting, financial strategy, and predictive analysis. Focus on providing actionable insights and quantitative metrics."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=1000
+            )
+
+            # Parse and validate the response
+            try:
+                advice = json.loads(response.choices[0].message.content.strip())
+                
+                # Enhance the advice with more detailed natural language summaries
+                enhanced_advice = {
+                    "key_insights": advice.get("key_insights", []),
+                    "risk_factors": advice.get("risk_factors", []),
+                    "optimization_opportunities": advice.get("optimization_opportunities", []),
+                    "strategic_recommendations": advice.get("strategic_recommendations", []),
+                    "cash_flow_analysis": {
+                        "current_status": advice.get("cash_flow_analysis", {}).get("current_status", ""),
+                        "projected_trend": advice.get("cash_flow_analysis", {}).get("projected_trend", ""),
+                        "key_drivers": advice.get("cash_flow_analysis", {}).get("key_drivers", []),
+                        "improvement_suggestions": advice.get("cash_flow_analysis", {}).get("improvement_suggestions", [])
+                    }
                 }
-            }
-            
-            return enhanced_advice
-        except json.JSONDecodeError:
-            # If JSON parsing fails, return the raw text in a structured format
-            raw_advice = response.choices[0].message.content
-            return {
-                "key_insights": raw_advice,
-                "risk_factors": [],
-                "optimization_opportunities": [],
-                "strategic_recommendations": [],
-                "cash_flow_analysis": {
-                    "current_status": "",
-                    "projected_trend": "",
-                    "key_drivers": [],
-                    "improvement_suggestions": []
+                
+                return enhanced_advice
+                
+            except json.JSONDecodeError as je:
+                logger.error(f"Error parsing financial advice: {str(je)}")
+                return {
+                    "error": "Failed to parse financial advice",
+                    "details": str(je)
                 }
-            }
+                
+        except Exception as e:
+            logger.error(f"Error in OpenAI API call: {str(e)}")
+            raise
             
     except Exception as e:
         logger.error(f"Error generating financial advice: {str(e)}")
