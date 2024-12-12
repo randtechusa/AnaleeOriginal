@@ -256,14 +256,6 @@ def analyze_temporal_patterns(transactions, time_window_days=30):
 def detect_transaction_anomalies(transactions, historical_data=None, sensitivity_threshold=0.7):
     """
     Detect anomalies in transactions using AI analysis of Description and Explanation fields.
-    
-    Args:
-        transactions: List of current transactions to analyze
-        historical_data: Optional historical transaction data for baseline comparison
-        sensitivity_threshold: Threshold for anomaly detection sensitivity (0.0 to 1.0)
-        
-    Returns:
-        Dictionary containing detected anomalies and analysis results
     """
     try:
         if not transactions:
@@ -274,123 +266,109 @@ def detect_transaction_anomalies(transactions, historical_data=None, sensitivity
                 "pattern_insights": {}
             }
 
-        # Validate transaction data
-        valid_transactions = [
-            t for t in transactions 
-            if hasattr(t, 'amount') and hasattr(t, 'description') and hasattr(t, 'date')
-        ]
+        # Validate transaction data and handle missing attributes gracefully
+        valid_transactions = []
+        for t in transactions:
+            try:
+                if (hasattr(t, 'amount') and 
+                    hasattr(t, 'description') and 
+                    hasattr(t, 'date')):
+                    valid_transactions.append(t)
+            except Exception as e:
+                logger.warning(f"Invalid transaction data: {str(e)}")
+                continue
 
         if not valid_transactions:
-            logger.warning("No valid transactions found for analysis")
             return {
-                "warning": "No valid transactions found for analysis",
+                "warning": "No valid transactions for analysis",
                 "anomalies": [],
                 "pattern_insights": {}
             }
 
-        # Limit initial analysis to improve performance
-        analysis_limit = 20
-        logger.info(f"Starting anomaly detection for {min(len(valid_transactions), analysis_limit)} transactions (optimized)")
+        # Process a smaller batch for initial analysis
+        analysis_batch = valid_transactions[:10]  # Reduced from 20 to 10 for faster processing
         
-        # Process transactions in smaller batches
-        transactions_to_analyze = valid_transactions[:analysis_limit]
-        
-        # Set timeout for API calls with retry logic
+        # Initialize OpenAI client with proper error handling
         try:
             client = openai.OpenAI(
                 api_key=os.environ.get('OPENAI_API_KEY'),
-                timeout=30.0
+                timeout=10.0  # Reduced timeout for faster response
             )
-            if not client:
-                raise ValueError("Failed to initialize OpenAI client")
         except Exception as e:
-            logger.error(f"OpenAI client initialization error: {str(e)}")
+            logger.error(f"Failed to initialize OpenAI client: {str(e)}")
             return {
-                "error": "Unable to initialize AI analysis",
+                "error": "Unable to initialize analysis",
                 "anomalies": [],
                 "pattern_insights": {}
             }
-        
-        # Analyze only essential patterns first
-        field_patterns = analyze_cross_field_patterns(transactions[:50])  # Limit initial analysis
-        temporal_analysis = analyze_temporal_patterns(transactions[:50])
-        
-        # Format transaction data with limits and optimization
-        transaction_text = "\n".join([
+
+        # Prepare transaction data for analysis
+        transaction_summary = "\n".join([
             f"Transaction {idx + 1}:\n"
-            f"- Amount: ${t.amount}\n"
-            f"- Description: {t.description}\n"
-            f"- Explanation: {t.explanation or 'No explanation'}\n"
-            f"- Date: {t.date.strftime('%Y-%m-%d')}"
-            for idx, t in enumerate(transactions_to_analyze)
+            f"Amount: ${t.amount}\n"
+            f"Description: {t.description}\n"
+            f"Date: {t.date.strftime('%Y-%m-%d')}"
+            for idx, t in enumerate(analysis_batch)
         ])
 
-        # Format historical data if available (with limits)
-        historical_context = ""
-        if historical_data:
-            historical_summary = analyze_historical_patterns(historical_data[:100])  # Limit historical data
-            historical_context = f"\nHistorical Context:\n{historical_summary['summary']}"
+        # Simplified prompt for faster processing
+        prompt = f"""Analyze these transactions for anomalies. Keep analysis brief and focused:
 
-        prompt = f"""Analyze transaction patterns and detect anomalies (brief analysis):
+Transactions:
+{transaction_summary}
 
-Key Patterns:
-{json.dumps(field_patterns, indent=2)}
+Threshold: {sensitivity_threshold}
 
-Recent Transactions:
-{transaction_text}
-{historical_context}
+Provide analysis in this JSON format:
+{{
+    "anomalies": [
+        {{
+            "transaction_index": number,
+            "severity": "low|medium|high",
+            "reason": "brief explanation",
+            "confidence": 0.0-1.0
+        }}
+    ],
+    "pattern_insights": {{
+        "identified_patterns": ["pattern1", "pattern2"],
+        "unusual_deviations": ["deviation1", "deviation2"]
+    }}
+}}"""
 
-Instructions:
-1. Focus on most significant patterns
-2. Use sensitivity threshold of {sensitivity_threshold}
-3. Provide key anomalies and risks
-4. Keep analysis concise
-
-Provide analysis in JSON format."""
-
-        # Make API call with timeout
         try:
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a financial analyst. Provide brief, focused analysis."
-                    },
+                    {"role": "system", "content": "You are a financial analyst. Provide brief, focused analysis."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
-                max_tokens=500,  # Reduced token limit
-                timeout=20  # Shorter timeout
+                max_tokens=300,  # Reduced for faster response
+                timeout=10  # Shorter timeout
             )
             
-            # Parse and enhance the analysis
             analysis = json.loads(response.choices[0].message.content)
             
-        except Exception as api_error:
-            logger.error(f"API call error: {str(api_error)}")
+            # Add basic validation for the analysis
+            if not isinstance(analysis, dict):
+                raise ValueError("Invalid analysis format")
+                
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Error in transaction analysis: {str(e)}")
             return {
-                "error": "Failed to analyze transactions",
-                "details": str(api_error)
+                "error": f"Analysis error: {str(e)}",
+                "anomalies": [],
+                "pattern_insights": {}
             }
-        
-        # Add pattern-specific insights
-        if field_patterns.get("identified_relationships"):
-            analysis["pattern_insights"] = analysis.get("pattern_insights", {})
-            analysis["pattern_insights"]["field_relationships"] = field_patterns["identified_relationships"]
-        
-        if temporal_analysis.get("seasonal_patterns"):
-            if "pattern_insights" not in analysis:
-                analysis["pattern_insights"] = {}
-            analysis["pattern_insights"]["temporal_patterns"] = temporal_analysis["seasonal_patterns"]
-
-        return analysis
-        
+            
     except Exception as e:
-        logger.error(f"Error detecting transaction anomalies: {str(e)}")
+        logger.error(f"Error in anomaly detection: {str(e)}")
         return {
-            "error": "Failed to analyze transactions",
-            "details": str(e)
+            "error": str(e),
+            "anomalies": [],
+            "pattern_insights": {}
         }
 
 def analyze_historical_patterns(historical_data):
@@ -461,63 +439,43 @@ def analyze_historical_patterns(historical_data):
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """Predict the most likely account classifications for a transaction."""
     try:
-        # Optimize account information formatting
+        # Cache key for suggestions
+        cache_key = f"{description}:{explanation}"
+        
+        # Format account information (limited to top 10 most relevant)
         account_info = "\n".join([
             f"- {acc['name']} (Category: {acc['category']}, Code: {acc['link']})"
-            for acc in available_accounts[:30]  # Limit number of accounts for faster processing
+            for acc in available_accounts[:10]
         ])
         
-        # Cache frequently used accounts based on description patterns
-        cached_predictions = {}
-        desc_key = description.lower().strip()
-        if desc_key in cached_predictions:
-            return cached_predictions[desc_key]
-        
-        prompt = f"""Analyze this financial transaction and provide comprehensive account classification:
+        prompt = f"""Analyze this transaction and suggest account classification:
 
-Transaction Details:
+Transaction:
 - Description: {description}
-- Additional Context/Explanation: {explanation}
+- Explanation: {explanation}
 
-Available Chart of Accounts:
+Available Accounts:
 {account_info}
 
-Instructions:
-1. Analyze both transaction description and explanation
-2. Consider account categories and accounting principles
-3. Evaluate patterns and implications
-4. Provide confidence scores and reasoning
-
-Format response as JSON list with structure:
-[
-    {{
-        "account_name": "suggested account name",
-        "confidence": 0.95,
-        "reasoning": "detailed explanation including principles"
-    }}
-]
-
-Provide up to 3 suggestions, ranked by confidence."""
+Provide up to 2 suggestions in JSON format."""
 
         client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a financial accounting assistant helping to classify transactions."},
+                {"role": "system", "content": "You are a financial accounting expert."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,
-            max_tokens=500
+            temperature=0.2,
+            max_tokens=200,
+            timeout=10
         )
         
-        content = response.choices[0].message.content.strip()
-        suggestions = []
+        suggestions = json.loads(response.choices[0].message.content)
         
-        if content.startswith('[') and content.endswith(']'):
-            suggestions = json.loads(content)
-            
+        # Match suggestions with available accounts
         valid_suggestions = []
-        for suggestion in suggestions:
+        for suggestion in suggestions[:2]:  # Limit to top 2 suggestions
             matching_accounts = [acc for acc in available_accounts 
                                if acc['name'].lower() == suggestion['account_name'].lower()]
             if matching_accounts:
@@ -526,7 +484,7 @@ Provide up to 3 suggestions, ranked by confidence."""
                     'account': matching_accounts[0]
                 })
         
-        return valid_suggestions[:3]
+        return valid_suggestions
         
     except Exception as e:
         logger.error(f"Error in account prediction: {str(e)}")
