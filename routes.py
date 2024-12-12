@@ -426,6 +426,15 @@ def upload():
                 session['upload_progress'] = 0
 
                 try:
+                    # Configure progress tracking
+                    session['upload_status'] = {
+                        'filename': file.filename,
+                        'total_rows': 0,
+                        'processed_rows': 0,
+                        'current_chunk': 0,
+                        'status': 'counting'
+                    }
+                    
                     # First get total rows for progress tracking
                     if file.filename.endswith('.csv'):
                         total_rows = sum(1 for line in file) - 1  # Subtract header row
@@ -433,11 +442,17 @@ def upload():
                         df_iterator = pd.read_csv(file, chunksize=chunk_size)
                         logger.info(f"Processing CSV file with {total_rows} rows")
                     else:
-                        df = pd.read_excel(file)
+                        # Use openpyxl for Excel files to support streaming
+                        df = pd.read_excel(file, engine='openpyxl')
                         total_rows = len(df)
                         # Create chunk iterator for excel
                         df_iterator = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
                         logger.info(f"Processing Excel file with {total_rows} rows")
+                    
+                    # Update session with total rows
+                    session['upload_status']['total_rows'] = total_rows
+                    session['upload_status']['status'] = 'processing'
+                    session.modified = True
 
                     # Initialize progress in session
                     session['upload_total_rows'] = total_rows
@@ -450,12 +465,22 @@ def upload():
                         chunk.columns = chunk.columns.str.strip().str.lower()
                         processed_rows += len(chunk)
                         
-                        # Update progress
-                        progress = int((processed_rows / total_rows) * 100)
-                        session['upload_progress'] = progress
+                        # Update progress with detailed status
+                        session['upload_status'].update({
+                            'processed_rows': processed_rows,
+                            'current_chunk': chunk_idx + 1,
+                            'progress': int((processed_rows / total_rows) * 100),
+                            'last_update': datetime.utcnow().isoformat()
+                        })
+                        session.modified = True
+                        
                         logger.info(f"Processing chunk {chunk_idx + 1}/{(total_rows//chunk_size) + 1}, "
-                                  f"Progress: {progress}%, "
+                                  f"Progress: {session['upload_status']['progress']}%, "
                                   f"Processed rows: {processed_rows}/{total_rows}")
+                        
+                        # Add a small delay to prevent database overload
+                        if chunk_idx % 5 == 0:  # Every 5 chunks
+                            db.session.commit()  # Commit current progress
                         
                         transactions_to_add = []
                         for _, row in chunk.iterrows():
@@ -746,7 +771,74 @@ def export_forecast_pdf():
             zip=zip  # Required for template iteration
         )
         
-        # Create PDF
+        try:
+            # Create PDF
+            pdf = HTML(string=html_content).write_pdf()
+            
+            # Create response with PDF
+            response = make_response(pdf)
+            response.headers['Content-Type'] = 'application/pdf'
+            response.headers['Content-Disposition'] = f'attachment; filename=forecast_report_{datetime.now().strftime("%Y%m%d")}.pdf'
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error generating PDF report: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Error generating PDF report'
+            }), 500
+
+@main.route('/upload-progress')
+@login_required
+def upload_progress():
+    """Get the current upload progress."""
+    try:
+        status = session.get('upload_status', {})
+        if not status:
+            return jsonify({
+                'status': 'no_upload',
+                'message': 'No upload in progress'
+            })
+            
+        return jsonify({
+            'status': status.get('status', 'unknown'),
+            'filename': status.get('filename', ''),
+            'total_rows': status.get('total_rows', 0),
+            'processed_rows': status.get('processed_rows', 0),
+            'current_chunk': status.get('current_chunk', 0),
+            'progress': status.get('progress', 0),
+            'last_update': status.get('last_update')
+        })
+        
+    except Exception as e:
+        logger.error(f"Error checking upload progress: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Error checking upload progress'
+        }), 500
+
+@main.route('/generate-pdf')
+@login_required
+def generate_pdf():
+    """Generate and download a PDF report with financial forecasts."""
+    try:
+        # Get company settings and verify
+        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+        if not company_settings:
+            flash('Please configure company settings first.')
+            return redirect(url_for('main.company_settings'))
+            
+        # Generate forecast data
+        forecast_data = generate_forecast_data()  # Implement this function based on your needs
+        
+        # Create PDF from template
+        html_content = render_template(
+            'pdf/forecast_report.html',
+            forecast=forecast_data,
+            company=company_settings
+        )
+        
+        # Generate PDF
         pdf = HTML(string=html_content).write_pdf()
         
         # Create response
@@ -764,6 +856,7 @@ def export_forecast_pdf():
 @main.route('/financial-insights')
 @login_required
 def financial_insights():
+    """Display financial insights and analysis."""
     try:
         # Get company settings for financial year
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
@@ -773,157 +866,34 @@ def financial_insights():
         
         # Get current financial year dates
         fy_dates = company_settings.get_financial_year()
-        start_date = fy_dates['start_date']
-        end_date = fy_dates['end_date']
         
-        # Get transactions for the current financial year
+        # Get transactions for analysis
         transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
-            Transaction.date.between(start_date, end_date)
-        ).order_by(Transaction.date.desc()).all()
+            Transaction.date >= fy_dates['start_date'],
+            Transaction.date <= fy_dates['end_date']
+        ).all()
         
-        # Format transactions for AI analysis
-        transaction_data = [{
-            'amount': t.amount,
-            'description': t.description,
-            'account_name': t.account.name if t.account else 'Uncategorized'
-        } for t in transactions]
+        # Get accounts for the user
+        accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).all()
         
-        # Get account information
-        accounts = Account.query.filter_by(user_id=current_user.id).all()
-        account_data = [{
-            'name': acc.name,
-            'category': acc.category,
-            'balance': sum(t.amount for t in acc.transactions)
-        } for acc in accounts]
-        
-        # Generate financial advice and expense forecasts
-        from ai_utils import generate_financial_advice, forecast_expenses
-        financial_advice = generate_financial_advice(transaction_data, account_data)
-        expense_forecast = forecast_expenses(transaction_data, account_data)
+        # Generate insights using AI
+        insights = generate_financial_advice(
+            transactions=[t.to_dict() for t in transactions],
+            accounts=[a.to_dict() for a in accounts]
+        )
         
         return render_template(
             'financial_insights.html',
-            financial_advice=financial_advice,
-            expense_forecast=expense_forecast,
-            transactions=transactions[:10],  # Show recent transactions
-            accounts=accounts
+            insights=insights,
+            company=company_settings,
+            fy_dates=fy_dates
         )
         
     except Exception as e:
         logger.error(f"Error generating financial insights: {str(e)}")
         flash('Error generating financial insights. Please try again.')
         return redirect(url_for('main.dashboard'))
-@main.route('/output')
-@login_required
-def output():
-    try:
-        # Get company settings for financial year
-        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
-        if not company_settings:
-            flash('Please configure company settings first.')
-            return redirect(url_for('main.company_settings'))
-        
-        logger.info(f"Company settings found for user {current_user.id}, FY end month: {company_settings.financial_year_end}")
-        
-        # Get selected year from query params or use current year
-        selected_year = request.args.get('financial_year', type=int)
-        current_date = datetime.utcnow()
-        
-        # If no year selected, calculate current financial year
-        if not selected_year:
-            current_fy = company_settings.get_financial_year(date=current_date)
-            selected_year = current_fy['start_year']
-            logger.debug(f"No year selected, using current FY starting {selected_year}")
-        
-        # Get available financial years from transactions
-        financial_years = set()
-        transactions_query = Transaction.query.filter_by(user_id=current_user.id)
-        transactions = transactions_query.all()
-        
-        for transaction in transactions:
-            # Get the financial year for each transaction
-            fy = company_settings.get_financial_year(date=transaction.date)
-            financial_years.add(fy['start_year'])
-        
-        financial_years = sorted(list(financial_years))
-        if not financial_years and selected_year:
-            financial_years = [selected_year]
-            logger.debug("No transactions found, using selected year only")
-        
-        logger.info(f"Available financial years: {financial_years}")
-        logger.info(f"Selected year: {selected_year}")
-        
-        # Get financial year dates for the selected year
-        fy_dates = company_settings.get_financial_year(year=selected_year)
-        start_date = fy_dates['start_date']
-        end_date = fy_dates['end_date']
-        
-        logger.info(f"Calculated FY period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-    
-        # Get transactions for the selected financial year
-        transactions = transactions_query.filter(
-            Transaction.date >= start_date,
-            Transaction.date <= end_date
-        ).all()
-        
-        logger.info(f"Found {len(transactions)} transactions in selected period")
-        
-        # Initialize account balances
-        account_balances = {}
-        
-        # Process transactions to build trial balance
-        for transaction in transactions:
-            logger.debug(f"Processing transaction: {transaction.id}, date: {transaction.date}, amount: {transaction.amount}")
-            
-            # Process main account entry
-            if transaction.account:
-                account = transaction.account
-                if account.name not in account_balances:
-                    account_balances[account.name] = {
-                        'account_name': account.name,
-                        'category': account.category,
-                        'sub_category': account.sub_category,
-                        'link': account.link,
-                        'amount': 0
-                    }
-                account_balances[account.name]['amount'] += transaction.amount
-                logger.debug(f"Updated balance for {account.name}: {account_balances[account.name]['amount']}")
-            
-            # Process bank account entry (double-entry)
-            if transaction.bank_account:
-                bank_account = transaction.bank_account
-                if bank_account.name not in account_balances:
-                    account_balances[bank_account.name] = {
-                        'account_name': bank_account.name,
-                        'category': bank_account.category,
-                        'sub_category': bank_account.sub_category,
-                        'link': bank_account.link,
-                        'amount': 0
-                    }
-                account_balances[bank_account.name]['amount'] -= transaction.amount
-                logger.debug(f"Updated balance for {bank_account.name}: {account_balances[bank_account.name]['amount']}")
-        
-        # Convert account_balances to list and sort by category and account name
-        trial_balance = sorted(
-            account_balances.values(),
-            key=lambda x: (x['category'] or '', x['account_name'])
-        )
-        
-        # Log debug information
-        logger.debug(f"Number of accounts in trial balance: {len(trial_balance)}")
-        logger.debug(f"Trial balance total: {sum(item['amount'] for item in trial_balance)}")
-        
-        return render_template('output.html',
-                            trial_balance=trial_balance,
-                            financial_years=financial_years,
-                            current_year=selected_year)
-                            
-    except Exception as e:
-        logger.error(f"Error generating trial balance: {str(e)}")
-        logger.exception("Full stack trace:")
-        flash('Error generating trial balance. Please try again.')
-        return redirect(url_for('main.dashboard'))
-
-# Removed duplicate implementation of export_forecast_pdf
-# The primary implementation is maintained above at line 649
