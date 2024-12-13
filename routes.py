@@ -762,32 +762,65 @@ def calculate_description_similarity(desc1, desc2):
         # If text similarity >= 70%, we can return early
         if text_similarity >= 0.7:
             return True, text_similarity, 1.0, "High text similarity match"
-        
+            
         # Calculate semantic similarity using OpenAI
-        openai.api_key = os.getenv('OPENAI_API_KEY')
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": """You are a financial transaction analyzer. Compare these transactions 
-                for semantic similarity in their business purpose and transaction type. Focus on:
-                1. Transaction category (e.g., both are utility payments)
-                2. Business purpose (e.g., both are monthly subscriptions)
-                3. Transaction nature (e.g., both are regular operational expenses)
-                
-                Return a JSON object with:
-                {
-                    "similarity_score": float between 0-1,
-                    "reasoning": "brief explanation of similarity/difference",
-                    "confidence": float between 0-1
-                }"""
-            }, {
-                "role": "user",
-                "content": f"Compare these transactions semantically:\nTransaction 1: {desc1}\nTransaction 2: {desc2}"
-            }],
-            temperature=0.3
-        )
+        try:
+            openai.api_key = os.getenv('OPENAI_API_KEY')
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{
+                    "role": "system",
+                    "content": """You are a financial transaction analyzer. Compare these transactions 
+                    for semantic similarity in their business purpose and transaction type. Consider:
+                    1. Transaction category (e.g., both are utility payments)
+                    2. Business purpose (e.g., both are monthly subscriptions)
+                    3. Transaction nature (e.g., both are regular operational expenses)
+                    4. Economic meaning (e.g., both represent asset purchases)
+                    
+                    Return a JSON object with:
+                    {
+                        "similarity_score": float between 0-1,
+                        "reasoning": "brief explanation of similarity/difference",
+                        "confidence": float between 0-1
+                    }
+                    
+                    Focus on semantic meaning over text similarity. A score of 0.95 or higher 
+                    indicates transactions that serve the same business purpose despite different descriptions."""
+                }, {
+                    "role": "user",
+                    "content": f"Compare these transactions semantically:\nTransaction 1: {desc1}\nTransaction 2: {desc2}"
+                }],
+                temperature=0.2
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            semantic_similarity = float(result.get('similarity_score', 0.0))
+            reasoning = result.get('reasoning', '')
+            confidence = float(result.get('confidence', 0.8))
+            
+            logger.info(
+                f"ERF: Semantic analysis complete - "
+                f"Score: {semantic_similarity:.2f}, "
+                f"Confidence: {confidence:.2f}, "
+                f"Reason: {reasoning}"
+            )
+            
+            # Return True if either criterion is met
+            is_similar = (text_similarity >= 0.7) or (semantic_similarity >= 0.95)
+            return is_similar, text_similarity, semantic_similarity, reasoning
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"ERF: Error parsing OpenAI response: {str(e)}")
+            return False, text_similarity, 0.0, f"Error parsing AI response: {str(e)}"
+            
+        except openai.error.OpenAIError as e:
+            logger.error(f"ERF: OpenAI API error: {str(e)}")
+            return False, text_similarity, 0.0, f"OpenAI API error: {str(e)}"
+            
+    except Exception as e:
+        logger.error(f"ERF: Unexpected error in similarity calculation: {str(e)}")
+        return False, 0.0, 0.0, f"Unexpected error: {str(e)}"
         
         result = json.loads(response.choices[0].message.content)
         semantic_similarity = float(result.get('similarity_score', 0.0))
@@ -814,6 +847,90 @@ def calculate_description_similarity(desc1, desc2):
     except Exception as e:
         logger.error(f"ERF: Unexpected error: {str(e)}")
         return False, 0.0, 0.0, f"Unexpected error: {str(e)}"
+
+@main.route('/suggest_explanation', methods=['POST'])
+@login_required
+def suggest_explanation():
+    """Explanation Suggestion Feature (ESF) - Suggests explanations based on transaction description"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+        
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+            
+        # Get similar past transactions with explanations
+        similar_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.explanation.isnot(None),
+            Transaction.description.ilike(f"%{description}%")
+        ).limit(5).all()
+        
+        past_explanations = [
+            {
+                'description': t.description,
+                'explanation': t.explanation
+            } for t in similar_transactions
+        ]
+        
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{
+                    "role": "system",
+                    "content": """You are a financial transaction analyzer specialized in explaining business transactions.
+                    Analyze the transaction description and provide:
+                    1. A clear, concise explanation of the transaction's purpose
+                    2. Any relevant business context
+                    3. Potential accounting implications
+                    
+                    If similar transactions are provided, use their explanations as context while maintaining consistency.
+                    
+                    Return a JSON object with:
+                    {
+                        "suggested_explanation": "clear explanation",
+                        "confidence": float between 0-1,
+                        "reasoning": "why this explanation fits",
+                        "category_hint": "likely transaction category",
+                        "business_context": "additional business context"
+                    }"""
+                }, {
+                    "role": "user",
+                    "content": f"""Suggest an explanation for this transaction:
+                    Description: {description}
+                    
+                    Similar Past Transactions:
+                    {json.dumps(past_explanations, indent=2) if past_explanations else 'No similar past transactions found'}
+                    
+                    Consider any patterns or consistency in past explanations if available."""
+                }],
+                temperature=0.3
+            )
+            
+            suggestion = json.loads(response.choices[0].message.content)
+            
+            # Add metadata about the suggestion
+            suggestion['has_similar_transactions'] = bool(past_explanations)
+            suggestion['similar_transactions_count'] = len(past_explanations)
+            
+            logger.info(
+                f"ESF: Generated suggestion for '{description}' - "
+                f"Confidence: {suggestion.get('confidence', 0):.2f}, "
+                f"Similar Transactions: {len(past_explanations)}"
+            )
+            
+            return jsonify(suggestion)
+            
+        except (openai.error.OpenAIError, json.JSONDecodeError) as e:
+            logger.error(f"ESF: Error generating suggestion: {str(e)}")
+            return jsonify({
+                'error': 'Could not generate suggestion',
+                'details': str(e)
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"ESF: Unexpected error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/update_explanation', methods=['POST'])
 @login_required

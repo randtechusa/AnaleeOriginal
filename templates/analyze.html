@@ -164,13 +164,46 @@
                             </td>
                             <td>
                                 <div class="position-relative">
-                                    <textarea 
-                                        class="form-control explanation-input{% if transaction.explanation %} has-content{% endif %}" 
-                                        name="explanation_{{ transaction.id }}" 
-                                        rows="3"
-                                        aria-label="Transaction explanation"
-                                        placeholder="Enter explanation for this transaction..."
-                                    >{{ transaction.explanation }}</textarea>
+                                    <div class="position-relative">
+                                        <textarea 
+                                            class="form-control explanation-input{% if transaction.explanation %} has-content{% endif %}" 
+                                            name="explanation_{{ transaction.id }}" 
+                                            rows="3"
+                                            aria-label="Transaction explanation"
+                                            placeholder="Enter explanation for this transaction..."
+                                            data-transaction-id="{{ transaction.id }}"
+                                            data-description="{{ transaction.description }}"
+                                        >{{ transaction.explanation }}</textarea>
+                                        <div class="d-flex gap-2 mt-1">
+                                            <button type="button" 
+                                                    class="btn btn-outline-secondary btn-sm suggest-explanation-btn"
+                                                    data-transaction-id="{{ transaction.id }}"
+                                                    data-description="{{ transaction.description }}">
+                                                <i class="fas fa-lightbulb"></i> Suggest Explanation (ESF)
+                                            </button>
+                                            <div class="explanation-feedback" style="display: none;">
+                                                <small class="text-muted">
+                                                    <i class="fas fa-info-circle"></i>
+                                                    <span class="feedback-text"></span>
+                                                </small>
+                                            </div>
+                                        </div>
+                                        <div id="explanation-suggestion-{{ transaction.id }}" class="mt-2" style="display: none;">
+                                            <div class="card bg-dark">
+                                                <div class="card-body">
+                                                    <h6 class="card-subtitle mb-2 text-muted">
+                                                        Suggested Explanation
+                                                        <span class="badge bg-info suggestion-confidence"></span>
+                                                    </h6>
+                                                    <p class="card-text suggestion-text"></p>
+                                                    <div class="suggestion-context text-muted small"></div>
+                                                    <button class="btn btn-sm btn-outline-primary mt-2 apply-suggestion">
+                                                        Apply Suggestion
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <small class="form-text text-muted mt-1" style="display: none;">
                                         Press Enter to save changes
                                     </small>
@@ -447,7 +480,83 @@ document.addEventListener('DOMContentLoaded', function() {
     `;
     document.head.appendChild(style);
 
-    // Handle suggestion buttons
+    // Handle ESF - Explanation Suggestion Feature
+    document.querySelectorAll('.suggest-explanation-btn').forEach(button => {
+        button.addEventListener('click', async function() {
+            const transactionId = this.dataset.transactionId;
+            const description = this.dataset.description;
+            const suggestionDiv = document.getElementById(`explanation-suggestion-${transactionId}`);
+            const textarea = document.querySelector(`textarea[name="explanation_${transactionId}"]`);
+            
+            // Show loading state
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
+            
+            try {
+                const response = await fetch('/suggest_explanation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        description: description
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const suggestion = await response.json();
+                
+                if (suggestion.error) {
+                    throw new Error(suggestion.error);
+                }
+                
+                // Update suggestion display
+                const confidencePercent = Math.round(suggestion.confidence * 100);
+                suggestionDiv.querySelector('.suggestion-confidence').textContent = `${confidencePercent}% Confidence`;
+                suggestionDiv.querySelector('.suggestion-text').textContent = suggestion.suggested_explanation;
+                
+                // Add context information
+                const contextHtml = [];
+                if (suggestion.business_context) {
+                    contextHtml.push(`<div><strong>Context:</strong> ${suggestion.business_context}</div>`);
+                }
+                if (suggestion.category_hint) {
+                    contextHtml.push(`<div><strong>Category:</strong> ${suggestion.category_hint}</div>`);
+                }
+                if (suggestion.has_similar_transactions) {
+                    contextHtml.push(`<div><strong>Similar Transactions:</strong> Found ${suggestion.similar_transactions_count} similar entries</div>`);
+                }
+                suggestionDiv.querySelector('.suggestion-context').innerHTML = contextHtml.join('');
+                
+                // Show suggestion
+                suggestionDiv.style.display = 'block';
+                
+                // Handle apply suggestion button
+                suggestionDiv.querySelector('.apply-suggestion').onclick = function() {
+                    textarea.value = suggestion.suggested_explanation;
+                    textarea.classList.add('has-content');
+                    textarea.dispatchEvent(new Event('input'));
+                    suggestionDiv.style.display = 'none';
+                };
+                
+            } catch (error) {
+                console.error('Error:', error);
+                const feedbackDiv = this.nextElementSibling;
+                feedbackDiv.querySelector('.feedback-text').textContent = `Error: ${error.message}`;
+                feedbackDiv.style.display = 'block';
+                setTimeout(() => feedbackDiv.style.display = 'none', 5000);
+            } finally {
+                // Reset button state
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-lightbulb"></i> Suggest Explanation (ESF)';
+            }
+        });
+    });
+
+    // Handle SF - Account Suggestion Feature
     document.querySelectorAll('.suggest-account-btn').forEach(button => {
         button.addEventListener('click', async function() {
             const transactionId = this.dataset.transactionId;
