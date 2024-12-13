@@ -741,61 +741,79 @@ def calculate_description_similarity(desc1, desc2):
     import re
     import openai
     import json
+    import os
     
     if not desc1 or not desc2:
-        return False, 0.0, 0.0
+        return False, 0.0, 0.0, "Empty descriptions"
         
     # Normalize descriptions
     def normalize_text(text):
         text = re.sub(r'[^\w\s]', '', text.lower())
         return ' '.join(text.split())
     
-    norm_desc1 = normalize_text(desc1)
-    norm_desc2 = normalize_text(desc2)
-    
-    # Calculate text similarity
     try:
+        norm_desc1 = normalize_text(desc1)
+        norm_desc2 = normalize_text(desc2)
+        
+        # Calculate text similarity
         text_similarity = SequenceMatcher(None, norm_desc1, norm_desc2).ratio()
-    except Exception as e:
-        logger.error(f"ERF: Error calculating text similarity: {str(e)}")
-        text_similarity = 0.0
-    
-    # If text similarity >= 70%, we can return early
-    if text_similarity >= 0.7:
-        return True, text_similarity, 1.0  # Return 1.0 for semantic as it's not needed
-    
-    # Calculate semantic similarity using OpenAI
-    try:
+        logger.debug(f"ERF: Text similarity score: {text_similarity}")
+        
+        # If text similarity >= 70%, we can return early
+        if text_similarity >= 0.7:
+            return True, text_similarity, 1.0, "High text similarity match"
+        
+        # Calculate semantic similarity using OpenAI
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{
                 "role": "system",
-                "content": """You are a financial transaction analyzer. Analyze if these transactions 
-                are semantically similar. Focus on the underlying transaction type, purpose, and business context. 
+                "content": """You are a financial transaction analyzer. Compare these transactions 
+                for semantic similarity in their business purpose and transaction type. Focus on:
+                1. Transaction category (e.g., both are utility payments)
+                2. Business purpose (e.g., both are monthly subscriptions)
+                3. Transaction nature (e.g., both are regular operational expenses)
+                
                 Return a JSON object with:
                 {
-                    "similarity_score": float (0-1),
-                    "reasoning": "brief explanation of the similarity or difference"
-                }
-                A score of 1.0 means identical transaction types, 0.0 means completely different."""
+                    "similarity_score": float between 0-1,
+                    "reasoning": "brief explanation of similarity/difference",
+                    "confidence": float between 0-1
+                }"""
             }, {
                 "role": "user",
-                "content": f"Transaction 1: {desc1}\nTransaction 2: {desc2}"
-            }]
+                "content": f"Compare these transactions semantically:\nTransaction 1: {desc1}\nTransaction 2: {desc2}"
+            }],
+            temperature=0.3
         )
         
         result = json.loads(response.choices[0].message.content)
         semantic_similarity = float(result.get('similarity_score', 0.0))
         reasoning = result.get('reasoning', '')
-        logger.debug(f"ERF: Semantic analysis - Score: {semantic_similarity}, Reason: {reasoning}")
+        confidence = float(result.get('confidence', 0.8))
         
+        logger.info(
+            f"ERF: Semantic analysis complete - "
+            f"Score: {semantic_similarity:.2f}, "
+            f"Confidence: {confidence:.2f}, "
+            f"Reason: {reasoning}"
+        )
+        
+        # Return True if either criterion is met
+        is_similar = (text_similarity >= 0.7) or (semantic_similarity >= 0.95)
+        return is_similar, text_similarity, semantic_similarity, reasoning
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"ERF: Error parsing OpenAI response: {str(e)}")
+        return False, 0.0, 0.0, "Error parsing AI response"
+    except openai.error.OpenAIError as e:
+        logger.error(f"ERF: OpenAI API error: {str(e)}")
+        return False, 0.0, 0.0, f"OpenAI API error: {str(e)}"
     except Exception as e:
-        logger.error(f"ERF: Error calculating semantic similarity: {str(e)}")
-        semantic_similarity = 0.0
-    
-    # Return True if either criterion is met
-    is_similar = (text_similarity >= 0.7) or (semantic_similarity >= 0.95)
-    return is_similar, text_similarity, semantic_similarity
+        logger.error(f"ERF: Unexpected error: {str(e)}")
+        return False, 0.0, 0.0, f"Unexpected error: {str(e)}"
 
 @main.route('/update_explanation', methods=['POST'])
 @login_required
@@ -901,7 +919,7 @@ def update_explanation():
 @main.route('/predict_account', methods=['POST'])
 @login_required
 def predict_account_route():
-    """AI-powered account prediction based on transaction details"""
+    """AI-powered account suggestion based on transaction context (SF - Suggestion Feature)"""
     try:
         data = request.get_json()
         description = data.get('description', '').strip()
@@ -930,32 +948,44 @@ def predict_account_route():
             } for acc in available_accounts
         ]
 
-        # Use OpenAI to analyze and suggest accounts
+        # Use OpenAI for intelligent account suggestions
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": """You are an expert financial advisor specializing in 
-                    account classification. Analyze the transaction details and suggest the most appropriate 
-                    accounts from the available options. Consider both the description and explanation to 
-                    understand the transaction's nature. Provide confidence scores and reasoning."""},
+                    {"role": "system", "content": """You are an expert financial analyst specializing in 
+                    Chart of Accounts classification. Your task is to:
+                    1. Analyze the transaction's business nature and purpose
+                    2. Understand the accounting implications
+                    3. Match with the most appropriate accounts
+                    4. Provide detailed reasoning for each suggestion
+                    
+                    Focus on standard accounting principles and business context."""},
                     {"role": "user", "content": f"""
+                    Analyze this transaction and suggest the most appropriate accounts:
+                    
                     Transaction Details:
                     - Description: {description}
-                    - Explanation: {explanation}
+                    - User's Explanation: {explanation if explanation else 'Not provided'}
                     
-                    Available Accounts:
+                    Available Accounts in Chart of Accounts:
                     {json.dumps(account_info, indent=2)}
                     
-                    Suggest up to 3 most appropriate accounts with confidence scores and reasoning.
-                    Format as JSON with structure:
+                    Provide up to 3 best matching accounts with:
+                    1. Confidence score (0-1)
+                    2. Detailed reasoning
+                    3. Account category relevance
+                    
+                    Return as JSON array:
                     [{{
                         "account": {{account object}},
                         "confidence": float,
-                        "reasoning": "string"
+                        "reasoning": "string",
+                        "category_relevance": "string"
                     }}]
                     """}
-                ]
+                ],
+                temperature=0.3
             )
             
             # Parse and validate AI suggestions
@@ -963,22 +993,72 @@ def predict_account_route():
             validated_suggestions = []
             
             for suggestion in suggestions[:3]:  # Limit to top 3 suggestions
-                if isinstance(suggestion, dict) and all(k in suggestion for k in ['account', 'confidence', 'reasoning']):
-                    # Validate the account exists
+                try:
+                    # Validate suggestion structure
+                    required_fields = ['account', 'confidence', 'reasoning', 'category_relevance']
+                    if not isinstance(suggestion, dict) or not all(k in suggestion for k in required_fields):
+                        continue
+                        
+                    # Validate account exists
                     account_id = suggestion['account'].get('id')
-                    if any(acc.id == account_id for acc in available_accounts):
+                    matching_account = next((acc for acc in available_accounts if acc.id == account_id), None)
+                    
+                    if matching_account:
+                        # Enhance suggestion with additional context
+                        suggestion['account'] = {
+                            'id': matching_account.id,
+                            'name': matching_account.name,
+                            'category': matching_account.category,
+                            'sub_category': matching_account.sub_category,
+                            'link': matching_account.link
+                        }
+                        suggestion['confidence'] = float(suggestion['confidence'])
                         validated_suggestions.append(suggestion)
+                        
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"SF: Invalid suggestion format: {str(e)}")
+                    continue
             
-            logger.info(f"Generated AI suggestions for transaction: {description}")
+            if not validated_suggestions:
+                logger.warning("SF: No valid suggestions generated")
+                return jsonify({
+                    'error': 'No valid account suggestions found',
+                    'details': 'The AI could not generate appropriate account matches'
+                }), 404
+            
+            logger.info(
+                f"SF: Generated {len(validated_suggestions)} suggestions for transaction. "
+                f"Description: {description[:50]}..."
+            )
             return jsonify(validated_suggestions)
             
+        except openai.error.OpenAIError as e:
+            logger.error(f"SF: OpenAI API error: {str(e)}")
+            return jsonify({
+                'error': 'Error generating AI predictions',
+                'details': str(e)
+            }), 500
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"SF: Error parsing AI response: {str(e)}")
+            return jsonify({
+                'error': 'Error processing AI response',
+                'details': 'Invalid response format'
+            }), 500
+            
         except Exception as e:
-            logger.error(f"Error in AI prediction: {str(e)}")
-            return jsonify({'error': 'Error generating AI predictions'}), 500
+            logger.error(f"SF: Unexpected error in AI prediction: {str(e)}")
+            return jsonify({
+                'error': 'Unexpected error',
+                'details': str(e)
+            }), 500
             
     except Exception as e:
-        logger.error(f"Error in account prediction route: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"SF: Error in account prediction route: {str(e)}")
+        return jsonify({
+            'error': 'Server error',
+            'details': str(e)
+        }), 500
         
     except Exception as e:
         logger.error(f"Error predicting account: {str(e)}")
