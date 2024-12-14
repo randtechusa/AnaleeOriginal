@@ -379,6 +379,8 @@ def analyze(file_id):
             logger.warning(f"No transactions found for file_id: {file_id}")
             flash('No transactions found in this file. Please ensure the file contains valid transaction data.')
             return redirect(url_for('main.upload'))
+            
+        logger.info(f"Found {len(transactions)} transactions to analyze")
         
         logger.info(f"Found {len(transactions)} transactions to analyze")
         
@@ -695,17 +697,29 @@ def upload():
                                         continue
                                 
                                 if not parsed_date:
-                                    logger.warning(f"Could not parse date: {date_str}")
+                                    error_msg = f"Could not parse date: {date_str}"
+                                    logger.warning(error_msg)
+                                    error_rows.append(error_msg)
                                     continue
                             
-                            # Create transaction object
+                            # Parse amount
+                            try:
+                                amount = float(str(row['amount']).replace(',', ''))
+                            except (ValueError, TypeError) as e:
+                                error_msg = f"Invalid amount format in row {idx + 1}: {row['amount']}"
+                                logger.warning(error_msg)
+                                error_rows.append(error_msg)
+                                continue
+                            
+                            # Create transaction object with proper defaults
                             valid_rows.append({
                                 'date': parsed_date.to_pydatetime(),
-                                'description': str(row['description']),
-                                'amount': float(row['amount']),
-                                'explanation': '',
+                                'description': str(row['description']).strip(),
+                                'amount': amount,
+                                'explanation': '',  # Initialize empty explanation
                                 'user_id': current_user.id,
-                                'file_id': uploaded_file.id
+                                'file_id': uploaded_file.id,
+                                'account_id': None  # Initialize without account
                             })
                             
                         except Exception as row_error:
