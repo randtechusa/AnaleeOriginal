@@ -1,0 +1,21 @@
+For this project let us agree that the idea of replicating explanation to multiple description will be known as “Explanation Recognition Feature (ERF)” similar of descriptions must be based on 70% or more similarity in description and 95% similarity of means of description that are not similar in words.
+
+And the term ‘Suggestion Feature (SE)’ shall be known to be the feature that suggest accounts based on AI tool, learning from previous analysis, will suggest account among the charts of accounts.
+
+I want to add the third feature to be called “Explanation Suggestion Feature (ESF)”. ESF suggests explanation even before anything is typed into the box if it can, based on the information provided in the description column (remember, if it can, can based on the information provided in the description column). The ability to do this will rely on AI thinking ability, past analysis, and explanation.
+
+ Please remember ERF, ESF and SE whenever I mention them. 
+
+1.	ERF (Explanation Recognition Feature):
+•	Match descriptions with 70% text OR 95% semantic similarity
+•	Replicate explanations across similar transactions
+2.	SF (Suggestion Feature):
+•	AI-powered account suggestions based on description
+•	Draw from Charts of Accounts
+3.	ESF (Explanation Suggestion Feature):
+•	Proactively suggest explanations before user input
+•	Base suggestions on transaction descriptions using AI
+•	Leverage AI analysis capabilities
+
+Please carefully accomplish these tasks paying attention to our standing instruction throughout this project, please heed to it; "Please Let us do this without destroying anything or damaging any feature, or the core functionality. As you do your tasks, please keep the Chart of Accounts implementation, preserve the core functionality, and the users and users’ data intact. Note that what we have achieved so far is the fundamentals of the application, every other enhancement, features and qualities can only enhance these basic core functionalities and not to change it"
+

@@ -3,6 +3,9 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.orm import relationship
 from app import db, login_manager
+import logging
+
+logger = logging.getLogger(__name__)
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'

@@ -1,6 +1,8 @@
 import logging
 import os
 from datetime import datetime
+from typing import Dict, List, Optional, Union
+
 from flask import (
     Blueprint, render_template, request, redirect, url_for,
     flash, session, make_response, jsonify
@@ -11,7 +13,48 @@ from flask_login import (
 from werkzeug.security import generate_password_hash, check_password_hash
 from weasyprint import HTML
 import pandas as pd
-from sqlalchemy import func
+from sqlalchemy import func, and_, text
+import json
+from itertools import zip_longest
+
+# Task management functions
+def schedule_analysis_task(task_type: str, user_id: int, **kwargs) -> str:
+    """Schedule a background analysis task"""
+    task_id = f"{task_type}_{datetime.utcnow().timestamp()}"
+    
+    if task_type == 'transaction_analysis':
+        scheduler.add_job(
+            func=process_transaction_analysis,
+            trigger='date',
+            args=[user_id, kwargs.get('file_id')],
+            id=task_id,
+            name=f"Transaction Analysis - User {user_id}"
+        )
+    elif task_type == 'forecast':
+        scheduler.add_job(
+            func=process_expense_forecast,
+            trigger='date',
+            args=[user_id, kwargs.get('start_date'), kwargs.get('end_date')],
+            id=task_id,
+            name=f"Expense Forecast - User {user_id}"
+        )
+    
+    return task_id
+
+def get_task_status(task_id: str) -> dict:
+    """Get the status of a scheduled task"""
+    job = scheduler.get_job(task_id)
+    if not job:
+        return {'status': 'not_found'}
+    
+    return {
+        'status': 'scheduled' if job.next_run_time else 'completed',
+        'name': job.name,
+        'next_run_time': job.next_run_time.isoformat() if job.next_run_time else None
+    }
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 from app import db
 from models import (
@@ -33,25 +76,9 @@ main = Blueprint('main', __name__)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 
-# Configure logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Create blueprint
-main = Blueprint('main', __name__)
-
 # Configure secret key for session management
-import os
 if not os.environ.get('FLASK_SECRET_KEY'):
     os.environ['FLASK_SECRET_KEY'] = os.urandom(24).hex()
-
-# Configure logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Configure pandas display options for debugging
-pd.set_option('display.max_columns', None)
-pd.set_option('display.max_rows', None)
 
 @main.route('/')
 def index():
@@ -343,6 +370,21 @@ def analyze(file_id):
     transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).all()
     bank_account_id = None
     anomalies = None
+    
+    # Get task status from session
+    task_id = session.get('analysis_task_id')
+    task_status = None
+    if task_id:
+        task = scheduler.get_job(task_id)
+        if task:
+            task_status = {
+                'status': 'in_progress',
+                'progress': session.get('analysis_progress', 0)
+            }
+        else:
+            # Clear task ID if job is complete
+            session.pop('analysis_task_id', None)
+            session.pop('analysis_progress', None)
 
     if request.method == 'POST':
         try:
@@ -431,35 +473,75 @@ def upload():
                 db.session.add(uploaded_file)
                 db.session.commit()
                 
-                # Read file content in chunks with progress tracking
-                chunk_size = 1000  # Process 1000 rows at a time
+                # Enhanced chunked processing with memory optimization
+                chunk_size = 1000  # Balanced chunk size for better memory usage
                 total_rows = 0
                 processed_rows = 0
-                session['upload_progress'] = 0
+                error_rows = []
+                
+                # Initialize progress tracking
+                upload_status = {
+                    'filename': file.filename,
+                    'total_rows': 0,
+                    'processed_rows': 0,
+                    'failed_rows': 0,
+                    'current_chunk': 0,
+                    'status': 'initializing',
+                    'start_time': datetime.utcnow().isoformat(),
+                    'last_update': datetime.utcnow().isoformat(),
+                    'errors': [],
+                    'progress_percentage': 0
+                }
+                session['upload_status'] = upload_status
+                session.modified = True
+                
+                logger.info(f"Initialized upload status tracking for {file.filename}")
 
                 try:
-                    # Configure progress tracking
-                    session['upload_status'] = {
+                    # Initialize progress tracking
+                    upload_status = {
                         'filename': file.filename,
                         'total_rows': 0,
                         'processed_rows': 0,
+                        'failed_rows': 0,
                         'current_chunk': 0,
-                        'status': 'counting'
+                        'status': 'counting',
+                        'start_time': datetime.utcnow().isoformat(),
+                        'last_update': datetime.utcnow().isoformat(),
+                        'errors': [],
+                        'progress_percentage': 0
                     }
+                    session['upload_status'] = upload_status
+                    session.modified = True
                     
-                    # First get total rows for progress tracking
+                    logger.info(f"Initialized upload status tracking for {file.filename}")
+                    
+                    # Optimized row counting and chunk processing
                     if file.filename.endswith('.csv'):
-                        total_rows = sum(1 for line in file) - 1  # Subtract header row
+                        # Use generator expression for memory-efficient counting
+                        with pd.read_csv(file, chunksize=chunk_size) as reader:
+                            total_rows = sum(len(chunk.index) for chunk in reader)
                         file.seek(0)  # Reset file pointer
                         df_iterator = pd.read_csv(file, chunksize=chunk_size)
-                        logger.info(f"Processing CSV file with {total_rows} rows")
+                        logger.info(f"Processing CSV file with {total_rows} rows using chunked reading")
                     else:
-                        # Use openpyxl for Excel files to support streaming
-                        df = pd.read_excel(file, engine='openpyxl')
-                        total_rows = len(df)
-                        # Create chunk iterator for excel
-                        df_iterator = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
-                        logger.info(f"Processing Excel file with {total_rows} rows")
+                        # Use optimized Excel reading with streaming
+                        df_iterator = pd.read_excel(
+                            file,
+                            engine='openpyxl',
+                            chunksize=chunk_size,
+                            stream=True
+                        )
+                        # Count rows efficiently
+                        total_rows = sum(1 for _ in df_iterator)
+                        file.seek(0)  # Reset for processing
+                        df_iterator = pd.read_excel(
+                            file,
+                            engine='openpyxl',
+                            chunksize=chunk_size,
+                            stream=True
+                        )
+                        logger.info(f"Processing Excel file with {total_rows} rows using streaming")
                     
                     # Update session with total rows
                     session['upload_status']['total_rows'] = total_rows
@@ -471,28 +553,100 @@ def upload():
                     session['upload_filename'] = file.filename
                     logger.info(f"Started processing file: {file.filename}")
             
-                    # Process each chunk with detailed progress tracking
+                    # Optimized chunk processing with improved error handling
                     for chunk_idx, chunk in enumerate(df_iterator):
-                        # Clean and normalize column names
-                        chunk.columns = chunk.columns.str.strip().str.lower()
-                        processed_rows += len(chunk)
+                        chunk_start_time = datetime.utcnow()
+                        chunk_errors = []
                         
-                        # Update progress with detailed status
-                        session['upload_status'].update({
-                            'processed_rows': processed_rows,
-                            'current_chunk': chunk_idx + 1,
-                            'progress': int((processed_rows / total_rows) * 100),
-                            'last_update': datetime.utcnow().isoformat()
-                        })
-                        session.modified = True
-                        
-                        logger.info(f"Processing chunk {chunk_idx + 1}/{(total_rows//chunk_size) + 1}, "
-                                  f"Progress: {session['upload_status']['progress']}%, "
-                                  f"Processed rows: {processed_rows}/{total_rows}")
-                        
-                        # Add a small delay to prevent database overload
-                        if chunk_idx % 5 == 0:  # Every 5 chunks
-                            db.session.commit()  # Commit current progress
+                        try:
+                            # Clean and normalize column names
+                            chunk.columns = chunk.columns.str.strip().str.lower()
+                            required_columns = ['date', 'description', 'amount']
+                            
+                            # Validate chunk structure
+                            missing_columns = [col for col in required_columns if col not in chunk.columns]
+                            if missing_columns:
+                                raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+                            
+                            # Process chunk with vectorized operations where possible
+                            chunk['date'] = pd.to_datetime(chunk['date'], errors='coerce')
+                            chunk['amount'] = pd.to_numeric(chunk['amount'], errors='coerce')
+                            
+                            # Filter valid rows
+                            valid_mask = (
+                                chunk['date'].notna() & 
+                                chunk['amount'].notna() & 
+                                chunk['description'].notna()
+                            )
+                            valid_chunk = chunk[valid_mask]
+                            
+                            # Prepare batch insert data
+                            valid_rows = [
+                                {
+                                    'date': row['date'].to_pydatetime(),
+                                    'description': str(row['description']),
+                                    'amount': float(row['amount']),
+                                    'explanation': '',
+                                    'user_id': current_user.id,
+                                    'file_id': uploaded_file.id
+                                }
+                                for _, row in valid_chunk.iterrows()
+                            ]
+                            
+                            # Track invalid rows
+                            invalid_rows = chunk[~valid_mask]
+                            for idx, row in invalid_rows.iterrows():
+                                try:
+                                    error_msg = f"Row {idx}: Invalid data format"
+                                    chunk_errors.append(error_msg)
+                                    logger.warning(error_msg)
+                                except Exception as row_error:
+                                    error_msg = f"Row {idx}: {str(row_error)}"
+                                    chunk_errors.append(error_msg)
+                                    logger.warning(error_msg)
+                            
+                            # Batch insert valid rows
+                            if valid_rows:
+                                db.session.bulk_insert_mappings(Transaction, valid_rows)
+                            
+                            processed_rows += len(valid_rows)
+                            
+                            # Commit every chunk to prevent memory buildup
+                            db.session.commit()
+                            
+                            # Update progress tracking
+                            processed_rows += len(valid_rows)
+                            chunk_process_time = (datetime.utcnow() - chunk_start_time).total_seconds()
+                            
+                            # Calculate progress metrics
+                            progress_percentage = min(int((processed_rows / total_rows) * 100), 100)
+                            processing_rate = len(valid_rows) / chunk_process_time if chunk_process_time > 0 else 0
+                            
+                            # Update session status
+                            session['upload_status'].update({
+                                'processed_rows': processed_rows,
+                                'failed_rows': len(error_rows) + len(chunk_errors),
+                                'current_chunk': chunk_idx + 1,
+                                'progress_percentage': progress_percentage,
+                                'last_update': datetime.utcnow().isoformat(),
+                                'processing_rate': round(processing_rate, 2),
+                                'errors': chunk_errors[-5:] if chunk_errors else []  # Keep only recent errors
+                            })
+                            session.modified = True
+                            
+                            # Log progress
+                            logger.info(f"Processed chunk {chunk_idx + 1}: {len(valid_rows)} valid rows, "
+                                      f"{len(chunk_errors)} errors, Progress: {progress_percentage}%")
+                            
+                            logger.info(f"Chunk {chunk_idx + 1}/{(total_rows//chunk_size) + 1} processed: "
+                                      f"{len(valid_rows)} valid rows, {len(chunk_errors)} errors, "
+                                      f"Time: {chunk_process_time:.2f}s")
+                            
+                        except Exception as chunk_error:
+                            logger.error(f"Error processing chunk {chunk_idx}: {str(chunk_error)}")
+                            db.session.rollback()
+                            error_rows.append(f"Chunk {chunk_idx}: {str(chunk_error)}")
+                            continue
                         
                         transactions_to_add = []
                         for _, row in chunk.iterrows():
@@ -575,75 +729,533 @@ def delete_file(file_id):
     except Exception as e:
         logger.error(f'Error deleting file: {str(e)}')
         flash('Error deleting file')
+def process_transaction_analysis(user_id: int, file_id: int):
+    """Background task to process and analyze transactions"""
+def calculate_description_similarity(desc1, desc2):
+    """Calculate similarity between descriptions using text similarity and semantic meaning.
+    Returns True if either:
+    1. Text similarity is >= 70% OR
+    2. Semantic similarity is >= 95%
+    """
+    from difflib import SequenceMatcher
+    import re
+    import openai
+    import json
+    import os
+    
+    if not desc1 or not desc2:
+        return False, 0.0, 0.0, "Empty descriptions"
+        
+    # Normalize descriptions
+    def normalize_text(text):
+        text = re.sub(r'[^\w\s]', '', text.lower())
+        return ' '.join(text.split())
+    
+    try:
+        norm_desc1 = normalize_text(desc1)
+        norm_desc2 = normalize_text(desc2)
+        
+        # Calculate text similarity
+        text_similarity = SequenceMatcher(None, norm_desc1, norm_desc2).ratio()
+        logger.debug(f"ERF: Text similarity score: {text_similarity}")
+        
+        # If text similarity >= 70%, we can return early
+        if text_similarity >= 0.7:
+            return True, text_similarity, 1.0, "High text similarity match"
+            
+        # Calculate semantic similarity using OpenAI
+        try:
+            openai.api_key = os.getenv('OPENAI_API_KEY')
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{
+                    "role": "system",
+                    "content": """You are a financial transaction analyzer. Compare these transactions 
+                    for semantic similarity in their business purpose and transaction type. Consider:
+                    1. Transaction category (e.g., both are utility payments)
+                    2. Business purpose (e.g., both are monthly subscriptions)
+                    3. Transaction nature (e.g., both are regular operational expenses)
+                    4. Economic meaning (e.g., both represent asset purchases)
+                    
+                    Return a JSON object with:
+                    {
+                        "similarity_score": float between 0-1,
+                        "reasoning": "brief explanation of similarity/difference",
+                        "confidence": float between 0-1
+                    }
+                    
+                    Focus on semantic meaning over text similarity. A score of 0.95 or higher 
+                    indicates transactions that serve the same business purpose despite different descriptions."""
+                }, {
+                    "role": "user",
+                    "content": f"Compare these transactions semantically:\nTransaction 1: {desc1}\nTransaction 2: {desc2}"
+                }],
+                temperature=0.2
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            semantic_similarity = float(result.get('similarity_score', 0.0))
+            reasoning = result.get('reasoning', '')
+            confidence = float(result.get('confidence', 0.8))
+            
+            logger.info(
+                f"ERF: Semantic analysis complete - "
+                f"Score: {semantic_similarity:.2f}, "
+                f"Confidence: {confidence:.2f}, "
+                f"Reason: {reasoning}"
+            )
+            
+            # Return True if either criterion is met
+            is_similar = (text_similarity >= 0.7) or (semantic_similarity >= 0.95)
+            return is_similar, text_similarity, semantic_similarity, reasoning
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"ERF: Error parsing OpenAI response: {str(e)}")
+            return False, text_similarity, 0.0, f"Error parsing AI response: {str(e)}"
+            
+        except openai.error.OpenAIError as e:
+            logger.error(f"ERF: OpenAI API error: {str(e)}")
+            return False, text_similarity, 0.0, f"OpenAI API error: {str(e)}"
+            
+    except Exception as e:
+        logger.error(f"ERF: Unexpected error in similarity calculation: {str(e)}")
+        return False, 0.0, 0.0, f"Unexpected error: {str(e)}"
+        
+        result = json.loads(response.choices[0].message.content)
+        semantic_similarity = float(result.get('similarity_score', 0.0))
+        reasoning = result.get('reasoning', '')
+        confidence = float(result.get('confidence', 0.8))
+        
+        logger.info(
+            f"ERF: Semantic analysis complete - "
+            f"Score: {semantic_similarity:.2f}, "
+            f"Confidence: {confidence:.2f}, "
+            f"Reason: {reasoning}"
+        )
+        
+        # Return True if either criterion is met
+        is_similar = (text_similarity >= 0.7) or (semantic_similarity >= 0.95)
+        return is_similar, text_similarity, semantic_similarity, reasoning
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"ERF: Error parsing OpenAI response: {str(e)}")
+        return False, 0.0, 0.0, "Error parsing AI response"
+    except openai.error.OpenAIError as e:
+        logger.error(f"ERF: OpenAI API error: {str(e)}")
+        return False, 0.0, 0.0, f"OpenAI API error: {str(e)}"
+    except Exception as e:
+        logger.error(f"ERF: Unexpected error: {str(e)}")
+        return False, 0.0, 0.0, f"Unexpected error: {str(e)}"
+
+@main.route('/suggest_explanation', methods=['POST'])
+@login_required
+def suggest_explanation():
+    """Explanation Suggestion Feature (ESF) - Suggests explanations based on transaction description"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+        
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+            
+        # Get similar past transactions with explanations
+        similar_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.explanation.isnot(None),
+            Transaction.description.ilike(f"%{description}%")
+        ).limit(5).all()
+        
+        past_explanations = [
+            {
+                'description': t.description,
+                'explanation': t.explanation
+            } for t in similar_transactions
+        ]
+        
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{
+                    "role": "system",
+                    "content": """You are a financial transaction analyzer specialized in explaining business transactions.
+                    Analyze the transaction description and provide:
+                    1. A clear, concise explanation of the transaction's purpose
+                    2. Any relevant business context
+                    3. Potential accounting implications
+                    
+                    If similar transactions are provided, use their explanations as context while maintaining consistency.
+                    
+                    Return a JSON object with:
+                    {
+                        "suggested_explanation": "clear explanation",
+                        "confidence": float between 0-1,
+                        "reasoning": "why this explanation fits",
+                        "category_hint": "likely transaction category",
+                        "business_context": "additional business context"
+                    }"""
+                }, {
+                    "role": "user",
+                    "content": f"""Suggest an explanation for this transaction:
+                    Description: {description}
+                    
+                    Similar Past Transactions:
+                    {json.dumps(past_explanations, indent=2) if past_explanations else 'No similar past transactions found'}
+                    
+                    Consider any patterns or consistency in past explanations if available."""
+                }],
+                temperature=0.3
+            )
+            
+            suggestion = json.loads(response.choices[0].message.content)
+            
+            # Add metadata about the suggestion
+            suggestion['has_similar_transactions'] = bool(past_explanations)
+            suggestion['similar_transactions_count'] = len(past_explanations)
+            
+            logger.info(
+                f"ESF: Generated suggestion for '{description}' - "
+                f"Confidence: {suggestion.get('confidence', 0):.2f}, "
+                f"Similar Transactions: {len(past_explanations)}"
+            )
+            
+            return jsonify(suggestion)
+            
+        except (openai.error.OpenAIError, json.JSONDecodeError) as e:
+            logger.error(f"ESF: Error generating suggestion: {str(e)}")
+            return jsonify({
+                'error': 'Could not generate suggestion',
+                'details': str(e)
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"ESF: Unexpected error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/update_explanation', methods=['POST'])
+@login_required
+def update_explanation():
+    """Update transaction explanation and implement Explanation Recognition Feature (ERF)"""
+    try:
+        data = request.get_json()
+        transaction_id = data.get('transaction_id')
+        explanation = data.get('explanation', '').strip()
+        description = data.get('description', '').strip()
+        
+        if not transaction_id or not description:
+            return jsonify({'error': 'Missing required fields'}), 400
+            
+        # Update current transaction
+        transaction = Transaction.query.filter_by(
+            id=transaction_id, 
+            user_id=current_user.id
+        ).first()
+        
+        if not transaction:
+            return jsonify({'error': 'Transaction not found'}), 404
+            
+        transaction.explanation = explanation
+        db.session.commit()
+        
+        # ERF: Find similar transactions if explanation is provided
+        similar_transactions = []
+        if explanation:
+            # Get transactions without explanations
+            all_transactions = Transaction.query.filter(
+                Transaction.user_id == current_user.id,
+                Transaction.id != transaction_id,
+                Transaction.explanation.is_(None)
+            ).all()
+            
+            logger.info(f"ERF: Analyzing {len(all_transactions)} transactions for similarities")
+            
+            for trans in all_transactions:
+                try:
+                    is_similar, text_similarity, semantic_similarity = calculate_description_similarity(
+                        description, 
+                        trans.description
+                    )
+                    
+                    if is_similar:
+                        similar_transaction = {
+                            'id': trans.id,
+                            'description': trans.description,
+                            'text_similarity': round(text_similarity * 100, 1),
+                            'semantic_similarity': round(semantic_similarity * 100, 1)
+                        }
+                        
+                        # Add categorization info
+                        if text_similarity >= 0.7:
+                            similar_transaction['match_type'] = 'Text Match'
+                            similar_transaction['match_confidence'] = text_similarity
+                        else:
+                            similar_transaction['match_type'] = 'Semantic Match'
+                            similar_transaction['match_confidence'] = semantic_similarity
+                        
+                        similar_transactions.append(similar_transaction)
+                        
+                        logger.debug(
+                            f"ERF: Found similar transaction - ID: {trans.id}, "
+                            f"Text Sim: {text_similarity:.2f}, "
+                            f"Semantic Sim: {semantic_similarity:.2f}"
+                        )
+                        
+                except Exception as e:
+                    logger.error(f"ERF: Error analyzing transaction {trans.id}: {str(e)}")
+                    continue
+            
+            # Sort by match confidence
+            similar_transactions.sort(
+                key=lambda x: x['match_confidence'],
+                reverse=True
+            )
+            
+            logger.info(
+                f"ERF: Found {len(similar_transactions)} similar transactions - "
+                f"Text Matches: {sum(1 for t in similar_transactions if t['match_type'] == 'Text Match')}, "
+                f"Semantic Matches: {sum(1 for t in similar_transactions if t['match_type'] == 'Semantic Match')}"
+            )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Explanation updated successfully',
+            'similar_transactions': similar_transactions,
+            'stats': {
+                'total_analyzed': len(all_transactions) if explanation else 0,
+                'similar_found': len(similar_transactions),
+                'text_matches': sum(1 for t in similar_transactions if t['match_type'] == 'Text Match'),
+                'semantic_matches': sum(1 for t in similar_transactions if t['match_type'] == 'Semantic Match')
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating explanation: {str(e)}")
         db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/predict_account', methods=['POST'])
 @login_required
 def predict_account_route():
-    """Handle prediction requests with improved error handling and logging"""
+    """AI-powered account suggestion based on transaction context (SF - Suggestion Feature)"""
     try:
-        # Validate request
-        if not request.is_json:
-            logger.warning("Invalid content type received")
-            return jsonify({'error': 'Invalid content type. Expected JSON.'}), 400
-            
         data = request.get_json()
-        if not data:
-            logger.warning("Empty request data received")
-            return jsonify({'error': 'No data provided'}), 400
-            
-        description = data.get('description', '')
-        explanation = data.get('explanation', '')
+        description = data.get('description', '').strip()
+        explanation = data.get('explanation', '').strip()
         
         if not description:
-            logger.warning("Missing description in request")
             return jsonify({'error': 'Description is required'}), 400
             
-        logger.info(f"Processing prediction request for description: {description}")
+        # Get available accounts for user
+        available_accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).all()
         
-        # Get accounts
-        accounts = Account.query.filter_by(user_id=current_user.id).all()
-        if not accounts:
-            logger.warning(f"No accounts found for user {current_user.id}")
-            return jsonify({'error': 'No accounts available for prediction'}), 404
-            
-        account_data = [{
-            'name': account.name,
-            'category': account.category,
-            'link': account.link,
-            'id': account.id,
-            'sub_category': account.sub_category
-        } for account in accounts]
-        
-        logger.debug(f"Found {len(account_data)} accounts for prediction")
-        
-        # Get predictions with detailed error handling
+        if not available_accounts:
+            return jsonify({'error': 'No active accounts found'}), 400
+
+        # Format accounts for AI analysis
+        account_info = [
+            {
+                'id': acc.id,
+                'name': acc.name,
+                'category': acc.category,
+                'sub_category': acc.sub_category,
+                'link': acc.link
+            } for acc in available_accounts
+        ]
+
+        # Use OpenAI for intelligent account suggestions
         try:
-            predictions = predict_account(description, explanation, account_data)
-            if not predictions:
-                logger.warning("No predictions generated")
-                return jsonify({'error': 'No suitable predictions found'}), 404
-                
-            logger.info(f"Successfully generated {len(predictions)} predictions")
-            return jsonify(predictions)
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": """You are an expert financial analyst specializing in 
+                    Chart of Accounts classification. Your task is to:
+                    1. Analyze the transaction's business nature and purpose
+                    2. Understand the accounting implications
+                    3. Match with the most appropriate accounts
+                    4. Provide detailed reasoning for each suggestion
+                    
+                    Focus on standard accounting principles and business context."""},
+                    {"role": "user", "content": f"""
+                    Analyze this transaction and suggest the most appropriate accounts:
+                    
+                    Transaction Details:
+                    - Description: {description}
+                    - User's Explanation: {explanation if explanation else 'Not provided'}
+                    
+                    Available Accounts in Chart of Accounts:
+                    {json.dumps(account_info, indent=2)}
+                    
+                    Provide up to 3 best matching accounts with:
+                    1. Confidence score (0-1)
+                    2. Detailed reasoning
+                    3. Account category relevance
+                    
+                    Return as JSON array:
+                    [{{
+                        "account": {{account object}},
+                        "confidence": float,
+                        "reasoning": "string",
+                        "category_relevance": "string"
+                    }}]
+                    """}
+                ],
+                temperature=0.3
+            )
             
-        except ValueError as ve:
-            logger.error(f"Validation error in prediction: {str(ve)}")
-            return jsonify({'error': str(ve)}), 400
+            # Parse and validate AI suggestions
+            suggestions = json.loads(response.choices[0].message.content)
+            validated_suggestions = []
             
-        except Exception as pred_error:
-            logger.error(f"Error during account prediction: {str(pred_error)}")
+            for suggestion in suggestions[:3]:  # Limit to top 3 suggestions
+                try:
+                    # Validate suggestion structure
+                    required_fields = ['account', 'confidence', 'reasoning', 'category_relevance']
+                    if not isinstance(suggestion, dict) or not all(k in suggestion for k in required_fields):
+                        continue
+                        
+                    # Validate account exists
+                    account_id = suggestion['account'].get('id')
+                    matching_account = next((acc for acc in available_accounts if acc.id == account_id), None)
+                    
+                    if matching_account:
+                        # Enhance suggestion with additional context
+                        suggestion['account'] = {
+                            'id': matching_account.id,
+                            'name': matching_account.name,
+                            'category': matching_account.category,
+                            'sub_category': matching_account.sub_category,
+                            'link': matching_account.link
+                        }
+                        suggestion['confidence'] = float(suggestion['confidence'])
+                        validated_suggestions.append(suggestion)
+                        
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"SF: Invalid suggestion format: {str(e)}")
+                    continue
+            
+            if not validated_suggestions:
+                logger.warning("SF: No valid suggestions generated")
+                return jsonify({
+                    'error': 'No valid account suggestions found',
+                    'details': 'The AI could not generate appropriate account matches'
+                }), 404
+            
+            logger.info(
+                f"SF: Generated {len(validated_suggestions)} suggestions for transaction. "
+                f"Description: {description[:50]}..."
+            )
+            return jsonify(validated_suggestions)
+            
+        except openai.error.OpenAIError as e:
+            logger.error(f"SF: OpenAI API error: {str(e)}")
             return jsonify({
-                'error': 'Failed to generate predictions',
-                'details': str(pred_error)
+                'error': 'Error generating AI predictions',
+                'details': str(e)
+            }), 500
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"SF: Error parsing AI response: {str(e)}")
+            return jsonify({
+                'error': 'Error processing AI response',
+                'details': 'Invalid response format'
+            }), 500
+            
+        except Exception as e:
+            logger.error(f"SF: Unexpected error in AI prediction: {str(e)}")
+            return jsonify({
+                'error': 'Unexpected error',
+                'details': str(e)
             }), 500
             
     except Exception as e:
-        logger.error(f"Unexpected error in prediction route: {str(e)}")
+        logger.error(f"SF: Error in account prediction route: {str(e)}")
         return jsonify({
-            'error': 'Internal server error',
+            'error': 'Server error',
             'details': str(e)
         }), 500
+        
+    except Exception as e:
+        logger.error(f"Error predicting account: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+        
+        # Get transactions for the file
+        transactions = Transaction.query.filter_by(
+            user_id=user_id,
+            file_id=file_id
+        ).all()
+        
+        total_transactions = len(transactions)
+        processed = 0
+        
+        for transaction in transactions:
+            try:
+                # Predict account and detect anomalies
+                predicted_account = predict_account(
+                    transaction.description,
+                    transaction.explanation
+                )
+                anomaly_result = detect_transaction_anomalies([transaction])
+                
+                # Update transaction with AI predictions
+                if predicted_account:
+                    account = Account.query.filter_by(
+                        user_id=user_id,
+                        name=predicted_account
+                    ).first()
+                    if account:
+                        transaction.account_id = account.id
+                
+                processed += 1
+                
+                # Update progress in session
+                progress = (processed / total_transactions) * 100
+                session['analysis_progress'] = progress
+                session.modified = True
+                
+            except Exception as e:
+                logger.error(f"Error processing transaction {transaction.id}: {str(e)}")
+                continue
+        
+        logger.info(f"Completed transaction analysis for user {user_id}, file {file_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in transaction analysis task: {str(e)}")
+        raise
+
+def process_expense_forecast(user_id: int, start_date: str, end_date: str):
+    """Background task to generate expense forecasts"""
+    try:
+        logger.info(f"Starting expense forecast for user {user_id}")
+        
+        # Convert string dates to datetime
+        start = datetime.strptime(start_date, '%Y-%m-%d')
+        end = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        # Get historical transactions
+        transactions = Transaction.query.filter(
+            Transaction.user_id == user_id,
+            Transaction.date <= end,
+            Transaction.amount < 0  # Only expenses
+        ).order_by(Transaction.date.asc()).all()
+        
+        # Generate forecast data
+        forecast_data = forecast_expenses(transactions, start, end)
+        
+        # Store results in session for retrieval
+        session[f'forecast_result_{user_id}'] = forecast_data
+        session.modified = True
+        
+        logger.info(f"Completed expense forecast for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in expense forecast task: {str(e)}")
+        raise
+        db.session.rollback()
+
+
 
 @main.route('/expense-forecast')
 @login_required
@@ -750,6 +1362,7 @@ def expense_forecast():
 @main.route('/export-forecast-pdf')
 @login_required
 def export_forecast_pdf():
+    """Generate and download a PDF report with financial forecasts."""
     try:
         # Get company settings
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
@@ -759,46 +1372,10 @@ def export_forecast_pdf():
             
         # Get forecast data from session
         forecast = session.get('forecast', {})
-        monthly_labels = session.get('monthly_labels', [])
-        monthly_amounts = session.get('monthly_amounts', [])
-        confidence_upper = session.get('confidence_upper', [])
-        confidence_lower = session.get('confidence_lower', [])
-        category_labels = session.get('category_labels', [])
-        category_amounts = session.get('category_amounts', [])
-        
         if not forecast:
             flash('No forecast data available. Please generate a forecast first.')
             return redirect(url_for('main.expense_forecast'))
-        
-        # Render template to HTML
-        html = render_template(
-            'pdf_templates/forecast_pdf.html',
-            forecast=forecast,
-            monthly_labels=monthly_labels,
-            monthly_amounts=monthly_amounts,
-            confidence_upper=confidence_upper,
-            confidence_lower=confidence_lower,
-            category_labels=category_labels,
-            category_amounts=category_amounts,
-            company=company_settings,
-            datetime=datetime,
-            zip=zip
-        )
-        
-        # Generate PDF
-        pdf = HTML(string=html).write_pdf()
-        
-        # Create response
-        response = make_response(pdf)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = 'attachment; filename=expense_forecast.pdf'
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF: {str(e)}")
-        flash('Error generating PDF report. Please try again.')
-        return redirect(url_for('main.expense_forecast'))
+            
         # Prepare template data
         template_data = {
             'forecast': forecast,
@@ -807,9 +1384,19 @@ def export_forecast_pdf():
             'monthly_labels': session.get('monthly_labels', []),
             'monthly_amounts': session.get('monthly_amounts', []),
             'confidence_upper': session.get('confidence_upper', []),
-            'confidence_lower': session.get('confidence_lower', []),
+            'confidence_lower': session.get('confidence_lower', [])
+        }
+
+        template_data = {
+            'forecast': forecast,
+            'monthly_labels': monthly_labels,
+            'monthly_amounts': monthly_amounts,
+            'confidence_upper': confidence_upper,
+            'confidence_lower': confidence_lower,
             'category_labels': session.get('category_labels', []),
             'category_amounts': session.get('category_amounts', []),
+            'company': company_settings,
+            'datetime': datetime,
             'zip': zip  # Required for template iteration
         }
         
