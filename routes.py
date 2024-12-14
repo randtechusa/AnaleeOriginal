@@ -68,6 +68,10 @@ from ai_utils import (
 )
 
 # Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Configure logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -370,10 +374,18 @@ def analyze(file_id):
     try:
         logger.info(f"Starting analysis for file_id: {file_id}")
         
-        # Get file and related data
-        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
-        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
-        transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
+        # Get file and related data with error handling
+        try:
+            file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+            accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
+            transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
+            
+            logger.info(f"Successfully loaded file and related data. Found {len(transactions)} transactions")
+            
+        except Exception as e:
+            logger.error(f"Error loading data: {str(e)}")
+            flash('Error loading transaction data. Please try again.')
+            return redirect(url_for('main.upload'))
         
         if not transactions:
             logger.warning(f"No transactions found for file_id: {file_id}")
