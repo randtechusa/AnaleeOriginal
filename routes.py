@@ -366,9 +366,13 @@ def dashboard():
 @login_required
 def analyze(file_id):
     file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
-    accounts = Account.query.filter_by(user_id=current_user.id).all()
-    transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).all()
-    bank_account_id = None
+    accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
+    transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
+    
+    if not transactions:
+        flash('No transactions found in this file. Please ensure the file contains valid transaction data.')
+        return redirect(url_for('main.upload'))
+        
     anomalies = None
     
     # Initialize AI-powered features
@@ -391,28 +395,43 @@ def analyze(file_id):
 
     if request.method == 'POST':
         try:
-            # Handle bank account selection
-            bank_account_id = request.form.get('bank_account')
-            if bank_account_id:
-                bank_account_id = int(bank_account_id)
-                
-            for transaction in transactions:
-                explanation_key = f'explanation_{transaction.id}'
-                analysis_key = f'analysis_{transaction.id}'
-                
-                # Update transaction details
-                if explanation_key in request.form:
-                    transaction.explanation = request.form[explanation_key]
-                if analysis_key in request.form:
-                    account_id = request.form[analysis_key]
-                    if account_id:  # Only update if a value was selected
-                        transaction.account_id = int(account_id)
-                        # Set the bank account for double-entry
-                        if bank_account_id:
-                            transaction.bank_account_id = bank_account_id
+            action = request.form.get('action', 'save')
             
-            db.session.commit()
-            flash('Changes saved successfully', 'success')
+            if action == 'suggest':
+                # Handle suggestion request for a specific transaction
+                transaction_id = int(request.form.get('transaction_id'))
+                transaction = Transaction.query.get_or_404(transaction_id)
+                
+                # Get account suggestions using ASF
+                account_suggestions = predict_account(
+                    transaction.description,
+                    transaction.explanation or '',
+                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                )
+                
+                if account_suggestions:
+                    suggested_account = next((acc for acc in accounts 
+                        if acc.name == account_suggestions[0]['name']), None)
+                    if suggested_account:
+                        transaction.account_id = suggested_account.id
+                        db.session.commit()
+                        flash(f'Account suggested: {suggested_account.name}')
+                    
+            else:
+                # Handle save request for all transactions
+                for transaction in transactions:
+                    explanation_key = f'explanation_{transaction.id}'
+                    account_key = f'account_{transaction.id}'
+                    
+                    if explanation_key in request.form:
+                        transaction.explanation = request.form[explanation_key]
+                    if account_key in request.form:
+                        account_id = request.form[account_key]
+                        if account_id:
+                            transaction.account_id = int(account_id)
+                
+                db.session.commit()
+                flash('Changes saved successfully', 'success')
         except Exception as e:
             logger.error(f"Error saving analysis changes: {str(e)}")
             db.session.rollback()
