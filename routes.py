@@ -737,9 +737,12 @@ def delete_file(file_id):
         db.session.delete(file)
         db.session.commit()
         flash('File and associated transactions deleted successfully')
+        return redirect(url_for('main.upload'))
     except Exception as e:
         logger.error(f'Error deleting file: {str(e)}')
+        db.session.rollback()
         flash('Error deleting file')
+        return redirect(url_for('main.upload'))
 def process_transaction_analysis(user_id: int, file_id: int):
     """Background task to process and analyze transactions"""
 def calculate_description_similarity(desc1, desc2):
