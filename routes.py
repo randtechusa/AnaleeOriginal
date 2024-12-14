@@ -62,7 +62,9 @@ from models import (
 )
 from ai_utils import (
     predict_account, detect_transaction_anomalies,
-    generate_financial_advice, forecast_expenses
+    generate_financial_advice, forecast_expenses,
+    find_similar_transactions, suggest_explanation,
+    calculate_text_similarity
 )
 
 # Configure logging

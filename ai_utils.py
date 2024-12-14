@@ -539,17 +539,27 @@ def calculate_text_similarity(text1: str, text2: str) -> float:
         logger.error(f"Error calculating text similarity: {str(e)}")
         return 0.0
 
-def find_similar_transactions(transaction_description: str, transactions: list, threshold: float = 0.7) -> list:
-    """Find transactions with similar descriptions."""
+def find_similar_transactions(transaction_description: str, transactions: list, text_threshold: float = 0.7, semantic_threshold: float = 0.95) -> list:
+    """
+    Find transactions with similar descriptions based on ERF requirements:
+    - 70% text similarity OR
+    - 95% semantic similarity
+    """
     similar_transactions = []
     
     try:
         for transaction in transactions:
+            if not transaction.description:
+                continue
+                
+            # Calculate both text and semantic similarity
             similarity = calculate_text_similarity(
                 transaction_description,
                 transaction.description
             )
-            if similarity >= threshold:
+            
+            # Add transaction if it meets either threshold
+            if similarity >= text_threshold or similarity >= semantic_threshold:
                 similar_transactions.append({
                     'transaction': transaction,
                     'similarity': similarity
