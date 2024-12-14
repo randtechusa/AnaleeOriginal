@@ -22,26 +22,39 @@ def upgrade():
     op.execute('SAVEPOINT before_upgrade')
     
     try:
-        # Preserve existing data before changes
+        # Create backup tables with timestamps
         op.execute("""
-            CREATE TABLE IF NOT EXISTS users_backup AS 
-            SELECT * FROM "user";
+            CREATE TABLE IF NOT EXISTS rollback_backup_32h AS
+            SELECT 
+                t.*,
+                a.name as account_name,
+                a.category as account_category,
+                u.username as user_name,
+                current_timestamp as backup_timestamp
+            FROM transactions t 
+            LEFT JOIN account a ON t.account_id = a.id
+            LEFT JOIN users u ON t.user_id = u.id
+            WHERE t.created_at >= NOW() - INTERVAL '32 hours';
         """)
         
+        # Store the current state of accounts
         op.execute("""
-            CREATE TABLE IF NOT EXISTS transactions_backup AS 
-            SELECT * FROM transaction;
+            CREATE TABLE IF NOT EXISTS account_state_backup AS 
+            SELECT *, current_timestamp as backup_timestamp 
+            FROM account;
         """)
         
-        # Perform the upgrade operations
-        with op.batch_alter_table('account', schema=None) as batch_op:
-            batch_op.drop_constraint('account_link_key', type_='unique')
-            batch_op.drop_constraint('account_user_id_fkey', type_='foreignkey')
-            batch_op.create_foreign_key(None, 'users', ['user_id'], ['id'])
-        
-        # Drop original tables after backup
-        op.drop_table('user')
-        op.drop_table('transaction')
+        # Restore data from 32 hours ago
+        op.execute("""
+            UPDATE transactions 
+            SET account_id = rb.account_id,
+                description = rb.description,
+                amount = rb.amount,
+                explanation = rb.explanation
+            FROM rollback_backup_32h rb
+            WHERE transactions.id = rb.id
+            AND transactions.created_at >= NOW() - INTERVAL '32 hours';
+        """)
         
     except Exception as e:
         # If anything goes wrong, rollback to savepoint

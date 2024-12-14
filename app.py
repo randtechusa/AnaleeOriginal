@@ -51,9 +51,13 @@ def create_app():
             logger.error("DATABASE_URL environment variable is not set")
             raise ValueError("DATABASE_URL environment variable is not set")
 
-        # Handle legacy database URLs
+        # Handle legacy database URLs and ensure proper format
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
+        elif not database_url.startswith("postgresql://"):
+            database_url = f"postgresql://{database_url}"
+            
+        logger.info("Database URL configured successfully")
         
         # Configure Flask app
         app.config.update(
@@ -91,22 +95,28 @@ def create_app():
                 from models import User, Account, Transaction, UploadedFile, CompanySettings
                 logger.debug("Models imported")
 
+                # Test database connection first
+                try:
+                    # Test database connection with detailed error logging
+                    logger.info("Testing database connection...")
+                    result = db.session.execute(text('SELECT current_database(), current_user, version()'))
+                    connection_info = result.fetchone()
+                    logger.info(f"Connected to database: {connection_info[0]} as user: {connection_info[1]}")
+                    logger.info(f"Database version: {connection_info[2]}")
+                    logger.debug("Database connection test successful")
+                except Exception as db_error:
+                    logger.error(f"Database connection test failed: {str(db_error)}")
+                    logger.error("Full error details:", exc_info=True)
+                    raise
+
                 # Initialize database tables
                 db.create_all()
-                logger.debug("Database tables created")
+                logger.debug("Database tables created successfully")
                 
                 # Register blueprints
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
-                logger.debug("Blueprints registered")
-
-                # Test database connection
-                try:
-                    db.session.execute(text('SELECT 1'))
-                    logger.debug("Database connection test successful")
-                except Exception as db_error:
-                    logger.error(f"Database connection test failed: {str(db_error)}")
-                    raise
+                logger.debug("Blueprints registered successfully")
                 
                 return app
                 
