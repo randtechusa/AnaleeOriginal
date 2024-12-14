@@ -528,18 +528,36 @@ def analyze(file_id):
                     insights['similar_transactions'] = similar_trans[:3]  # Top 3 similar transactions
                     logger.debug(f"Found {len(similar_trans)} similar transactions for transaction {transaction.id}")
                 
-                # ASF: Get account suggestions
-                if not transaction.account_id and transaction.description:
+                # ASF (Account Suggestion Feature): Generate AI-powered account suggestions
+                if transaction.description:
                     try:
+                        logger.info(f"ASF: Generating suggestions for transaction {transaction.id}")
+                        
+                        # Prepare account data for ASF
+                        available_accounts = [{
+                            'name': acc.name,
+                            'category': acc.category,
+                            'link': acc.link,
+                            'is_active': acc.is_active
+                        } for acc in accounts if acc.is_active]
+                        
+                        # Get AI-powered suggestions
                         account_suggestions = predict_account(
                             transaction.description,
                             transaction.explanation or '',
-                            [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                            available_accounts
                         )
-                        insights['account_suggestions'] = account_suggestions
-                        logger.debug(f"Generated account suggestions for transaction {transaction.id}")
+                        
+                        if account_suggestions:
+                            insights['account_suggestions'] = account_suggestions
+                            logger.info(f"ASF: Generated {len(account_suggestions)} suggestions for transaction {transaction.id}")
+                            # Log top suggestion for analysis
+                            if account_suggestions[0]['confidence'] > 0.8:
+                                logger.debug(f"ASF: High confidence match ({account_suggestions[0]['confidence']}) "
+                                          f"for account: {account_suggestions[0]['account_name']}")
                     except Exception as acc_error:
-                        logger.error(f"Error generating account suggestions for transaction {transaction.id}: {str(acc_error)}")
+                        logger.error(f"ASF Error: Failed to generate suggestions for transaction {transaction.id}: {str(acc_error)}")
+                        insights['account_suggestions'] = []
                 
                 # ESF: Generate explanation suggestion if none exists
                 if not transaction.explanation and transaction.description:

@@ -26,49 +26,60 @@ def get_openai_client():
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
-    Predict the most likely account classifications for a transaction based on its description and explanation.
+    Account Suggestion Feature (ASF): AI-powered account suggestions based on transaction description
+    and existing Chart of Accounts structure. The function learns from the available accounts to make
+    intelligent suggestions for transaction categorization.
     """
     try:
-        logger.debug(f"Starting account prediction for description: {description}")
+        logger.debug(f"ASF: Starting account prediction for description: {description}")
         
         # Initialize OpenAI client
         client = get_openai_client()
         
-        # Format available accounts for the prompt
+        # Format available accounts with enhanced structure
         account_info = "\n".join([
-            f"- {acc['name']} (Category: {acc['category']}, Code: {acc['link']})"
+            f"- {acc['name']}\n  Category: {acc['category']}\n  Code: {acc['link']}\n  Purpose: Standard {acc['category']} account for {acc['name'].lower()} transactions"
             for acc in available_accounts
         ])
         
-        logger.debug(f"Formatted {len(available_accounts)} accounts for prediction")
+        logger.debug(f"ASF: Analyzing {len(available_accounts)} accounts from Chart of Accounts")
         
-        # Construct the prompt
-        prompt = f"""Analyze this financial transaction and provide account classification suggestions:
+        # Enhanced prompt for better account matching
+        prompt = f"""As an expert financial analyst, analyze this transaction and suggest the most appropriate account classification from the Chart of Accounts:
 
-Transaction Details:
+Transaction to Analyze:
 - Description: {description}
-- Additional Context/Explanation: {explanation}
+- Additional Context: {explanation}
 
 Available Chart of Accounts:
 {account_info}
 
-Instructions:
-1. Analyze the transaction description and explanation
-2. Consider account categories and accounting principles
-3. Provide confidence scores and reasoning
-4. Focus on accuracy and matching criteria
+Task:
+Analyze the transaction and suggest appropriate accounts based on:
+1. Semantic matching between transaction description and account purposes
+2. Standard accounting principles and best practices
+3. Transaction nature (income, expense, asset, liability)
+4. Account categories and hierarchies
 
-Format your response as a JSON list with exactly this structure:
+Consider:
+- Account category alignment
+- Transaction type matching
+- Industry standard practices
+- Semantic relevance
+- Historical accounting patterns
+
+Format response as a JSON list with this structure:
 [
     {{
-        "account_name": "suggested account name",
-        "confidence": 0.95,
-        "reasoning": "explanation of why this account matches",
-        "financial_insight": "brief financial impact note"
+        "account_name": "exact account name from Chart of Accounts",
+        "confidence": 0.0-1.0,
+        "reasoning": "detailed explanation of the match",
+        "financial_insight": "impact on financial reporting",
+        "category_match": "explanation of category fit"
     }}
 ]
 
-Provide up to 3 suggestions, ranked by confidence (0 to 1)."""
+Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist in the provided Chart of Accounts."""
 
         # Make API call with error handling
         try:
