@@ -182,9 +182,18 @@
                             <td>
                                 <button type="button" 
                                         class="btn btn-outline-primary suggest-btn"
-                                        data-transaction-id="{{ transaction.id }}">
+                                        data-transaction-id="{{ transaction.id }}"
+                                        {% if not ai_available %}
+                                        disabled
+                                        title="AI suggestions temporarily unavailable"
+                                        {% endif %}>
                                     <i class="fas fa-magic"></i> Suggest
                                 </button>
+                                {% if not ai_available %}
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-info-circle"></i> AI suggestions unavailable
+                                </small>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

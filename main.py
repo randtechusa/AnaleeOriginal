@@ -14,12 +14,14 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-if __name__ == "__main__":
+def main():
     try:
         logger.info("Starting application initialization...")
         
         # Initialize the Flask application
         app = create_app()
+        if not app:
+            raise ValueError("Application creation failed")
         logger.info("Application created successfully")
         
         # Get port from environment or default to 5000
@@ -30,10 +32,14 @@ if __name__ == "__main__":
         app.run(
             host='0.0.0.0',
             port=port,
-            debug=True
+            debug=True,
+            use_reloader=False  # Disable reloader to prevent duplicate processes
         )
         
     except Exception as e:
         logger.error(f"Failed to start application: {str(e)}")
         logger.exception("Full stack trace:")
         sys.exit(1)
+
+if __name__ == "__main__":
+    main()

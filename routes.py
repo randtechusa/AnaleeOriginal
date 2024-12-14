@@ -373,11 +373,12 @@ def dashboard():
 def analyze(file_id):
     logger.info(f"Starting analysis for file_id: {file_id}")
     
-    # Initialize variables
+    # Initialize variables with safe defaults
     transaction_insights = {}
-    anomalies = None
+    anomalies = {"error": None, "anomalies": [], "pattern_insights": {}}
+    ai_available = False  # Default to AI unavailable
     
-    # Get file and related data
+    # First load essential data
     try:
         file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
         accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
@@ -389,40 +390,87 @@ def analyze(file_id):
             logger.warning(f"No transactions found for file_id: {file_id}")
             flash('No transactions found in this file. Please ensure the file contains valid transaction data.')
             return redirect(url_for('main.upload'))
-        
-        # Process transactions for AI insights
+            
+        # Initialize basic transaction insights structure
         for transaction in transactions:
-            insights = {
+            transaction_insights[transaction.id] = {
                 'similar_transactions': [],
                 'account_suggestions': [],
                 'explanation_suggestion': None
             }
             
-            if transaction.description:
-                # Get account suggestions using ASF (Account Suggestion Feature)
-                if not transaction.account_id:
-                    try:
-                        account_suggestions = predict_account(
-                            transaction.description,
-                            transaction.explanation or '',
-                            [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
-                        )
-                        if account_suggestions:
-                            insights['account_suggestions'] = account_suggestions
-                            logger.debug(f"ASF: Generated {len(account_suggestions)} suggestions for transaction {transaction.id}")
-                    except Exception as e:
-                        logger.error(f"ASF Error: Failed to generate suggestions for transaction {transaction.id}: {str(e)}")
+        # Handle POST requests for basic functionality
+        if request.method == 'POST':
+            try:
+                for transaction in transactions:
+                    explanation_key = f'explanation_{transaction.id}'
+                    account_key = f'account_{transaction.id}'
+                    
+                    if explanation_key in request.form:
+                        transaction.explanation = request.form[explanation_key]
+                    if account_key in request.form and request.form[account_key]:
+                        transaction.account_id = int(request.form[account_key])
                 
-                # Get explanation suggestion if none exists
-                if not transaction.explanation:
-                    try:
-                        explanation = suggest_explanation(transaction.description)
-                        if explanation:
-                            insights['explanation_suggestion'] = explanation
-                    except Exception as e:
-                        logger.error(f"Error generating explanation for transaction {transaction.id}: {str(e)}")
+                db.session.commit()
+                flash('Changes saved successfully', 'success')
+            except Exception as e:
+                logger.error(f"Error saving changes: {str(e)}")
+                db.session.rollback()
+                flash('Error saving changes', 'error')
+        
+        # Try to add AI insights if available (non-blocking)
+        try:
+            # Attempt to use AI features
+            ai_features_working = False
             
-            transaction_insights[transaction.id] = insights
+            # Test AI availability with a simple prediction
+            if transactions and transactions[0].description:
+                test_prediction = predict_account(
+                    transactions[0].description,
+                    transactions[0].explanation or '',
+                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                )
+                if test_prediction:
+                    ai_features_working = True
+                    ai_available = True
+            
+            if ai_features_working:
+                logger.info("AI features are available, processing insights...")
+                
+                # Process AI insights for each transaction
+                for transaction in transactions:
+                    if transaction.description:
+                        # Get account suggestions (ASF)
+                        if not transaction.account_id:
+                            try:
+                                account_suggestions = predict_account(
+                                    transaction.description,
+                                    transaction.explanation or '',
+                                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                                )
+                                if account_suggestions:
+                                    transaction_insights[transaction.id]['account_suggestions'] = account_suggestions
+                            except Exception as e:
+                                logger.warning(f"ASF error for transaction {transaction.id}: {str(e)}")
+                                continue
+                    
+                    # Get explanation suggestion if none exists
+                    if not transaction.explanation:
+                        try:
+                            explanation = suggest_explanation(transaction.description)
+                            if explanation:
+                                transaction_insights[transaction.id]['explanation_suggestion'] = explanation
+                        except Exception as e:
+                            logger.warning(f"ESF unavailable for transaction {transaction.id}: {str(e)}")
+                            ai_available = False
+                            
+        except Exception as e:
+            logger.warning(f"AI features unavailable: {str(e)}")
+            ai_available = False
+            if "rate limit" in str(e).lower():
+                flash("AI features are temporarily unavailable due to rate limiting. Basic functionality remains available.", "warning")
+            else:
+                flash("AI features are temporarily unavailable. Basic functionality remains available.", "warning")
             
     except Exception as e:
         logger.error(f"Error loading data: {str(e)}")
@@ -525,7 +573,8 @@ def analyze(file_id):
             transactions=transactions,
             bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int),
             anomalies=anomalies,
-            transaction_insights=transaction_insights
+            transaction_insights=transaction_insights,
+            ai_available=ai_available
         )
     except Exception as e:
         logger.error(f"Error rendering analyze template: {str(e)}")
