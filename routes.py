@@ -367,19 +367,71 @@ def dashboard():
 @main.route('/analyze/<int:file_id>', methods=['GET', 'POST'])
 @login_required
 def analyze(file_id):
-    # Get file and related data
-    file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
-    accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
-    transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
-    
-    if not transactions:
-        flash('No transactions found in this file. Please ensure the file contains valid transaction data.')
+    try:
+        logger.info(f"Starting analysis for file_id: {file_id}")
+        
+        # Get file and related data
+        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
+        transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
+        
+        if not transactions:
+            logger.warning(f"No transactions found for file_id: {file_id}")
+            flash('No transactions found in this file. Please ensure the file contains valid transaction data.')
+            return redirect(url_for('main.upload'))
+        
+        logger.info(f"Found {len(transactions)} transactions to analyze")
+        
+        # Initialize transaction insights dictionary
+        transaction_insights = {}
+        anomalies = None
+        
+        # Process each transaction for AI insights
+        for transaction in transactions:
+            try:
+                insights = {
+                    'similar_transactions': [],
+                    'account_suggestions': [],
+                    'explanation_suggestion': None
+                }
+                
+                # Find similar transactions using ERF
+                if transaction.description:
+                    similar_trans = find_similar_transactions(
+                        transaction.description,
+                        [t for t in transactions if t.id != transaction.id]
+                    )
+                    if similar_trans:
+                        insights['similar_transactions'] = similar_trans[:3]  # Top 3 similar transactions
+                        logger.debug(f"Found {len(similar_trans)} similar transactions for transaction {transaction.id}")
+                
+                # Get account suggestions using ASF
+                if not transaction.account_id and transaction.description:
+                    try:
+                        account_suggestions = predict_account(
+                            transaction.description,
+                            transaction.explanation or '',
+                            [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                        )
+                        insights['account_suggestions'] = account_suggestions
+                        logger.debug(f"Generated account suggestions for transaction {transaction.id}")
+                    except Exception as acc_error:
+                        logger.error(f"Error generating account suggestions for transaction {transaction.id}: {str(acc_error)}")
+                
+                transaction_insights[transaction.id] = insights
+                
+            except Exception as insight_error:
+                logger.error(f"Error processing insights for transaction {transaction.id}: {str(insight_error)}")
+                transaction_insights[transaction.id] = {
+                    'similar_transactions': [],
+                    'account_suggestions': [],
+                    'explanation_suggestion': None
+                }
+        
+    except Exception as e:
+        logger.error(f"Error initializing analysis: {str(e)}")
+        flash('Error loading transactions for analysis')
         return redirect(url_for('main.upload'))
-        
-    # Initialize transaction insights dictionary
-    transaction_insights = {}
-        
-    anomalies = None
     
     # Initialize AI-powered features
     transaction_insights = {}
@@ -452,39 +504,57 @@ def analyze(file_id):
         logger.error(f"Error detecting anomalies: {str(e)}")
         anomalies = {"error": str(e)}
     
-    # Process each transaction for AI insights
-    for transaction in transactions:
-        insights = {
-            'similar_transactions': [],
-            'account_suggestions': [],
-            'explanation_suggestion': None
-        }
-        
-        # ERF: Find similar transactions
-        similar_trans = find_similar_transactions(
-            transaction.description,
-            [t for t in transactions if t.id != transaction.id]
-        )
-        insights['similar_transactions'] = similar_trans[:3]  # Top 3 similar transactions
-        
-        # ASF: Get account suggestions
-        if not transaction.account_id:
-            account_suggestions = predict_account(
-                transaction.description,
-                transaction.explanation or '',
-                [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
-            )
-            insights['account_suggestions'] = account_suggestions
-        
-        # ESF: Generate explanation suggestion if none exists
-        if not transaction.explanation:
-            explanation_suggestion = suggest_explanation(
-                transaction.description,
-                insights['similar_transactions']
-            )
-            insights['explanation_suggestion'] = explanation_suggestion
-        
-        transaction_insights[transaction.id] = insights
+    # Process each transaction for AI insights with proper error handling
+        for transaction in transactions:
+            try:
+                insights = {
+                    'similar_transactions': [],
+                    'account_suggestions': [],
+                    'explanation_suggestion': None
+                }
+                
+                # ERF: Find similar transactions
+                if transaction.description:
+                    similar_trans = find_similar_transactions(
+                        transaction.description,
+                        [t for t in transactions if t.id != transaction.id]
+                    )
+                    insights['similar_transactions'] = similar_trans[:3]  # Top 3 similar transactions
+                    logger.debug(f"Found {len(similar_trans)} similar transactions for transaction {transaction.id}")
+                
+                # ASF: Get account suggestions
+                if not transaction.account_id and transaction.description:
+                    try:
+                        account_suggestions = predict_account(
+                            transaction.description,
+                            transaction.explanation or '',
+                            [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                        )
+                        insights['account_suggestions'] = account_suggestions
+                        logger.debug(f"Generated account suggestions for transaction {transaction.id}")
+                    except Exception as acc_error:
+                        logger.error(f"Error generating account suggestions for transaction {transaction.id}: {str(acc_error)}")
+                
+                # ESF: Generate explanation suggestion if none exists
+                if not transaction.explanation and transaction.description:
+                    try:
+                        explanation_suggestion = suggest_explanation(
+                            transaction.description,
+                            insights['similar_transactions']
+                        )
+                        insights['explanation_suggestion'] = explanation_suggestion
+                        logger.debug(f"Generated explanation suggestion for transaction {transaction.id}")
+                    except Exception as exp_error:
+                        logger.error(f"Error generating explanation for transaction {transaction.id}: {str(exp_error)}")
+                
+                transaction_insights[transaction.id] = insights
+            except Exception as insight_error:
+                logger.error(f"Error processing insights for transaction {transaction.id}: {str(insight_error)}")
+                transaction_insights[transaction.id] = {
+                    'similar_transactions': [],
+                    'account_suggestions': [],
+                    'explanation_suggestion': None
+                }
     
     return render_template('analyze.html', 
                          file=file,

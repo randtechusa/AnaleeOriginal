@@ -545,32 +545,44 @@ def find_similar_transactions(transaction_description: str, transactions: list, 
     - 70% text similarity OR
     - 95% semantic similarity
     """
+    if not transaction_description or not transactions:
+        logger.warning("Empty transaction description or transactions list")
+        return []
+        
     similar_transactions = []
+    logger.info(f"Finding similar transactions for description: {transaction_description}")
     
     try:
         for transaction in transactions:
             if not transaction.description:
                 continue
                 
-            # Calculate both text and semantic similarity
-            similarity = calculate_text_similarity(
-                transaction_description,
-                transaction.description
-            )
-            
-            # Add transaction if it meets either threshold
-            if similarity >= text_threshold or similarity >= semantic_threshold:
-                similar_transactions.append({
-                    'transaction': transaction,
-                    'similarity': similarity
-                })
+            try:
+                # Calculate similarity
+                similarity = calculate_text_similarity(
+                    transaction_description.strip(),
+                    transaction.description.strip()
+                )
+                
+                logger.debug(f"Similarity score: {similarity} for transaction: {transaction.description}")
+                
+                # Add transaction if it meets either threshold
+                if similarity >= text_threshold or similarity >= semantic_threshold:
+                    similar_transactions.append({
+                        'transaction': transaction,
+                        'similarity': similarity
+                    })
+            except Exception as calc_error:
+                logger.error(f"Error calculating similarity for transaction {transaction.id}: {str(calc_error)}")
+                continue
         
         # Sort by similarity score in descending order
         similar_transactions.sort(key=lambda x: x['similarity'], reverse=True)
+        logger.info(f"Found {len(similar_transactions)} similar transactions")
         return similar_transactions
         
     except Exception as e:
-        logger.error(f"Error finding similar transactions: {str(e)}")
+        logger.error(f"Error in find_similar_transactions: {str(e)}")
         return []
 
 def suggest_explanation(description: str, similar_transactions: list = None) -> dict:

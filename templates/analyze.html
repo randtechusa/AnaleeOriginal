@@ -124,19 +124,9 @@
             <h2 class="card-title">Analyze Transactions</h2>
             <div class="d-flex justify-content-between align-items-center">
                 <h5>File: {{ file.filename }}</h5>
-                <div class="form-group" style="width: 300px;">
-                    <label for="bank_account" class="form-label">Select Bank Account</label>
-                    <select class="form-select" id="bank_account" name="bank_account">
-                        <option value="">Select Bank Account</option>
-                        {% for account in accounts %}
-                            {% if account.category.lower() == 'bank' or 'bank' in account.name.lower() %}
-                                <option value="{{ account.id }}" 
-                                        {% if bank_account_id and bank_account_id == account.id %}selected{% endif %}>
-                                    {{ account.link }}:{{ account.name }} {% if account.sub_category %}({{ account.sub_category }}){% endif %}
-                                </option>
-                            {% endif %}
-                        {% endfor %}
-                    </select>
+                <div class="alert alert-info" role="alert">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Add explanations and select accounts for your transactions
                 </div>
             </div>
         </div>
@@ -151,7 +141,7 @@
                             <th>Description</th>
                             <th>Amount</th>
                             <th>Explanation</th>
-                            <th>Analysis</th>
+                            <th>Account</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -225,14 +215,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('analyzeForm');
     const explanationInputs = document.querySelectorAll('.explanation-input');
     const analysisSelects = document.querySelectorAll('.analysis-select');
-    
-    // Handle bank account selection
-    const bankAccountSelect = document.getElementById('bank_account');
-    if (bankAccountSelect) {
-        bankAccountSelect.addEventListener('change', function() {
-            form.submit();
-        });
-    }
     
     // Handle explanation changes and enhance textarea behavior
     explanationInputs.forEach(textarea => {
@@ -550,6 +532,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.innerHTML = '<i class="fas fa-magic"></i> Suggest';
             }
         });
+    });
+    // Initialize tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 });
 </script>
