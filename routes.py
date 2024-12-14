@@ -399,13 +399,17 @@ def analyze(file_id):
                 
                 # Find similar transactions using ERF
                 if transaction.description:
-                    similar_trans = find_similar_transactions(
-                        transaction.description,
-                        [t for t in transactions if t.id != transaction.id]
-                    )
-                    if similar_trans:
-                        insights['similar_transactions'] = similar_trans[:3]  # Top 3 similar transactions
-                        logger.debug(f"Found {len(similar_trans)} similar transactions for transaction {transaction.id}")
+                    try:
+                        similar_trans = find_similar_transactions(
+                            transaction.description,
+                            [t for t in transactions if t.id != transaction.id]
+                        )
+                        if similar_trans:
+                            insights['similar_transactions'] = similar_trans[:3]  # Top 3 similar transactions
+                            logger.debug(f"Found {len(similar_trans)} similar transactions for transaction {transaction.id}")
+                    except Exception as e:
+                        logger.error(f"Error finding similar transactions: {str(e)}")
+                        insights['similar_transactions'] = []
                 
                 # Get account suggestions using ASF
                 if not transaction.account_id and transaction.description:
