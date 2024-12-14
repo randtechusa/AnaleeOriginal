@@ -8,6 +8,18 @@
                 <h2 class="card-title">Upload New Bank Statement</h2>
                 <form method="POST" enctype="multipart/form-data">
                     <div class="mb-3">
+                        <label for="bank_account" class="form-label">Select Bank Account</label>
+                        <select class="form-select" id="bank_account" name="bank_account" required>
+                            <option value="">Choose a bank account...</option>
+                            {% for account in bank_accounts %}
+                            <option value="{{ account.id }}">{{ account.link }} - {{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            Select the bank account this statement belongs to
+                        </div>
+                    </div>
+                    <div class="mb-3">
                         <label for="file" class="form-label">Bank Statement File</label>
                         <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
                         <div class="form-text">

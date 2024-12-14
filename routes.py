@@ -437,7 +437,13 @@ def upload():
     try:
         # Get list of uploaded files
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-        logger.info(f"Retrieved {len(files)} existing files for user {current_user.id}")
+        # Get bank accounts (starting with ca.810)
+        bank_accounts = Account.query.filter(
+            Account.user_id == current_user.id,
+            Account.link.like('ca.810%'),
+            Account.is_active == True
+        ).order_by(Account.link).all()
+        logger.info(f"Retrieved {len(files)} existing files and {len(bank_accounts)} bank accounts for user {current_user.id}")
         
         if request.method == 'POST':
             logger.debug("Processing file upload request")
@@ -671,13 +677,18 @@ def upload():
                                         continue
 
                                 # Create transaction object
+                                bank_account_id = request.form.get('bank_account')
+                                if not bank_account_id:
+                                    raise ValueError("Bank account must be selected")
+                                
                                 transaction = Transaction(
                                     date=parsed_date,
                                     description=str(row['description']),
                                     amount=float(row['amount']),
                                     explanation='',
                                     user_id=current_user.id,
-                                    file_id=uploaded_file.id
+                                    file_id=uploaded_file.id,
+                                    bank_account_id=bank_account_id
                                 )
                                 transactions_to_add.append(transaction)
                             except Exception as row_error:
@@ -713,7 +724,7 @@ def upload():
         flash('An error occurred during file upload')
         return redirect(url_for('main.upload'))
         
-    return render_template('upload.html', files=files)
+    return render_template('upload.html', files=files, bank_accounts=bank_accounts)
 
 @main.route('/file/<int:file_id>/delete', methods=['POST'])
 @login_required
