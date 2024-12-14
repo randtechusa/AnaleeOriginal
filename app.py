@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from utils.backup_manager import DatabaseBackupManager, init_backup_scheduler # Added import for backup manager
 
 # Load environment variables
 load_dotenv()
@@ -112,11 +113,27 @@ def create_app():
                 # Initialize database tables
                 db.create_all()
                 logger.debug("Database tables created successfully")
-                
+
+                # Initialize backup manager
+                try:
+                    backup_manager = DatabaseBackupManager(app.config['SQLALCHEMY_DATABASE_URI'])
+                    logger.info("Backup manager initialized successfully")
+                except Exception as backup_error:
+                    logger.error(f"Error initializing backup manager: {str(backup_error)}")
+                    logger.warning("Application will continue without backup manager")
+
                 # Register blueprints
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
                 logger.debug("Blueprints registered successfully")
+                
+                # Initialize backup system
+                try:
+                    backup_scheduler = init_backup_scheduler(app)
+                    logger.info("Database backup system initialized successfully")
+                except Exception as backup_error:
+                    logger.error(f"Failed to initialize backup system: {str(backup_error)}")
+                    logger.warning("Application will continue without automated backups")
                 
                 return app
                 
