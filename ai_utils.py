@@ -504,3 +504,113 @@ Provide a detailed financial analysis in this JSON structure:
             "error": "Failed to generate financial advice",
             "details": str(e)
         }
+
+def calculate_text_similarity(text1: str, text2: str) -> float:
+    """Calculate text similarity between two strings."""
+    try:
+        # Initialize OpenAI client
+        client = get_openai_client()
+        
+        prompt = f"""Compare these two transaction descriptions and return their similarity score:
+        Text 1: {text1}
+        Text 2: {text2}
+        
+        Consider both textual and semantic similarity. Return a single float between 0 and 1.
+        A score of 1 means identical or semantically equivalent descriptions.
+        A score of 0 means completely different descriptions.
+        
+        Format: Return only the numerical score, e.g. "0.85"
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a text similarity analyzer. Provide similarity scores based on both textual and semantic similarity."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=10
+        )
+        
+        similarity = float(response.choices[0].message.content.strip())
+        return min(max(similarity, 0.0), 1.0)  # Ensure score is between 0 and 1
+        
+    except Exception as e:
+        logger.error(f"Error calculating text similarity: {str(e)}")
+        return 0.0
+
+def find_similar_transactions(transaction_description: str, transactions: list, threshold: float = 0.7) -> list:
+    """Find transactions with similar descriptions."""
+    similar_transactions = []
+    
+    try:
+        for transaction in transactions:
+            similarity = calculate_text_similarity(
+                transaction_description,
+                transaction.description
+            )
+            if similarity >= threshold:
+                similar_transactions.append({
+                    'transaction': transaction,
+                    'similarity': similarity
+                })
+        
+        # Sort by similarity score in descending order
+        similar_transactions.sort(key=lambda x: x['similarity'], reverse=True)
+        return similar_transactions
+        
+    except Exception as e:
+        logger.error(f"Error finding similar transactions: {str(e)}")
+        return []
+
+def suggest_explanation(description: str, similar_transactions: list = None) -> dict:
+    """Generate explanation suggestions based on transaction description and similar transactions."""
+    try:
+        client = get_openai_client()
+        
+        # Format similar transactions for context
+        similar_context = ""
+        if similar_transactions:
+            similar_context = "\nSimilar transactions and their explanations:\n" + "\n".join([
+                f"- Description: {t['transaction'].description}\n  Explanation: {t['transaction'].explanation}"
+                for t in similar_transactions[:3] if t['transaction'].explanation
+            ])
+        
+        prompt = f"""Analyze this financial transaction and suggest an explanation:
+        
+        Transaction Description: {description}
+        {similar_context}
+        
+        Based on the transaction description and any similar transactions, provide:
+        1. A clear, professional explanation
+        2. The confidence level in this suggestion
+        3. Key factors considered in generating this explanation
+        
+        Format your response as a JSON object with this structure:
+        {{
+            "suggested_explanation": "string",
+            "confidence": float,
+            "factors_considered": ["string"]
+        }}
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a financial transaction analyzer specializing in generating clear, professional explanations."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=250
+        )
+        
+        suggestion = json.loads(response.choices[0].message.content.strip())
+        return suggestion
+        
+    except Exception as e:
+        logger.error(f"Error generating explanation suggestion: {str(e)}")
+        return {
+            "suggested_explanation": "",
+            "confidence": 0.0,
+            "factors_considered": [f"Error: {str(e)}"]
+        }

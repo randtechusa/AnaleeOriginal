@@ -371,6 +371,9 @@ def analyze(file_id):
     bank_account_id = None
     anomalies = None
     
+    # Initialize AI-powered features
+    transaction_insights = {}
+    
     # Get task status from session
     task_id = session.get('analysis_task_id')
     task_status = None
@@ -424,12 +427,47 @@ def analyze(file_id):
         logger.error(f"Error detecting anomalies: {str(e)}")
         anomalies = {"error": str(e)}
     
+    # Process each transaction for AI insights
+    for transaction in transactions:
+        insights = {
+            'similar_transactions': [],
+            'account_suggestions': [],
+            'explanation_suggestion': None
+        }
+        
+        # ERF: Find similar transactions
+        similar_trans = find_similar_transactions(
+            transaction.description,
+            [t for t in transactions if t.id != transaction.id]
+        )
+        insights['similar_transactions'] = similar_trans[:3]  # Top 3 similar transactions
+        
+        # ASF: Get account suggestions
+        if not transaction.account_id:
+            account_suggestions = predict_account(
+                transaction.description,
+                transaction.explanation or '',
+                [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+            )
+            insights['account_suggestions'] = account_suggestions
+        
+        # ESF: Generate explanation suggestion if none exists
+        if not transaction.explanation:
+            explanation_suggestion = suggest_explanation(
+                transaction.description,
+                insights['similar_transactions']
+            )
+            insights['explanation_suggestion'] = explanation_suggestion
+        
+        transaction_insights[transaction.id] = insights
+    
     return render_template('analyze.html', 
                          file=file,
                          accounts=accounts,
                          transactions=transactions,
                          bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int),
-                         anomalies=anomalies)
+                         anomalies=anomalies,
+                         transaction_insights=transaction_insights)
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
