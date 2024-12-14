@@ -164,59 +164,13 @@
                             </td>
                             <td>
                                 <div class="position-relative">
-                                    <div class="position-relative">
-                                        <textarea 
-                                            class="form-control explanation-input{% if transaction.explanation %} has-content{% endif %}" 
-                                            name="explanation_{{ transaction.id }}" 
-                                            rows="3"
-                                            aria-label="Transaction explanation"
-                                            placeholder="Enter explanation for this transaction..."
-                                            data-transaction-id="{{ transaction.id }}"
-                                            data-description="{{ transaction.description }}"
-                                        >{{ transaction.explanation }}</textarea>
-                                        <div class="d-flex gap-2 mt-1">
-                                            <button type="button" 
-                                                    class="btn btn-outline-secondary btn-sm suggest-explanation-btn"
-                                                    data-transaction-id="{{ transaction.id }}"
-                                                    data-description="{{ transaction.description }}">
-                                                <i class="fas fa-lightbulb"></i> Suggest Explanation (ESF)
-                                            </button>
-                                            <div class="explanation-feedback" style="display: none;">
-                                                <small class="text-muted">
-                                                    <i class="fas fa-info-circle"></i>
-                                                    <span class="feedback-text"></span>
-                                                </small>
-                                            </div>
-                                        </div>
-                                        <div id="explanation-suggestion-{{ transaction.id }}" class="mt-2" style="display: none;">
-                                            <div class="card bg-dark">
-                                                <div class="card-body">
-                                                    <div class="d-flex justify-content-between align-items-start mb-3">
-                                                        <h6 class="card-subtitle text-muted mb-0">
-                                                            AI-Suggested Explanation
-                                                            <span class="badge bg-info suggestion-confidence ms-2"></span>
-                                                        </h6>
-                                                        <button type="button" class="btn-close btn-close-white" 
-                                                                aria-label="Close suggestion"></button>
-                                                    </div>
-                                                    <p class="card-text suggestion-text"></p>
-                                                    <div class="suggestion-details mt-3">
-                                                        <div class="suggestion-context text-muted small mb-2"></div>
-                                                        <div class="suggestion-patterns text-muted small mb-2"></div>
-                                                        <div class="suggestion-source text-muted small"></div>
-                                                    </div>
-                                                    <div class="mt-3 d-flex gap-2">
-                                                        <button class="btn btn-sm btn-outline-primary apply-suggestion">
-                                                            <i class="fas fa-check"></i> Apply Suggestion
-                                                        </button>
-                                                        <button class="btn btn-sm btn-outline-secondary regenerate-suggestion">
-                                                            <i class="fas fa-sync"></i> Try Another
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <textarea 
+                                        class="form-control explanation-input{% if transaction.explanation %} has-content{% endif %}" 
+                                        name="explanation_{{ transaction.id }}" 
+                                        rows="3"
+                                        aria-label="Transaction explanation"
+                                        placeholder="Enter explanation for this transaction..."
+                                    >{{ transaction.explanation }}</textarea>
                                     <small class="form-text text-muted mt-1" style="display: none;">
                                         Press Enter to save changes
                                     </small>
@@ -361,51 +315,30 @@ document.addEventListener('DOMContentLoaded', function() {
                                 // Handle similar transactions
                                 if (result.similar_transactions && result.similar_transactions.length > 0) {
                                     const similarCount = result.similar_transactions.length;
-                                    const similarityDetails = result.similar_transactions.map(t => 
-                                        `${t.description} (${Math.round(t.similarity * 100)}% match)`
-                                    ).join('\n');
-                                    
                                     const shouldApplyToAll = confirm(
-                                        `Found ${similarCount} similar transaction(s):\n\n${similarityDetails}\n\n` +
-                                        `These transactions have either:\n` +
-                                        `- 70% or higher text similarity, or\n` +
-                                        `- 95% or higher semantic similarity\n\n` +
-                                        `Would you like to apply this explanation to them?`
+                                        `Found ${similarCount} similar transaction(s) with 70% or higher description similarity. Would you like to apply this explanation to them as well?`
                                     );
                                     
                                     if (shouldApplyToAll) {
-                                        const updates = result.similar_transactions.map(async (similar) => {
+                                        for (const similar of result.similar_transactions) {
                                             const similarTextarea = document.querySelector(`textarea[name="explanation_${similar.id}"]`);
                                             if (similarTextarea) {
                                                 similarTextarea.value = this.value;
                                                 similarTextarea.classList.add('has-content');
                                                 
-                                                try {
-                                                    const response = await fetch('/update_explanation', {
-                                                        method: 'POST',
-                                                        headers: {
-                                                            'Content-Type': 'application/json',
-                                                        },
-                                                        body: JSON.stringify({
-                                                            transaction_id: similar.id,
-                                                            explanation: this.value.trim(),
-                                                            description: similar.description,
-                                                            similarity_type: similar.similarity_type,
-                                                            similarity_score: similar.similarity
-                                                        })
-                                                    });
-                                                    
-                                                    if (!response.ok) {
-                                                        throw new Error(`Failed to update transaction ${similar.id}`);
-                                                    }
-                                                } catch (error) {
-                                                    console.error(`Failed to update similar transaction ${similar.id}:`, error);
-                                                    alert(`Failed to update one or more similar transactions. Please try again.`);
-                                                }
+                                                await fetch('/update_explanation', {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Content-Type': 'application/json',
+                                                    },
+                                                    body: JSON.stringify({
+                                                        transaction_id: similar.id,
+                                                        explanation: this.value.trim(),
+                                                        description: similar.description
+                                                    })
+                                                });
                                             }
-                                        });
-                                        
-                                        await Promise.all(updates);
+                                        }
                                     }
                                 }
                                 
@@ -511,93 +444,10 @@ document.addEventListener('DOMContentLoaded', function() {
             color: var(--bs-gray-400);
             margin-top: 0.5rem;
         }
-        .suggestion-context {
-            margin-top: 0.5rem;
-        }
-        .matching-rules {
-            margin-top: 0.5rem;
-        }
-
     `;
     document.head.appendChild(style);
 
-    // Handle ESF - Explanation Suggestion Feature
-    document.querySelectorAll('.suggest-explanation-btn').forEach(button => {
-        button.addEventListener('click', async function() {
-            const transactionId = this.dataset.transactionId;
-            const description = this.dataset.description;
-            const suggestionDiv = document.getElementById(`explanation-suggestion-${transactionId}`);
-            const textarea = document.querySelector(`textarea[name="explanation_${transactionId}"]`);
-            
-            // Show loading state
-            this.disabled = true;
-            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
-            
-            try {
-                const response = await fetch('/suggest_explanation', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        description: description
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const suggestion = await response.json();
-                
-                if (suggestion.error) {
-                    throw new Error(suggestion.error);
-                }
-                
-                // Update suggestion display
-                const confidencePercent = Math.round(suggestion.confidence * 100);
-                suggestionDiv.querySelector('.suggestion-confidence').textContent = `${confidencePercent}% Confidence`;
-                suggestionDiv.querySelector('.suggestion-text').textContent = suggestion.suggested_explanation;
-                
-                // Add context information
-                const contextHtml = [];
-                if (suggestion.business_context) {
-                    contextHtml.push(`<div><strong>Context:</strong> ${suggestion.business_context}</div>`);
-                }
-                if (suggestion.category_hint) {
-                    contextHtml.push(`<div><strong>Category:</strong> ${suggestion.category_hint}</div>`);
-                }
-                if (suggestion.has_similar_transactions) {
-                    contextHtml.push(`<div><strong>Similar Transactions:</strong> Found ${suggestion.similar_transactions_count} similar entries</div>`);
-                }
-                suggestionDiv.querySelector('.suggestion-context').innerHTML = contextHtml.join('');
-                
-                // Show suggestion
-                suggestionDiv.style.display = 'block';
-                
-                // Handle apply suggestion button
-                suggestionDiv.querySelector('.apply-suggestion').onclick = function() {
-                    textarea.value = suggestion.suggested_explanation;
-                    textarea.classList.add('has-content');
-                    textarea.dispatchEvent(new Event('input'));
-                    suggestionDiv.style.display = 'none';
-                };
-                
-            } catch (error) {
-                console.error('Error:', error);
-                const feedbackDiv = this.nextElementSibling;
-                feedbackDiv.querySelector('.feedback-text').textContent = `Error: ${error.message}`;
-                feedbackDiv.style.display = 'block';
-                setTimeout(() => feedbackDiv.style.display = 'none', 5000);
-            } finally {
-                // Reset button state
-                this.disabled = false;
-                this.innerHTML = '<i class="fas fa-lightbulb"></i> Suggest Explanation (ESF)';
-            }
-        });
-    });
-
-    // Handle SF - Account Suggestion Feature
+    // Handle suggestion buttons
     document.querySelectorAll('.suggest-account-btn').forEach(button => {
         button.addEventListener('click', async function() {
             const transactionId = this.dataset.transactionId;
@@ -648,44 +498,18 @@ document.addEventListener('DOMContentLoaded', function() {
                         const item = document.createElement('button');
                         item.type = 'button';
                         item.className = 'list-group-item list-group-item-action suggestion-item';
-                            
-                        // Enhanced suggestion display with more context
-                        const contextInfo = suggestion.context ? 
-                            `<div class="suggestion-context mt-2">
-                                <small class="text-muted">
-                                    <i class="fas fa-info-circle"></i> ${suggestion.context}
-                                </small>
-                            </div>` : '';
-                            
-                        const matchingRules = suggestion.matching_rules ?
-                            `<div class="matching-rules mt-2">
-                                <small class="text-muted">
-                                    <i class="fas fa-check-circle"></i> ${suggestion.matching_rules}
-                                </small>
-                            </div>` : '';
-                        
                         item.innerHTML = `
                             <div class="d-flex justify-content-between align-items-start">
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">
-                                        ${suggestion.account.name}
-                                        ${suggestion.account.sub_category ? 
-                                          `<small class="text-muted">(${suggestion.account.sub_category})</small>` : 
-                                          ''}
-                                    </h6>
-                                    <div class="suggestion-reasoning">
-                                        <i class="fas fa-brain text-primary"></i> ${suggestion.reasoning}
-                                    </div>
-                                    ${contextInfo}
-                                    ${matchingRules}
+                                <div>
+                                    <h6 class="mb-1">${suggestion.account.name}</h6>
+                                    <div class="suggestion-reasoning">${suggestion.reasoning}</div>
                                 </div>
-                                <span class="badge bg-${confidenceLevel} suggestion-confidence ms-2">
+                                <span class="badge bg-${confidenceLevel} suggestion-confidence">
                                     ${Math.round(suggestion.confidence * 100)}% match
                                 </span>
                             </div>
                         `;
                         
-
                         item.addEventListener('click', function() {
                             // Find and select the matching option
                             const options = Array.from(select.options);

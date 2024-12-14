@@ -732,205 +732,48 @@ def delete_file(file_id):
 def process_transaction_analysis(user_id: int, file_id: int):
     """Background task to process and analyze transactions"""
 def calculate_description_similarity(desc1, desc2):
-    """Calculate similarity between descriptions using text similarity and semantic meaning.
-    Returns True if either:
-    1. Text similarity is >= 70% OR
-    2. Semantic similarity is >= 95%
-    """
+    """Calculate similarity between descriptions using text similarity and semantic meaning"""
     from difflib import SequenceMatcher
     import re
     import openai
-    import json
     import os
     
     if not desc1 or not desc2:
-        return False, 0.0, 0.0, "Empty descriptions"
+        return 0.0, 0.0
         
     # Normalize descriptions
     def normalize_text(text):
         text = re.sub(r'[^\w\s]', '', text.lower())
         return ' '.join(text.split())
     
+    norm_desc1 = normalize_text(desc1)
+    norm_desc2 = normalize_text(desc2)
+    
+    # Calculate text similarity
     try:
-        norm_desc1 = normalize_text(desc1)
-        norm_desc2 = normalize_text(desc2)
-        
-        # Calculate text similarity
         text_similarity = SequenceMatcher(None, norm_desc1, norm_desc2).ratio()
-        logger.debug(f"ERF: Text similarity score: {text_similarity}")
-        
-        # If text similarity >= 70%, we can return early
-        if text_similarity >= 0.7:
-            return True, text_similarity, 1.0, "High text similarity match"
-            
-        # Calculate semantic similarity using OpenAI
-        try:
-            openai.api_key = os.getenv('OPENAI_API_KEY')
-            
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{
-                    "role": "system",
-                    "content": """You are a financial transaction analyzer. Compare these transactions 
-                    for semantic similarity in their business purpose and transaction type. Consider:
-                    1. Transaction category (e.g., both are utility payments)
-                    2. Business purpose (e.g., both are monthly subscriptions)
-                    3. Transaction nature (e.g., both are regular operational expenses)
-                    4. Economic meaning (e.g., both represent asset purchases)
-                    
-                    Return a JSON object with:
-                    {
-                        "similarity_score": float between 0-1,
-                        "reasoning": "brief explanation of similarity/difference",
-                        "confidence": float between 0-1
-                    }
-                    
-                    Focus on semantic meaning over text similarity. A score of 0.95 or higher 
-                    indicates transactions that serve the same business purpose despite different descriptions."""
-                }, {
-                    "role": "user",
-                    "content": f"Compare these transactions semantically:\nTransaction 1: {desc1}\nTransaction 2: {desc2}"
-                }],
-                temperature=0.2
-            )
-            
-            result = json.loads(response.choices[0].message.content)
-            semantic_similarity = float(result.get('similarity_score', 0.0))
-            reasoning = result.get('reasoning', '')
-            confidence = float(result.get('confidence', 0.8))
-            
-            logger.info(
-                f"ERF: Semantic analysis complete - "
-                f"Score: {semantic_similarity:.2f}, "
-                f"Confidence: {confidence:.2f}, "
-                f"Reason: {reasoning}"
-            )
-            
-            # Return True if either criterion is met
-            is_similar = (text_similarity >= 0.7) or (semantic_similarity >= 0.95)
-            return is_similar, text_similarity, semantic_similarity, reasoning
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"ERF: Error parsing OpenAI response: {str(e)}")
-            return False, text_similarity, 0.0, f"Error parsing AI response: {str(e)}"
-            
-        except openai.error.OpenAIError as e:
-            logger.error(f"ERF: OpenAI API error: {str(e)}")
-            return False, text_similarity, 0.0, f"OpenAI API error: {str(e)}"
-            
     except Exception as e:
-        logger.error(f"ERF: Unexpected error in similarity calculation: {str(e)}")
-        return False, 0.0, 0.0, f"Unexpected error: {str(e)}"
-        
-        result = json.loads(response.choices[0].message.content)
-        semantic_similarity = float(result.get('similarity_score', 0.0))
-        reasoning = result.get('reasoning', '')
-        confidence = float(result.get('confidence', 0.8))
-        
-        logger.info(
-            f"ERF: Semantic analysis complete - "
-            f"Score: {semantic_similarity:.2f}, "
-            f"Confidence: {confidence:.2f}, "
-            f"Reason: {reasoning}"
-        )
-        
-        # Return True if either criterion is met
-        is_similar = (text_similarity >= 0.7) or (semantic_similarity >= 0.95)
-        return is_similar, text_similarity, semantic_similarity, reasoning
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"ERF: Error parsing OpenAI response: {str(e)}")
-        return False, 0.0, 0.0, "Error parsing AI response"
-    except openai.error.OpenAIError as e:
-        logger.error(f"ERF: OpenAI API error: {str(e)}")
-        return False, 0.0, 0.0, f"OpenAI API error: {str(e)}"
-    except Exception as e:
-        logger.error(f"ERF: Unexpected error: {str(e)}")
-        return False, 0.0, 0.0, f"Unexpected error: {str(e)}"
-
-@main.route('/suggest_explanation', methods=['POST'])
-@login_required
-def suggest_explanation():
-    """Explanation Suggestion Feature (ESF) - Suggests explanations based on transaction description"""
+        logger.error(f"Error calculating text similarity: {str(e)}")
+        text_similarity = 0.0
+    
+    # Calculate semantic similarity using OpenAI
     try:
-        data = request.get_json()
-        description = data.get('description', '').strip()
-        
-        if not description:
-            return jsonify({'error': 'Description is required'}), 400
-            
-        # Get similar past transactions with explanations
-        similar_transactions = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.explanation.isnot(None),
-            Transaction.description.ilike(f"%{description}%")
-        ).limit(5).all()
-        
-        past_explanations = [
-            {
-                'description': t.description,
-                'explanation': t.explanation
-            } for t in similar_transactions
-        ]
-        
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{
-                    "role": "system",
-                    "content": """You are a financial transaction analyzer specialized in explaining business transactions.
-                    Analyze the transaction description and provide:
-                    1. A clear, concise explanation of the transaction's purpose
-                    2. Any relevant business context
-                    3. Potential accounting implications
-                    
-                    If similar transactions are provided, use their explanations as context while maintaining consistency.
-                    
-                    Return a JSON object with:
-                    {
-                        "suggested_explanation": "clear explanation",
-                        "confidence": float between 0-1,
-                        "reasoning": "why this explanation fits",
-                        "category_hint": "likely transaction category",
-                        "business_context": "additional business context"
-                    }"""
-                }, {
-                    "role": "user",
-                    "content": f"""Suggest an explanation for this transaction:
-                    Description: {description}
-                    
-                    Similar Past Transactions:
-                    {json.dumps(past_explanations, indent=2) if past_explanations else 'No similar past transactions found'}
-                    
-                    Consider any patterns or consistency in past explanations if available."""
-                }],
-                temperature=0.3
-            )
-            
-            suggestion = json.loads(response.choices[0].message.content)
-            
-            # Add metadata about the suggestion
-            suggestion['has_similar_transactions'] = bool(past_explanations)
-            suggestion['similar_transactions_count'] = len(past_explanations)
-            
-            logger.info(
-                f"ESF: Generated suggestion for '{description}' - "
-                f"Confidence: {suggestion.get('confidence', 0):.2f}, "
-                f"Similar Transactions: {len(past_explanations)}"
-            )
-            
-            return jsonify(suggestion)
-            
-        except (openai.error.OpenAIError, json.JSONDecodeError) as e:
-            logger.error(f"ESF: Error generating suggestion: {str(e)}")
-            return jsonify({
-                'error': 'Could not generate suggestion',
-                'details': str(e)
-            }), 500
-            
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{
+                "role": "system",
+                "content": "You are a financial transaction analyzer. Rate the semantic similarity of these two transaction descriptions on a scale of 0 to 1, where 1 means they refer to the same type of transaction and 0 means completely different types."
+            }, {
+                "role": "user",
+                "content": f"Description 1: {desc1}\nDescription 2: {desc2}\nProvide only the numerical score."
+            }]
+        )
+        semantic_similarity = float(response.choices[0].message.content.strip())
     except Exception as e:
-        logger.error(f"ESF: Unexpected error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error calculating semantic similarity: {str(e)}")
+        semantic_similarity = 0.0
+        
+    return text_similarity, semantic_similarity
 
 @main.route('/update_explanation', methods=['POST'])
 @login_required
@@ -960,72 +803,42 @@ def update_explanation():
         # ERF: Find similar transactions if explanation is provided
         similar_transactions = []
         if explanation:
-            # Get transactions without explanations
             all_transactions = Transaction.query.filter(
                 Transaction.user_id == current_user.id,
                 Transaction.id != transaction_id,
                 Transaction.explanation.is_(None)
             ).all()
             
-            logger.info(f"ERF: Analyzing {len(all_transactions)} transactions for similarities")
-            
             for trans in all_transactions:
                 try:
-                    is_similar, text_similarity, semantic_similarity = calculate_description_similarity(
+                    text_similarity, semantic_similarity = calculate_description_similarity(
                         description, 
                         trans.description
                     )
                     
-                    if is_similar:
-                        similar_transaction = {
+                    # ERF criteria: 70% text similarity OR 95% semantic similarity
+                    if text_similarity >= 0.7 or semantic_similarity >= 0.95:
+                        similar_transactions.append({
                             'id': trans.id,
                             'description': trans.description,
                             'text_similarity': round(text_similarity * 100, 1),
                             'semantic_similarity': round(semantic_similarity * 100, 1)
-                        }
-                        
-                        # Add categorization info
-                        if text_similarity >= 0.7:
-                            similar_transaction['match_type'] = 'Text Match'
-                            similar_transaction['match_confidence'] = text_similarity
-                        else:
-                            similar_transaction['match_type'] = 'Semantic Match'
-                            similar_transaction['match_confidence'] = semantic_similarity
-                        
-                        similar_transactions.append(similar_transaction)
-                        
-                        logger.debug(
-                            f"ERF: Found similar transaction - ID: {trans.id}, "
-                            f"Text Sim: {text_similarity:.2f}, "
-                            f"Semantic Sim: {semantic_similarity:.2f}"
-                        )
-                        
+                        })
                 except Exception as e:
                     logger.error(f"ERF: Error analyzing transaction {trans.id}: {str(e)}")
                     continue
             
-            # Sort by match confidence
+            # Sort by overall similarity (weighted average of text and semantic similarity)
             similar_transactions.sort(
-                key=lambda x: x['match_confidence'],
+                key=lambda x: (x['text_similarity'] + x['semantic_similarity']) / 2,
                 reverse=True
             )
-            
-            logger.info(
-                f"ERF: Found {len(similar_transactions)} similar transactions - "
-                f"Text Matches: {sum(1 for t in similar_transactions if t['match_type'] == 'Text Match')}, "
-                f"Semantic Matches: {sum(1 for t in similar_transactions if t['match_type'] == 'Semantic Match')}"
-            )
+            logger.info(f"ERF: Found {len(similar_transactions)} similar transactions for explanation replication")
         
         return jsonify({
             'success': True,
             'message': 'Explanation updated successfully',
-            'similar_transactions': similar_transactions,
-            'stats': {
-                'total_analyzed': len(all_transactions) if explanation else 0,
-                'similar_found': len(similar_transactions),
-                'text_matches': sum(1 for t in similar_transactions if t['match_type'] == 'Text Match'),
-                'semantic_matches': sum(1 for t in similar_transactions if t['match_type'] == 'Semantic Match')
-            }
+            'similar_transactions': similar_transactions
         })
         
     except Exception as e:
@@ -1036,7 +849,7 @@ def update_explanation():
 @main.route('/predict_account', methods=['POST'])
 @login_required
 def predict_account_route():
-    """AI-powered account suggestion based on transaction context (SF - Suggestion Feature)"""
+    """Predict account for transaction based on description and explanation"""
     try:
         data = request.get_json()
         description = data.get('description', '').strip()
@@ -1053,129 +866,28 @@ def predict_account_route():
         
         if not available_accounts:
             return jsonify({'error': 'No active accounts found'}), 400
-
-        # Format accounts for AI analysis
-        account_info = [
-            {
-                'id': acc.id,
-                'name': acc.name,
-                'category': acc.category,
-                'sub_category': acc.sub_category,
-                'link': acc.link
-            } for acc in available_accounts
-        ]
-
-        # Use OpenAI for intelligent account suggestions
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": """You are an expert financial analyst specializing in 
-                    Chart of Accounts classification. Your task is to:
-                    1. Analyze the transaction's business nature and purpose
-                    2. Understand the accounting implications
-                    3. Match with the most appropriate accounts
-                    4. Provide detailed reasoning for each suggestion
-                    
-                    Focus on standard accounting principles and business context."""},
-                    {"role": "user", "content": f"""
-                    Analyze this transaction and suggest the most appropriate accounts:
-                    
-                    Transaction Details:
-                    - Description: {description}
-                    - User's Explanation: {explanation if explanation else 'Not provided'}
-                    
-                    Available Accounts in Chart of Accounts:
-                    {json.dumps(account_info, indent=2)}
-                    
-                    Provide up to 3 best matching accounts with:
-                    1. Confidence score (0-1)
-                    2. Detailed reasoning
-                    3. Account category relevance
-                    
-                    Return as JSON array:
-                    [{{
-                        "account": {{account object}},
-                        "confidence": float,
-                        "reasoning": "string",
-                        "category_relevance": "string"
-                    }}]
-                    """}
-                ],
-                temperature=0.3
-            )
-            
-            # Parse and validate AI suggestions
-            suggestions = json.loads(response.choices[0].message.content)
-            validated_suggestions = []
-            
-            for suggestion in suggestions[:3]:  # Limit to top 3 suggestions
-                try:
-                    # Validate suggestion structure
-                    required_fields = ['account', 'confidence', 'reasoning', 'category_relevance']
-                    if not isinstance(suggestion, dict) or not all(k in suggestion for k in required_fields):
-                        continue
-                        
-                    # Validate account exists
-                    account_id = suggestion['account'].get('id')
-                    matching_account = next((acc for acc in available_accounts if acc.id == account_id), None)
-                    
-                    if matching_account:
-                        # Enhance suggestion with additional context
-                        suggestion['account'] = {
-                            'id': matching_account.id,
-                            'name': matching_account.name,
-                            'category': matching_account.category,
-                            'sub_category': matching_account.sub_category,
-                            'link': matching_account.link
-                        }
-                        suggestion['confidence'] = float(suggestion['confidence'])
-                        validated_suggestions.append(suggestion)
-                        
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"SF: Invalid suggestion format: {str(e)}")
-                    continue
-            
-            if not validated_suggestions:
-                logger.warning("SF: No valid suggestions generated")
-                return jsonify({
-                    'error': 'No valid account suggestions found',
-                    'details': 'The AI could not generate appropriate account matches'
-                }), 404
-            
-            logger.info(
-                f"SF: Generated {len(validated_suggestions)} suggestions for transaction. "
-                f"Description: {description[:50]}..."
-            )
-            return jsonify(validated_suggestions)
-            
-        except openai.error.OpenAIError as e:
-            logger.error(f"SF: OpenAI API error: {str(e)}")
-            return jsonify({
-                'error': 'Error generating AI predictions',
-                'details': str(e)
-            }), 500
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"SF: Error parsing AI response: {str(e)}")
-            return jsonify({
-                'error': 'Error processing AI response',
-                'details': 'Invalid response format'
-            }), 500
-            
-        except Exception as e:
-            logger.error(f"SF: Unexpected error in AI prediction: {str(e)}")
-            return jsonify({
-                'error': 'Unexpected error',
-                'details': str(e)
-            }), 500
-            
+        
+        # Find similar transactions with successful predictions
+        similar_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.account_id.isnot(None),  # Only get transactions with assigned accounts
+            Transaction.description.ilike(f"%{description}%")  # Fuzzy match on description
+        ).order_by(Transaction.date.desc()).limit(5).all()
+        
+        # Get predictions using AI, including historical data
+        predictions = predict_account(
+            description=description,
+            explanation=explanation,
+            available_accounts=available_accounts,
+            similar_transactions=similar_transactions
+        )
+        
+        logger.info(f"Generated account predictions for description: {description}")
+        return jsonify(predictions)
+        
     except Exception as e:
-        logger.error(f"SF: Error in account prediction route: {str(e)}")
-        return jsonify({
-            'error': 'Server error',
-            'details': str(e)
-        }), 500
+        logger.error(f"Error predicting account: {str(e)}")
+        return jsonify({'error': 'Error generating predictions'}), 500
         
     except Exception as e:
         logger.error(f"Error predicting account: {str(e)}")
