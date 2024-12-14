@@ -184,14 +184,15 @@
                                         class="btn btn-outline-primary suggest-btn"
                                         data-transaction-id="{{ transaction.id }}"
                                         {% if not ai_available %}
-                                        disabled
-                                        title="AI suggestions temporarily unavailable"
-                                        {% endif %}>
-                                    <i class="fas fa-magic"></i> Suggest
+                                        data-bs-toggle="tooltip"
+                                        title="AI suggestions temporarily unavailable. You can still enter explanations manually."
+                                        {% endif %}
+                                        {{ 'disabled' if not ai_available else '' }}>
+                                    <i class="fas fa-magic"></i> {{ 'AI Suggest' if ai_available else 'Manual Mode' }}
                                 </button>
                                 {% if not ai_available %}
                                 <small class="text-muted d-block mt-1">
-                                    <i class="fas fa-info-circle"></i> AI suggestions unavailable
+                                    <i class="fas fa-edit"></i> Manual entry available
                                 </small>
                                 {% endif %}
                             </td>

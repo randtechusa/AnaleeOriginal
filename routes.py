@@ -67,6 +67,19 @@ from ai_utils import (
     calculate_text_similarity
 )
 
+def check_ai_availability():
+    """Check if AI services are available without blocking core functionality"""
+    try:
+        # Quick test of AI service
+        test_result = predict_account(
+            "Test transaction",
+            "Test explanation",
+            [{'name': 'Test Account', 'category': 'Test', 'link': 'test'}]
+        )
+        return bool(test_result)
+    except Exception as e:
+        logger.warning(f"AI services unavailable: {str(e)}")
+        return False
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -376,7 +389,55 @@ def analyze(file_id):
     # Initialize variables with safe defaults
     transaction_insights = {}
     anomalies = {"error": None, "anomalies": [], "pattern_insights": {}}
-    ai_available = False  # Default to AI unavailable
+    
+    # Core functionality - load transactions and accounts
+    try:
+        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
+        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
+        transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
+        
+        if not transactions:
+            flash('No transactions found in this file.')
+            return redirect(url_for('main.upload'))
+            
+        # Initialize basic transaction insights structure
+        for transaction in transactions:
+            transaction_insights[transaction.id] = {
+                'similar_transactions': [],
+                'account_suggestions': [],
+                'explanation_suggestion': None,
+                'ai_processed': False
+            }
+    except Exception as e:
+        logger.error(f"Error loading core data: {str(e)}")
+        flash('Error loading transaction data')
+        return redirect(url_for('main.upload'))
+    
+    # Handle manual updates first (always available)
+    if request.method == 'POST':
+        try:
+            for transaction in transactions:
+                explanation_key = f'explanation_{transaction.id}'
+                account_key = f'account_{transaction.id}'
+                
+                if explanation_key in request.form:
+                    transaction.explanation = request.form[explanation_key]
+                if account_key in request.form and request.form[account_key]:
+                    transaction.account_id = int(request.form[account_key])
+            
+            db.session.commit()
+            flash('Changes saved successfully', 'success')
+        except Exception as e:
+            logger.error(f"Error saving changes: {str(e)}")
+            db.session.rollback()
+            flash('Error saving changes', 'error')
+    
+    # Check AI availability without blocking core functionality
+    ai_available = check_ai_availability()
+    logger.info(f"AI services {'available' if ai_available else 'unavailable'}")
+    
+    if not ai_available:
+        flash("AI suggestions temporarily unavailable. Manual entry mode active.", "info")
     
     # First load essential data
     try:
@@ -418,24 +479,42 @@ def analyze(file_id):
                 db.session.rollback()
                 flash('Error saving changes', 'error')
         
-        # Try to add AI insights if available (non-blocking)
-        try:
-            # Attempt to use AI features
-            ai_features_working = False
-            
-            # Test AI availability with a simple prediction
-            if transactions and transactions[0].description:
-                test_prediction = predict_account(
-                    transactions[0].description,
-                    transactions[0].explanation or '',
-                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
-                )
-                if test_prediction:
-                    ai_features_working = True
-                    ai_available = True
-            
-            if ai_features_working:
-                logger.info("AI features are available, processing insights...")
+        # AI feature processing (completely separate from core functionality)
+        if ai_available:
+            try:
+                for transaction in transactions:
+                    if transaction.description and not transaction.account_id:
+                        # Process AI features for each transaction independently
+                for transaction in transactions:
+                    try:
+                        # Try account suggestions (ASF) if no account is assigned
+                        if transaction.description and not transaction.account_id:
+                            try:
+                                account_suggestions = predict_account(
+                                    transaction.description,
+                                    transaction.explanation or '',
+                                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                                )
+                                if account_suggestions:
+                                    transaction_insights[transaction.id]['account_suggestions'] = account_suggestions
+                                    transaction_insights[transaction.id]['ai_processed'] = True
+                            except Exception as e:
+                                logger.warning(f"ASF unavailable for transaction {transaction.id}: {str(e)}")
+                                
+                        # Try explanation suggestion (ESF) if no explanation exists
+                        if not transaction.explanation:
+                            try:
+                                explanation = suggest_explanation(transaction.description)
+                                if explanation:
+                                    transaction_insights[transaction.id]['explanation_suggestion'] = explanation
+                                    transaction_insights[transaction.id]['ai_processed'] = True
+                            except Exception as e:
+                                logger.warning(f"ESF unavailable for transaction {transaction.id}: {str(e)}")
+                    except Exception as e:
+                        logger.warning(f"Failed to process AI features for transaction {transaction.id}: {str(e)}")
+                        continue
+
+                logger.info("AI features processing completed")
                 
                 # Process AI insights for each transaction
                 for transaction in transactions:
@@ -533,36 +612,41 @@ def analyze(file_id):
             db.session.rollback()
             flash('Error saving changes', 'error')
     
-    # Perform anomaly detection on transactions
-    try:
-        from ai_utils import detect_transaction_anomalies
-        anomalies = detect_transaction_anomalies(transactions)
-        logger.info(f"Detected anomalies: {anomalies}")
-    except Exception as e:
-        logger.error(f"Error detecting anomalies: {str(e)}")
-        anomalies = {"error": str(e)}
+    # Initialize anomalies with safe defaults
+    anomalies = {
+        "anomalies": [],
+        "pattern_insights": {},
+        "error": None
+    }
     
-    # Perform anomaly detection
-    try:
-        anomalies = detect_transaction_anomalies(transactions)
-        logger.info("Anomaly detection completed successfully")
-    except Exception as e:
-        logger.error(f"Error in anomaly detection: {str(e)}")
-        anomalies = {"error": "Failed to perform anomaly detection"}
-    
-    # Find similar transactions for each transaction
-    for transaction in transactions:
-        if transaction.description:
+    # Enhanced AI features (completely optional and non-blocking)
+    if ai_available:
+        try:
+            # Try anomaly detection
             try:
-                similar_trans = find_similar_transactions(
-                    transaction.description,
-                    [t for t in transactions if t.id != transaction.id]
-                )
-                if similar_trans:
-                    transaction_insights[transaction.id]['similar_transactions'] = similar_trans[:3]
-                logger.debug(f"Found similar transactions for transaction {transaction.id}")
+                detected_anomalies = detect_transaction_anomalies(transactions)
+                if detected_anomalies:
+                    anomalies = detected_anomalies
+                    logger.info("Anomaly detection completed successfully")
             except Exception as e:
-                logger.error(f"Error finding similar transactions: {str(e)}")
+                logger.warning(f"Anomaly detection unavailable: {str(e)}")
+
+            # Try finding similar transactions
+            for transaction in transactions:
+                if transaction.description:
+                    try:
+                        similar_trans = find_similar_transactions(
+                            transaction.description,
+                            [t for t in transactions if t.id != transaction.id]
+                        )
+                        if similar_trans:
+                            transaction_insights[transaction.id]['similar_transactions'] = similar_trans[:3]
+                            transaction_insights[transaction.id]['ai_processed'] = True
+                    except Exception as e:
+                        logger.warning(f"Similar transactions unavailable for transaction {transaction.id}: {str(e)}")
+        except Exception as e:
+            logger.warning(f"Enhanced AI features unavailable: {str(e)}")
+            # Continue with basic functionality even if AI features fail
     
     # Render template with all collected data
     try:

@@ -110,31 +110,36 @@ def create_app():
                     logger.error("Full error details:", exc_info=True)
                     raise
 
-                # Initialize database tables
-                db.create_all()
-                logger.debug("Database tables created successfully")
+                # Register blueprints first
+                try:
+                    from routes import main as main_blueprint
+                    app.register_blueprint(main_blueprint)
+                    logger.debug("Blueprints registered successfully")
+                except Exception as blueprint_error:
+                    logger.error(f"Error registering blueprints: {str(blueprint_error)}")
+                    raise
 
-                # Initialize backup manager
+                # Initialize database tables
+                try:
+                    db.create_all()
+                    logger.debug("Database tables created successfully")
+                except Exception as db_error:
+                    logger.error(f"Error creating database tables: {str(db_error)}")
+                    raise
+
+                # Initialize backup manager last (non-critical)
                 try:
                     backup_manager = DatabaseBackupManager(app.config['SQLALCHEMY_DATABASE_URI'])
                     logger.info("Backup manager initialized successfully")
-                except Exception as backup_error:
-                    logger.error(f"Error initializing backup manager: {str(backup_error)}")
-                    logger.warning("Application will continue without backup manager")
-
-                # Register blueprints
-                from routes import main as main_blueprint
-                app.register_blueprint(main_blueprint)
-                logger.debug("Blueprints registered successfully")
-                
-                # Initialize backup system
-                try:
+                    
+                    # Initialize backup system
                     backup_scheduler = init_backup_scheduler(app)
                     logger.info("Database backup system initialized successfully")
                 except Exception as backup_error:
-                    logger.error(f"Failed to initialize backup system: {str(backup_error)}")
-                    logger.warning("Application will continue without automated backups")
+                    logger.error(f"Error in backup system: {str(backup_error)}")
+                    logger.warning("Application will continue without backup functionality")
                 
+                logger.info("Application initialization completed successfully")
                 return app
                 
             except Exception as context_error:
