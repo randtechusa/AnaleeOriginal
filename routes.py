@@ -365,6 +365,7 @@ def dashboard():
 @main.route('/analyze/<int:file_id>', methods=['GET', 'POST'])
 @login_required
 def analyze(file_id):
+    # Get file and related data
     file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
     accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
     transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
@@ -372,6 +373,9 @@ def analyze(file_id):
     if not transactions:
         flash('No transactions found in this file. Please ensure the file contains valid transaction data.')
         return redirect(url_for('main.upload'))
+        
+    # Initialize transaction insights dictionary
+    transaction_insights = {}
         
     anomalies = None
     
@@ -579,32 +583,75 @@ def upload():
                     
                     logger.info(f"Initialized upload status tracking for {file.filename}")
                     
-                    # Optimized row counting and chunk processing
+                    # Read file data
                     if file.filename.endswith('.csv'):
-                        # Use generator expression for memory-efficient counting
-                        with pd.read_csv(file, chunksize=chunk_size) as reader:
-                            total_rows = sum(len(chunk.index) for chunk in reader)
-                        file.seek(0)  # Reset file pointer
-                        df_iterator = pd.read_csv(file, chunksize=chunk_size)
-                        logger.info(f"Processing CSV file with {total_rows} rows using chunked reading")
+                        df = pd.read_csv(file)
                     else:
-                        # Use optimized Excel reading with streaming
-                        df_iterator = pd.read_excel(
-                            file,
-                            engine='openpyxl',
-                            chunksize=chunk_size,
-                            stream=True
-                        )
-                        # Count rows efficiently
-                        total_rows = sum(1 for _ in df_iterator)
-                        file.seek(0)  # Reset for processing
-                        df_iterator = pd.read_excel(
-                            file,
-                            engine='openpyxl',
-                            chunksize=chunk_size,
-                            stream=True
-                        )
-                        logger.info(f"Processing Excel file with {total_rows} rows using streaming")
+                        df = pd.read_excel(file, engine='openpyxl')
+                    
+                    total_rows = len(df)
+                    logger.info(f"Processing file with {total_rows} rows")
+                    
+                    # Clean and normalize column names
+                    df.columns = df.columns.str.strip().str.lower()
+                    required_columns = ['date', 'description', 'amount']
+                    
+                    # Validate required columns
+                    missing_columns = [col for col in required_columns if col not in df.columns]
+                    if missing_columns:
+                        raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+                    
+                    # Process all rows
+                    valid_rows = []
+                    error_rows = []
+                    
+                    for idx, row in df.iterrows():
+                        try:
+                            # Parse date
+                            date_str = str(row['date'])
+                            try:
+                                parsed_date = pd.to_datetime(date_str)
+                            except:
+                                # Try specific formats if automatic parsing fails
+                                date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
+                                parsed_date = None
+                                for date_format in date_formats:
+                                    try:
+                                        parsed_date = pd.to_datetime(date_str, format=date_format)
+                                        break
+                                    except ValueError:
+                                        continue
+                                
+                                if not parsed_date:
+                                    logger.warning(f"Could not parse date: {date_str}")
+                                    continue
+                            
+                            # Create transaction object
+                            valid_rows.append({
+                                'date': parsed_date.to_pydatetime(),
+                                'description': str(row['description']),
+                                'amount': float(row['amount']),
+                                'explanation': '',
+                                'user_id': current_user.id,
+                                'file_id': uploaded_file.id
+                            })
+                            
+                        except Exception as row_error:
+                            error_msg = f"Row {idx}: {str(row_error)}"
+                            error_rows.append(error_msg)
+                            logger.warning(error_msg)
+                    
+                    # Batch insert valid rows
+                    if valid_rows:
+                        db.session.bulk_insert_mappings(Transaction, valid_rows)
+                        db.session.commit()
+                        logger.info(f"Successfully inserted {len(valid_rows)} transactions")
+                    
+                    # Update progress
+                    processed_rows = len(valid_rows)
+                    progress_percentage = min(int((processed_rows / total_rows) * 100), 100)
+                    
+                    logger.info(f"Processed {processed_rows} rows with {len(error_rows)} errors")
                     
                     # Update session with total rows
                     session['upload_status']['total_rows'] = total_rows
