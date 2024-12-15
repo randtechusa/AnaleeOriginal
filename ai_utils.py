@@ -25,10 +25,9 @@ def get_openai_client():
         logger.error(f"Error initializing OpenAI client: {str(e)}")
         raise
 
-def predict_account(description: str, explanation: str, available_accounts: List[Dict], max_retries: int = 3, base_delay: float = 1.0) -> List[Dict]:
+def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
-    Account Suggestion Feature (ASF): AI-powered account suggestions
-    Makes direct API calls for predictions with exponential backoff for rate limits
+    Account Suggestion Feature (ASF): AI-powered account suggestions based on transaction description
     """
     if not description or not available_accounts:
         logger.error("Missing required parameters for account prediction")
@@ -39,8 +38,7 @@ def predict_account(description: str, explanation: str, available_accounts: List
     # Initialize OpenAI client
     client = get_openai_client()
     
-    for attempt in range(max_retries):
-        try:
+    try:
         
         # Format available accounts
         account_info = "\n".join([
@@ -598,42 +596,61 @@ def calculate_text_similarity(text1: str, text2: str) -> float:
         logger.error(f"Error calculating text similarity: {str(e)}")
         return 0.0
 
-def find_similar_transactions(transaction_description: str, transactions: list, text_threshold: float = 0.7, semantic_threshold: float = 0.95) -> list:
+def find_similar_transactions(transaction_description: str, transactions: list) -> list:
     """
-    Find transactions with similar descriptions based on ERF requirements:
+    ERF (Explanation Recognition Feature): 
+    Find transactions with similar descriptions based on:
     - 70% text similarity OR
-    - 95% semantic similarity
+    - 95% semantic similarity threshold
     """
+    TEXT_THRESHOLD = 0.7
+    SEMANTIC_THRESHOLD = 0.95
+
     if not transaction_description or not transactions:
         logger.warning("Empty transaction description or transactions list")
         return []
         
     similar_transactions = []
-    logger.info(f"Finding similar transactions for description: {transaction_description}")
+    logger.info(f"ERF: Finding similar transactions for description: {transaction_description}")
     
-    try:
-        for transaction in transactions:
-            if not transaction.description:
-                continue
-                
-            try:
-                # Calculate similarity
-                similarity = calculate_text_similarity(
-                    transaction_description.strip(),
-                    transaction.description.strip()
-                )
-                
-                logger.debug(f"Similarity score: {similarity} for transaction: {transaction.description}")
-                
-                # Add transaction if it meets either threshold
-                if similarity >= text_threshold or similarity >= semantic_threshold:
-                    similar_transactions.append({
-                        'transaction': transaction,
-                        'similarity': similarity
-                    })
-            except Exception as calc_error:
-                logger.error(f"Error calculating similarity for transaction {transaction.id}: {str(calc_error)}")
-                continue
+    # Initialize OpenAI client
+    client = get_openai_client()
+    
+    for transaction in transactions:
+        if not transaction.description:
+            continue
+            
+        # Calculate semantic similarity using OpenAI
+        prompt = f"""Compare these two transaction descriptions and rate their semantic similarity:
+        Description 1: {transaction_description.strip()}
+        Description 2: {transaction.description.strip()}
+        
+        Consider both textual similarity and semantic meaning.
+        Return only a single float number between 0 and 1."""
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a financial text analysis expert. Analyze transaction descriptions for similarity."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=50
+        )
+        
+        try:
+            similarity = float(response.choices[0].message.content.strip())
+            logger.debug(f"Similarity score: {similarity} for transaction: {transaction.description}")
+            
+            # Add transaction if it meets either threshold
+            if similarity >= TEXT_THRESHOLD or similarity >= SEMANTIC_THRESHOLD:
+                similar_transactions.append({
+                    'transaction': transaction,
+                    'similarity': similarity
+                })
+        except ValueError:
+            logger.error("Could not parse similarity score from API response")
+            continue
         
         # Sort by similarity score in descending order
         similar_transactions.sort(key=lambda x: x['similarity'], reverse=True)
@@ -644,14 +661,17 @@ def find_similar_transactions(transaction_description: str, transactions: list, 
         logger.error(f"Error in find_similar_transactions: {str(e)}")
         return []
 
-def suggest_explanation(description: str, similar_transactions: list = None, max_retries: int = 3, base_delay: float = 1.0) -> dict:
-    """Generate explanation suggestions using AI with exponential backoff for rate limits."""
-    logger.info("Using AI-powered explanation generation")
+def suggest_explanation(description: str, similar_transactions: list = None) -> dict:
+    """
+    ESF (Explanation Suggestion Feature): 
+    Proactively generates explanation suggestions based on transaction description
+    """
+    logger.info("ESF: Generating explanation suggestion")
     
+    # Initialize OpenAI client
     client = get_openai_client()
     
-    for attempt in range(max_retries):
-        try:
+    try:
         
         # Format similar transactions for context
         similar_context = ""
