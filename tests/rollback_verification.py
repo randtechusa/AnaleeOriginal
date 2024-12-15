@@ -42,8 +42,29 @@ class RollbackVerificationTest:
         self.logger.info("Initializing rollback verification test suite with app context")
         
         try:
+            # Strict environment separation
+            if not app.config.get('TESTING') or not app.config.get('ENABLE_ROLLBACK_TESTS'):
+                self.logger.warning(
+                    "Rollback verification tests can only run in testing environment. "
+                    "Production environment and core features are protected."
+                )
+                return
+            
+            # Use completely separate test database
+            test_db_url = os.environ.get('TEST_DATABASE_URL')
+            if not test_db_url:
+                self.logger.warning(
+                    "TEST_DATABASE_URL not configured. "
+                    "Verification tests cannot proceed without separate test database."
+                )
+                return
+                
+            app.config['SQLALCHEMY_DATABASE_URI'] = test_db_url
+            self.logger.info("Using isolated test database for verifications")
+            
             # Verify database connection in app context
             with app.app_context():
+                # Verify we can connect but NOT modify
                 db.session.execute(text('SELECT 1'))
                 self.logger.info("Database connection verified for test suite")
         except Exception as e:
@@ -51,22 +72,31 @@ class RollbackVerificationTest:
             self.logger.warning("Test suite initialization proceeded with warnings")
             
     def _check_environment(self) -> bool:
-        """Verify we're in a safe environment for testing"""
+        """Verify we're in a completely isolated test environment"""
         if not self.app:
             self.logger.error("No Flask application context available")
             return False
             
-        if not self.app.config.get('TESTING'):
-            self.logger.error("Cannot run verifications in production environment")
+        # Strict environment checks
+        if not all([
+            self.app.config.get('TESTING'),
+            self.app.config.get('ENABLE_ROLLBACK_TESTS'),
+            os.environ.get('TEST_DATABASE_URL'),
+            self.app.config['SQLALCHEMY_DATABASE_URI'] == os.environ.get('TEST_DATABASE_URL')
+        ]):
+            self.logger.error(
+                "Verification tests require strict isolation:\n"
+                "- TESTING mode must be enabled\n"
+                "- ENABLE_ROLLBACK_TESTS must be True\n"
+                "- Separate TEST_DATABASE_URL must be configured\n"
+                "- Must use isolated test database\n"
+                "These protections preserve production data and core features."
+            )
             return False
             
-        if not self.app.config.get('ENABLE_ROLLBACK_TESTS'):
-            self.logger.error("Rollback tests are disabled")
-            return False
-            
-        # Verify we're using test database
-        if not self.app.config['SQLALCHEMY_DATABASE_URI'].endswith('_test'):
-            self.logger.error("Must use test database for verification tests")
+        # Ensure we're not in production
+        if self.app.config.get('ENV') == 'production':
+            self.logger.error("Verification tests cannot run in production environment")
             return False
             
         return True
