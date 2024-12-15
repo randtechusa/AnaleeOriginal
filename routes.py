@@ -222,6 +222,7 @@ def company_settings():
 @login_required
 def analyze(file_id):
     logger.info(f"Starting analysis for file_id: {file_id} for user {current_user.id}")
+    logger.debug("Loading file and verifying ownership")
     
     try:
         # Load file and verify ownership with detailed logging
@@ -257,10 +258,10 @@ def analyze(file_id):
             
         # Initialize insights dictionary for AI features
         transaction_insights = {}
-        
+            
         # Process POST request if any
-        if request.method == 'POST':
-            try:
+        try:
+            if request.method == 'POST':
                 for transaction in transactions:
                     explanation_key = f'explanation_{transaction.id}'
                     account_key = f'account_{transaction.id}'
@@ -269,45 +270,70 @@ def analyze(file_id):
                         transaction.explanation = request.form[explanation_key]
                     if account_key in request.form and request.form[account_key]:
                         transaction.account_id = int(request.form[account_key])
-                
+                        
                 db.session.commit()
                 flash('Changes saved successfully', 'success')
-            except Exception as e:
-                logger.error(f"Error saving changes: {str(e)}")
-                db.session.rollback()
-                flash('Error saving changes', 'error')
-        
-        # Process predictions for each transaction using hybrid approach
+        except Exception as e:
+            logger.error(f"Error saving changes: {str(e)}")
+            db.session.rollback()
+            flash('Error saving changes', 'error')
+
+        # Import PredictiveEngine at the start of processing
+        from predictive_utils import PredictiveEngine
+        engine = PredictiveEngine()
+                
+        # Process each transaction with both AI and pattern-based predictions
         for transaction in transactions:
             try:
-                from predictive_utils import PredictiveEngine
-                engine = PredictiveEngine()
-                
-                # Get suggestions using all methods while preserving core features
-                suggestions = engine.get_hybrid_suggestions(
+                # 1. Core AI Features (ERF) - Find similar transactions
+                similar_trans = find_similar_transactions(
+                    transaction.description,
+                    Transaction.query.filter(
+                        Transaction.user_id == current_user.id,
+                        Transaction.id != transaction.id
+                    ).all()
+                )
+                    
+                # Prepare account data for predictions
+                account_data = [{
+                    'name': acc.name,
+                    'category': acc.category,
+                    'link': acc.link
+                } for acc in accounts]
+                    
+                # 2. Core AI Feature (ASF) - Get AI account suggestions
+                ai_account_suggestions = predict_account(
+                    transaction.description,
+                    transaction.explanation or '',
+                    account_data
+                )
+                    
+                # 3. Core AI Feature (ESF) - Get AI explanation suggestions
+                ai_explanation = suggest_explanation(
+                    transaction.description,
+                    similar_trans
+                )
+                    
+                # 4. Pattern & Rule-based predictions
+                hybrid_suggestions = engine.get_hybrid_suggestions(
                     transaction.description,
                     transaction.amount,
                     current_user.id,
                     accounts
                 )
-                
-                # Combine suggestions while maintaining original AI features
-                best_account_id, best_explanation = engine.combine_suggestions(suggestions)
-                
+                    
+                # Combine all predictions while preserving core AI features
                 transaction_insights[transaction.id] = {
-                    'similar_transactions': suggestions['pattern_matches'],  # Pattern-based matches
-                    'account_suggestions': [
-                        *suggestions['rule_matches'],  # Rule-based matches
-                        *suggestions.get('ai_suggestions', [])  # Preserved AI suggestions
-                    ],
-                    'explanation_suggestion': best_explanation,
+                    'similar_transactions': similar_trans,  # ERF results
+                    'account_suggestions': ai_account_suggestions,  # ASF results
+                    'explanation_suggestion': ai_explanation,  # ESF results
                     'ai_processed': True,
-                    'pattern_matches': suggestions['pattern_matches'],  # Additional pattern insights
-                    'rule_matches': suggestions['rule_matches']  # Additional rule insights
+                    'pattern_matches': hybrid_suggestions.get('pattern_matches', []),
+                    'rule_matches': hybrid_suggestions.get('rule_matches', [])
                 }
-                
+                    
             except Exception as e:
-                logger.error(f"Error processing AI features for transaction {transaction.id}: {str(e)}")
+                logger.error(f"Error processing transaction {transaction.id}: {str(e)}")
                 transaction_insights[transaction.id] = {
                     'similar_transactions': [],
                     'account_suggestions': [],
@@ -677,6 +703,10 @@ def expense_forecast():
 @main.route('/verify-rollback', methods=['POST'])
 @login_required
 def verify_rollback():
+    """
+    Endpoint to verify system integrity after rollback operations.
+    Focuses on preserving core AI features (ERF, ASF, ESF) and data integrity.
+    """
     try:
         from tests.rollback_verification import RollbackVerificationTest
         
@@ -701,29 +731,45 @@ def verify_rollback():
         current_app.config['ENABLE_ROLLBACK_TESTS'] = True
         
         try:
+            # Run comprehensive verifications
             results = verifier.run_all_verifications(reference_time)
-            
             logger.info(f"Rollback verification results: {results}")
             
-            # Check if core AI features are preserved
-            ai_features_intact = results.get('ai_features', {}).get('success', False)
+            # Detailed verification of core AI features
+            ai_features = results.get('ai_features', {})
+            ai_features_intact = ai_features.get('success', False)
+            
+            # Check individual AI components
+            erf_status = ai_features.get('erf_status', False)
+            asf_status = ai_features.get('asf_status', False)
+            esf_status = ai_features.get('esf_status', False)
+            
             if not ai_features_intact:
-                logger.error("Core AI features (ERF, ASF, ESF) verification failed")
+                logger.error("Core AI features verification failed")
+                logger.error(f"ERF Status: {erf_status}")
+                logger.error(f"ASF Status: {asf_status}")
+                logger.error(f"ESF Status: {esf_status}")
                 flash("Warning: Core AI features integrity check failed", "error")
             
+            # Verify overall system integrity
             all_passed = all(isinstance(v, dict) and v.get('success', False) for v in results.values())
             
             if all_passed:
                 flash("All rollback verifications passed successfully", "success")
             else:
                 failed_tests = [k for k, v in results.items() if isinstance(v, dict) and not v.get('success', False)]
-                flash(f"Some verifications failed: {', '.join(failed_tests)}", "error")
+                flash(f"Verification failed for: {', '.join(failed_tests)}", "error")
             
             return jsonify({
                 'success': all_passed,
                 'results': results,
                 'reference_time': reference_time.isoformat(),
-                'ai_features_intact': ai_features_intact
+                'ai_features': {
+                    'intact': ai_features_intact,
+                    'erf_status': erf_status,
+                    'asf_status': asf_status,
+                    'esf_status': esf_status
+                }
             })
             
         finally:
