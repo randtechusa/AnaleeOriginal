@@ -49,10 +49,10 @@ def verify_database():
             logger.exception("Full database connection error:")
         return False
 
-def create_app():
+def create_app(env='production'):
     """Create and configure the Flask application"""
     app = Flask(__name__)
-    logger.info("Starting Flask application initialization...")
+    logger.info(f"Starting Flask application initialization in {env} environment...")
     
     # Get database URL and handle legacy format
     database_url = os.environ.get("DATABASE_URL")
@@ -64,20 +64,32 @@ def create_app():
         database_url = database_url.replace("postgres://", "postgresql://", 1)
         
     # Configure Flask app
-    app.config.update(
-        SECRET_KEY=os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
-        SQLALCHEMY_DATABASE_URI=database_url,
-        SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        TEMPLATES_AUTO_RELOAD=True,
-        DEBUG=True,
-        RATELIMIT_DEFAULT="100 per minute",
-        RATELIMIT_STORAGE_URL=database_url,
-        RATELIMIT_STRATEGY='fixed-window',
-        RATELIMIT_KEY_PREFIX='global_',
-        RATELIMIT_HEADERS_ENABLED=True,
-        SCHEDULER_EXECUTORS={'default': {'type': 'threadpool', 'max_workers': 20}},
-        SCHEDULER_JOB_DEFAULTS={'coalesce': False, 'max_instances': 3}
-    )
+    # Environment-specific configuration
+    config = {
+        'ENV': env,
+        'TESTING': env == 'testing',
+        'ENABLE_ROLLBACK_TESTS': env == 'testing',
+        'SECRET_KEY': os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
+        'SQLALCHEMY_TRACK_MODIFICATIONS': False,
+        'TEMPLATES_AUTO_RELOAD': True,
+        'DEBUG': True,
+        'RATELIMIT_DEFAULT': "100 per minute",
+        'RATELIMIT_STRATEGY': 'fixed-window',
+        'RATELIMIT_KEY_PREFIX': 'global_',
+        'RATELIMIT_HEADERS_ENABLED': True,
+        'SCHEDULER_EXECUTORS': {'default': {'type': 'threadpool', 'max_workers': 20}},
+        'SCHEDULER_JOB_DEFAULTS': {'coalesce': False, 'max_instances': 3}
+    }
+    
+    # Set database URL based on environment
+    if env == 'testing':
+        config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('TEST_DATABASE_URL', database_url + '_test')
+        config['RATELIMIT_STORAGE_URL'] = config['SQLALCHEMY_DATABASE_URI']
+    else:
+        config['SQLALCHEMY_DATABASE_URI'] = database_url
+        config['RATELIMIT_STORAGE_URL'] = database_url
+    
+    app.config.update(config)
     logger.debug("Flask app configuration completed")
 
     # Initialize Flask extensions

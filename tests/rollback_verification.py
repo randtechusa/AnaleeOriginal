@@ -25,7 +25,14 @@ class RollbackVerificationTest:
             self.logger.setLevel(logging.INFO)
             
         if app:
-            self.init_app(app)
+            # Only initialize if we're in testing environment
+            if app.config.get('ENABLE_ROLLBACK_TESTS'):
+                self.init_app(app)
+            else:
+                self.logger.warning(
+                    "Rollback tests are disabled in production environment. "
+                    "Set ENABLE_ROLLBACK_TESTS=True to enable testing."
+                )
             
     def init_app(self, app):
         """Initialize the test suite with the Flask app context"""
@@ -36,6 +43,20 @@ class RollbackVerificationTest:
             # Verify database connection in app context
             with app.app_context():
                 from models import db
+    def _check_environment(self) -> bool:
+        """Verify we're in a safe environment for testing"""
+        if not self.app:
+            self.logger.error("No Flask application context available")
+            return False
+            
+        if not self.app.config.get('ENABLE_ROLLBACK_TESTS'):
+            self.logger.error(
+                "Rollback tests are disabled. "
+                "Cannot run verifications in production environment."
+            )
+            return False
+            
+        return True
                 db.session.execute(text('SELECT 1'))
                 self.logger.info("Database connection verified for test suite")
         except Exception as e:
@@ -523,7 +544,14 @@ class RollbackVerificationTest:
         """
         Runs all verification checks and returns detailed results
         """
-        self.logger.info("Starting verification suite")
+        if not self._check_environment():
+            return {
+                'error': 'Cannot run verifications in production environment',
+                'timestamp': datetime.utcnow(),
+                'environment': self.app.config.get('ENV', 'unknown')
+            }
+            
+        self.logger.info("Starting verification suite in testing environment")
         
         verifications = [
             ('transaction_consistency', lambda: self.verify_transaction_consistency(reference_time)),
