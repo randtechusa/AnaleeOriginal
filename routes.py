@@ -9,6 +9,12 @@ from models import User, Account, Transaction, UploadedFile, CompanySettings
 from app import db
 import pandas as pd
 import time
+from ai_utils import (
+    find_similar_transactions,
+    predict_account,
+    suggest_explanation,
+    handle_rate_limit
+)
 
 def process_uploaded_file(file, status):
     """Process the uploaded file and return dataframe and total rows."""
@@ -349,14 +355,48 @@ def analyze(file_id):
             flash('No transactions found in this file.')
             return redirect(url_for('main.upload'))
             
+        # Process transactions with AI features
         transaction_insights = {}
         for transaction in transactions:
-            transaction_insights[transaction.id] = {
-                'similar_transactions': [],
-                'account_suggestions': [],
-                'explanation_suggestion': None,
-                'ai_processed': False
-            }
+            try:
+                # Find similar transactions (ERF)
+                similar_trans = find_similar_transactions(
+                    transaction.description,
+                    Transaction.query.filter(
+                        Transaction.user_id == current_user.id,
+                        Transaction.id != transaction.id
+                    ).all()
+                )
+                
+                # Get account suggestions (ASF)
+                account_suggestions = predict_account(
+                    transaction.description,
+                    transaction.explanation or '',
+                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                )
+                
+                # Get explanation suggestions (ESF)
+                explanation = suggest_explanation(
+                    transaction.description,
+                    similar_trans if similar_trans else None
+                )
+                
+                transaction_insights[transaction.id] = {
+                    'similar_transactions': similar_trans,
+                    'account_suggestions': account_suggestions,
+                    'explanation_suggestion': explanation,
+                    'ai_processed': True
+                }
+                
+            except Exception as e:
+                logger.error(f"Error processing AI features for transaction {transaction.id}: {str(e)}")
+                transaction_insights[transaction.id] = {
+                    'similar_transactions': [],
+                    'account_suggestions': [],
+                    'explanation_suggestion': None,
+                    'ai_processed': False,
+                    'error': str(e)
+                }
     except Exception as e:
         logger.error(f"Error loading core data: {str(e)}")
         flash('Error loading transaction data')
