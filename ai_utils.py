@@ -8,18 +8,27 @@ import time
 
 def handle_rate_limit(func, max_retries=3, base_delay=1):
     """
-    Decorator to handle rate limiting with exponential backoff
+    Enhanced decorator to handle rate limiting with proper retry-after handling
     """
     def wrapper(*args, **kwargs):
-        for attempt in range(max_retries):
+        remaining_retries = max_retries
+        while remaining_retries > 0:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                if "rate limit" in str(e).lower() and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    logger.info(f"Rate limit hit, waiting {delay} seconds before retry {attempt + 1}/{max_retries}")
-                    time.sleep(delay)
-                    continue
+                if isinstance(e, openai.RateLimitError) or "rate limit" in str(e).lower():
+                    if remaining_retries > 1:
+                        # Extract retry-after if available, otherwise use exponential backoff
+                        if hasattr(e, 'response') and e.response.headers.get('retry-after'):
+                            delay = float(e.response.headers['retry-after'])
+                        else:
+                            delay = base_delay * (2 ** (max_retries - remaining_retries))
+                        
+                        logger.info(f"Rate limit hit, waiting {delay} seconds before retry {max_retries - remaining_retries + 1}/{max_retries}")
+                        time.sleep(delay)
+                        remaining_retries -= 1
+                        continue
+                logger.error(f"Rate limit exceeded after {max_retries} retries: {str(e)}")
                 raise
         return None
     return wrapper
@@ -45,18 +54,39 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Initialize OpenAI client function to ensure fresh client on each request
+# Global client instance
+_openai_client = None
+_last_client_error = None
+_client_error_threshold = 3
+
 def get_openai_client():
+    """
+    Get or create OpenAI client with improved error handling and caching
+    """
+    global _openai_client, _last_client_error, _client_error_threshold
+    
     try:
+        # Return existing client if available
+        if _openai_client is not None:
+            return _openai_client
+            
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
             logger.error("OpenAI API key not found in environment variables")
             raise ValueError("OpenAI API key not configured")
         
-        client = openai.OpenAI(api_key=api_key)
+        _openai_client = openai.OpenAI(api_key=api_key)
         logger.info("OpenAI client initialized successfully")
-        return client
+        return _openai_client
+        
     except Exception as e:
-        logger.error(f"Error initializing OpenAI client: {str(e)}")
+        _last_client_error = str(e)
+        logger.error(f"Error initializing OpenAI client: {_last_client_error}")
+        
+        # Check if we need to verify the API key
+        if "invalid api key" in str(e).lower():
+            logger.critical("Invalid API key detected - please verify your OpenAI API key")
+        
         raise
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
@@ -133,33 +163,67 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
 
         try:
             content = get_account_suggestions()
-            if content and content.startswith('[') and content.endswith(']'):
-                suggestions = json.loads(content)
-                
-                # Validate and format suggestions
-                valid_suggestions = []
-                for suggestion in suggestions:
-                    # Only include suggestions that match existing accounts
-                    matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
-                    if matching_accounts:
-                        financial_insight = suggestion.get('financial_insight', suggestion.get('reasoning', ''))
-                        valid_suggestions.append({
-                            **suggestion,
-                            'account': matching_accounts[0],
-                            'financial_insight': financial_insight
-                        })
-                
-                return valid_suggestions[:3]  # Return top 3 suggestions
-            else:
-                logger.error("Invalid response format from AI")
+            if not content:
+                logger.error("Empty response from AI service")
                 return rule_based_account_matching(description, available_accounts)
+                
+            # Validate JSON structure
+            if not (content.startswith('[') and content.endswith(']')):
+                logger.error("Invalid JSON format in AI response")
+                return rule_based_account_matching(description, available_accounts)
+                
+            try:
+                suggestions = json.loads(content)
+            except json.JSONDecodeError as je:
+                logger.error(f"JSON parsing error: {str(je)}")
+                return rule_based_account_matching(description, available_accounts)
+            
+            # Enhanced validation and formatting
+            valid_suggestions = []
+            for suggestion in suggestions:
+                try:
+                    # Validate required fields
+                    if not all(k in suggestion for k in ['account_name', 'confidence']):
+                        logger.warning(f"Skipping suggestion due to missing required fields: {suggestion}")
+                        continue
+                        
+                    # Match with available accounts
+                    matching_accounts = [
+                        acc for acc in available_accounts 
+                        if acc['name'].lower() == suggestion['account_name'].lower()
+                    ]
+                    
+                    if matching_accounts:
+                        # Enhanced suggestion with additional validations
+                        financial_insight = suggestion.get('financial_insight', 
+                                                        suggestion.get('reasoning', 'No detailed insight available'))
+                        valid_suggestion = {
+                            'account_name': suggestion['account_name'],
+                            'confidence': min(max(float(suggestion['confidence']), 0.0), 1.0),  # Ensure valid confidence range
+                            'account': matching_accounts[0],
+                            'financial_insight': financial_insight,
+                            'reasoning': suggestion.get('reasoning', 'No reasoning provided')
+                        }
+                        valid_suggestions.append(valid_suggestion)
+                        
+                except Exception as suggestion_error:
+                    logger.warning(f"Error processing suggestion: {str(suggestion_error)}")
+                    continue
+            
+            if not valid_suggestions:
+                logger.warning("No valid suggestions found from AI response")
+                return rule_based_account_matching(description, available_accounts)
+                
+            # Sort by confidence and return top 3
+            valid_suggestions.sort(key=lambda x: x['confidence'], reverse=True)
+            return valid_suggestions[:3]
                 
         except Exception as e:
             logger.error(f"Error processing AI response: {str(e)}")
             return rule_based_account_matching(description, available_accounts)
             
     except Exception as e:
-        logger.error(f"Error in predict_account: {str(e)}")
+        logger.error(f"Critical error in predict_account: {str(e)}")
         return rule_based_account_matching(description, available_accounts)
 
 def detect_transaction_anomalies(transactions, historical_data=None):
