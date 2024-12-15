@@ -516,32 +516,16 @@ def analyze(file_id):
 
                 logger.info("AI features processing completed")
                 
-                # Process AI insights for each transaction
-                for transaction in transactions:
-                    if transaction.description:
-                        # Get account suggestions (ASF)
-                        if not transaction.account_id:
-                            try:
-                                account_suggestions = predict_account(
-                                    transaction.description,
-                                    transaction.explanation or '',
-                                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
-                                )
-                                if account_suggestions:
-                                    transaction_insights[transaction.id]['account_suggestions'] = account_suggestions
-                            except Exception as e:
-                                logger.warning(f"ASF error for transaction {transaction.id}: {str(e)}")
-                                continue
-                    
-                    # Get explanation suggestion if none exists
-                    if not transaction.explanation:
-                        try:
-                            explanation = suggest_explanation(transaction.description)
-                            if explanation:
-                                transaction_insights[transaction.id]['explanation_suggestion'] = explanation
-                        except Exception as e:
-                            logger.warning(f"ESF unavailable for transaction {transaction.id}: {str(e)}")
-                            ai_available = False
+                # Process anomaly detection if AI is available
+                if ai_available:
+                    try:
+                        detected_anomalies = detect_transaction_anomalies(transactions)
+                        if detected_anomalies:
+                            anomalies.update(detected_anomalies)
+                            logger.info("Anomaly detection completed successfully")
+                    except Exception as e:
+                        logger.warning(f"Anomaly detection unavailable: {str(e)}")
+                        # Continue with core functionality
                             
         except Exception as e:
             logger.warning(f"AI features unavailable: {str(e)}")
