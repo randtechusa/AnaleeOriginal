@@ -498,7 +498,6 @@ def predict_account_route():
         logger.error(f"Error predicting account: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@main.route('/expense-forecast')
 @main.route('/financial-insights')
 @login_required
 def financial_insights():
@@ -529,6 +528,8 @@ def financial_insights():
         logger.error(f"Error in financial insights: {str(e)}")
         flash('Error generating financial insights')
         return redirect(url_for('main.dashboard'))
+
+@main.route('/expense-forecast')
 @login_required
 def expense_forecast():
     try:
