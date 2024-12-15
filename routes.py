@@ -768,8 +768,71 @@ def upload():
                     logger.error(f"Error in upload processing: {str(e)}")
                     return jsonify({'error': str(e)}), 500
     
-    # Default render if no file upload
-    return render_template('upload.html', files=files, bank_accounts=bank_accounts)
+    try:
+        files = []
+        bank_accounts = []
+        files = UploadedFile.query.filter_by(user_id=current_user.id).all()
+        bank_accounts = Account.query.filter_by(user_id=current_user.id).all()
+        return render_template('upload.html', files=files, bank_accounts=bank_accounts)
+    except Exception as e:
+        logger.error(f"Error in upload route: {str(e)}")
+        flash('An error occurred during file upload', 'error')
+        return render_template('upload.html', files=[], bank_accounts=[])
+
+def init_upload_status(filename):
+    """Initialize upload status tracking"""
+    logger.info(f"Initializing upload status tracking for {filename}")
+    try:
+        # Initialize progress tracking
+        upload_status = {
+            'filename': filename,
+            'total_rows': 0,
+            'processed_rows': 0,
+            'failed_rows': 0,
+            'current_chunk': 0,
+            'status': 'counting',
+            'start_time': datetime.utcnow().isoformat(),
+            'last_update': datetime.utcnow().isoformat(),
+            'errors': [],
+            'progress_percentage': 0
+        }
+        return upload_status
+    except Exception as e:
+        logger.error(f"Error initializing upload status: {str(e)}")
+        raise
+
+def process_uploaded_file(file, upload_status):
+    """Helper function to process the uploaded file"""
+    try:
+        # Read file data
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file, engine='openpyxl')
+        
+        total_rows = len(df)
+        logger.info(f"Processing file with {total_rows} rows")
+        
+        # Update upload status
+        upload_status['total_rows'] = total_rows
+        upload_status['status'] = 'processing'
+        session['upload_status'] = upload_status
+        session.modified = True
+        
+        # Clean and normalize column names
+        df.columns = df.columns.str.strip().str.lower()
+        required_columns = ['date', 'description', 'amount']
+        
+        # Validate required columns
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+        
+        return df, total_rows
+        
+    except Exception as e:
+        logger.error(f"Error processing file {file.filename}: {str(e)}")
+        raise
 
 @main.route('/verify-rollback', methods=['POST'])
 @login_required
@@ -889,17 +952,33 @@ def init_upload_status(filename):
     except Exception as e:
         logger.error(f"Error reading file {file.filename}: {str(e)}")
         raise
-                    df.columns = df.columns.str.strip().str.lower()
-                    required_columns = ['date', 'description', 'amount']
-                    
-                    # Validate required columns
-                    missing_columns = [col for col in required_columns if col not in df.columns]
-                    if missing_columns:
-                        raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
-                    
-                    # Process all rows
-                    valid_rows = []
-                    error_rows = []
+                    def process_transaction_rows(df, uploaded_file, current_user):
+    """Process transaction rows from the dataframe"""
+    valid_rows = []
+    error_rows = []
+    
+    for idx, row in df.iterrows():
+        try:
+            # Parse date
+            date_str = str(row['date'])
+            try:
+                parsed_date = pd.to_datetime(date_str)
+            except:
+                # Try specific formats if automatic parsing fails
+                date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
+                parsed_date = None
+                for date_format in date_formats:
+                    try:
+                        parsed_date = pd.to_datetime(date_str, format=date_format)
+                        break
+                    except ValueError:
+                        continue
+                
+                if not parsed_date:
+                    error_msg = f"Could not parse date: {date_str}"
+                    logger.warning(error_msg)
+                    error_rows.append(error_msg)
+                    continue
                     
                     for idx, row in df.iterrows():
                         try:
