@@ -22,6 +22,18 @@ class User(UserMixin, db.Model):
     accounts = relationship('Account', backref='user', lazy=True)
     company_settings = relationship('CompanySettings', backref='user', uselist=False, lazy=True)
 
+    def set_password(self, password):
+        """Set hashed password."""
+        from werkzeug.security import generate_password_hash
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        """Check if provided password matches hash."""
+        from werkzeug.security import check_password_hash
+        if self.password_hash:
+            return check_password_hash(self.password_hash, password)
+        return False
+
     def __repr__(self):
         return f'<User {self.username}>'
 
