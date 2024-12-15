@@ -140,11 +140,7 @@ def get_openai_client() -> OpenAI:
             raise ValueError("OpenAI API key not configured")
             
         # Initialize new client with proper configuration
-        _openai_client = OpenAI(
-            api_key=api_key,
-            timeout=60.0,  # Increased timeout for stability
-            max_retries=3  # Enable automatic retries
-        )
+        _openai_client = OpenAI()  # Uses API key from environment by default
         
         # Test the client with basic operation
         try:
