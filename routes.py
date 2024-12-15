@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
-from flask_login import login_required, current_user
+from flask_login import login_required, current_user, login_user, logout_user
 from models import User, Account, Transaction, UploadedFile, CompanySettings
 from app import db
 import pandas as pd
