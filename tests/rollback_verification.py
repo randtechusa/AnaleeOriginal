@@ -42,7 +42,8 @@ class RollbackVerificationTest:
         try:
             # Verify database connection in app context
             with app.app_context():
-                def __init__(self, app=None):
+                class RollbackVerificationTest:
+    def __init__(self, app=None):
         """Initialize the test suite with optional Flask app"""
         self.app = app
         self.logger = logging.getLogger(__name__)
@@ -69,11 +70,17 @@ class RollbackVerificationTest:
             self.logger.error("No Flask application context available")
             return False
             
+        if not self.app.config.get('TESTING'):
+            self.logger.error("Cannot run verifications in production environment")
+            return False
+            
         if not self.app.config.get('ENABLE_ROLLBACK_TESTS'):
-            self.logger.error(
-                "Rollback tests are disabled. "
-                "Cannot run verifications in production environment."
-            )
+            self.logger.error("Rollback tests are disabled")
+            return False
+            
+        # Verify we're using test database
+        if not self.app.config['SQLALCHEMY_DATABASE_URI'].endswith('_test'):
+            self.logger.error("Must use test database for verification tests")
             return False
             
         return True
