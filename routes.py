@@ -10,6 +10,65 @@ from app import db
 import pandas as pd
 import time
 
+def process_uploaded_file(file, status):
+    """Process the uploaded file and return dataframe and total rows."""
+    try:
+        if file.filename.endswith('.xlsx'):
+            df = pd.read_excel(file)
+        elif file.filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            raise ValueError('Invalid file format')
+            
+        total_rows = len(df)
+        return df, total_rows
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
+        raise
+
+def init_upload_status(filename):
+    """Initialize the upload status dictionary."""
+    return {
+        'status': 'processing',
+        'filename': filename,
+        'total_rows': 0,
+        'processed_rows': 0,
+        'current_chunk': 0,
+        'progress': 0,
+        'last_update': datetime.utcnow().isoformat(),
+        'errors': []
+    }
+
+def process_transaction_rows(df, uploaded_file, user):
+    """Process transaction rows from dataframe."""
+    processed_rows = 0
+    error_rows = []
+    
+    try:
+        for index, row in df.iterrows():
+            try:
+                transaction = Transaction(
+                    date=pd.to_datetime(row['Date']).date(),
+                    description=str(row['Description']),
+                    amount=float(row['Amount']),
+                    file_id=uploaded_file.id,
+                    user_id=user.id
+                )
+                db.session.add(transaction)
+                processed_rows += 1
+            except Exception as e:
+                error_rows.append({
+                    'row': index + 2,  # +2 for Excel row number (header + 1-based index)
+                    'error': str(e)
+                })
+                
+        db.session.commit()
+        return processed_rows, error_rows
+        
+    except Exception as e:
+        logger.error(f"Error processing transactions: {str(e)}")
+        db.session.rollback()
+        raise
 logger = logging.getLogger(__name__)
 main = Blueprint('main', __name__)
 
