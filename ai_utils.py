@@ -173,14 +173,27 @@ def predict_account(description: str, explanation: str, available_accounts: List
     """
     Account Suggestion Feature (ASF): AI-powered account suggestions based on transaction description
     """
-    if not description or not available_accounts:
-        logger.error("Missing required parameters for account prediction")
-        return []
+    try:
+        if not description or not available_accounts:
+            logger.error("Missing required parameters for account prediction")
+            return []
 
-    logger.info(f"ASF: Predicting account for description: {description}")
-    
-    # Initialize OpenAI client
-    client = get_openai_client()
+        logger.info(f"ASF: Predicting account for description: {description}")
+        
+        # Initialize OpenAI client with retries
+        retries = 3
+        while retries > 0:
+            client = get_openai_client()
+            if client:
+                break
+            retries -= 1
+            if retries > 0:
+                logger.warning(f"Retrying OpenAI client initialization, {retries} attempts remaining")
+                time.sleep(2 ** (3 - retries))  # Exponential backoff
+        
+        if not client:
+            logger.error("Failed to initialize OpenAI client after retries")
+            return rule_based_account_matching(description, available_accounts)
     
     try:
         # Format available accounts
@@ -246,10 +259,30 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
             if not content:
                 logger.error("Empty response from AI service")
                 return rule_based_account_matching(description, available_accounts)
+            
+            # Enhanced response validation
+            try:
+                content = content.strip()
+                # Remove any non-JSON prefix/suffix that might have been added
+                start_idx = content.find('[')
+                end_idx = content.rfind(']')
+                if start_idx == -1 or end_idx == -1:
+                    logger.error("Invalid JSON format in AI response")
+                    return rule_based_account_matching(description, available_accounts)
                 
-            # Validate JSON structure
-            if not (content.startswith('[') and content.endswith(']')):
-                logger.error("Invalid JSON format in AI response")
+                content = content[start_idx:end_idx + 1]
+                # Validate JSON structure
+                suggestions = json.loads(content)
+                
+                if not isinstance(suggestions, list):
+                    logger.error("AI response is not a list")
+                    return rule_based_account_matching(description, available_accounts)
+                    
+            except json.JSONDecodeError as je:
+                logger.error(f"JSON parsing error: {str(je)}")
+                return rule_based_account_matching(description, available_accounts)
+            except Exception as e:
+                logger.error(f"Unexpected error parsing AI response: {str(e)}")
                 return rule_based_account_matching(description, available_accounts)
                 
             try:
@@ -828,18 +861,81 @@ def find_similar_transactions(transaction_description: str, transactions: list) 
     """
     TEXT_THRESHOLD = 0.7
     SEMANTIC_THRESHOLD = 0.95
+    MAX_RETRIES = 3
 
-    if not transaction_description or not transactions:
-        logger.warning("Empty transaction description or transactions list")
-        return []
-    
-    logger.info(f"ERF: Finding similar transactions for description: {transaction_description}")
-    
-    def process_transaction(transaction):
-        if not transaction or not getattr(transaction, 'description', None):
-            return None
+    try:
+        if not transaction_description:
+            logger.warning("Empty transaction description provided")
+            return []
+            
+        if not transactions:
+            logger.info("No historical transactions available for comparison")
+            return []
         
-        similarity = calculate_similarity(transaction_description, transaction.description)
+        logger.info(f"ERF: Finding similar transactions for description: {transaction_description}")
+        
+        def process_transaction(transaction) -> Optional[dict]:
+            try:
+                if not transaction or not getattr(transaction, 'description', None):
+                    return None
+                
+                # Implement retry logic for similarity calculation
+                retries = MAX_RETRIES
+                similarity = 0.0
+                last_error = None
+                
+                while retries > 0:
+                    try:
+                        # Process matches based on similarity thresholds
+                if similarity >= SEMANTIC_THRESHOLD:
+                    return {
+                        'transaction': transaction,
+                        'similarity': similarity,
+                        'match_type': 'semantic',
+                        'confidence': similarity
+                    }
+                elif similarity >= TEXT_THRESHOLD:
+                    return {
+                        'transaction': transaction,
+                        'similarity': similarity,
+                        'match_type': 'text',
+                        'confidence': similarity * 0.9  # Slightly lower confidence for text matches
+                    }
+                return None
+                
+            except Exception as e:
+                logger.error(f"Error processing transaction for similarity: {str(e)}")
+                return None
+                
+        try:
+            # Process transactions in parallel batches
+            similar_transactions = []
+            for transaction in transactions:
+                result = process_transaction(transaction)
+                if result:
+                    similar_transactions.append(result)
+            
+            # Sort by similarity and return top matches
+            similar_transactions.sort(key=lambda x: x['similarity'], reverse=True)
+            return similar_transactions[:5]  # Return top 5 matches
+            
+        except Exception as e:
+            logger.error(f"Error processing transaction batch: {str(e)}")
+            return []
+            
+    except Exception as e:
+        logger.error(f"Critical error in find_similar_transactions: {str(e)}")
+        return []
+                        break
+                    except Exception as e:
+                        last_error = e
+                        retries -= 1
+                        if retries > 0:
+                            time.sleep(2 ** (MAX_RETRIES - retries))  # Exponential backoff
+                            
+                if retries == 0 and last_error:
+                    logger.error(f"Failed to calculate similarity after {MAX_RETRIES} attempts: {str(last_error)}")
+                    return None
         if similarity >= TEXT_THRESHOLD or similarity >= SEMANTIC_THRESHOLD:
             return {
                 'transaction': transaction,

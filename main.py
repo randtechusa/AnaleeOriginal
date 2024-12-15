@@ -29,13 +29,12 @@ def main():
         port = int(os.environ.get('PORT', 5000))
         logger.info(f"Using port: {port}")
         
-        # Start the Flask development server using Werkzeug's run_simple
-        run_simple(
-            '0.0.0.0',
-            port,
-            app,
-            use_reloader=False,  # Disable reloader to prevent duplicate processes
-            use_debugger=True
+        # Start the Flask development server
+        app.run(
+            host='0.0.0.0',
+            port=port,
+            debug=True,
+            use_reloader=False  # Disable reloader to prevent duplicate processes
         )
         
     except Exception as e:

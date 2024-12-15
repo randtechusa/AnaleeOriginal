@@ -1,4 +1,5 @@
 import os
+import sys
 from openai import OpenAI, RateLimitError, APIError
 from tenacity import retry, stop_after_attempt, wait_exponential
 import logging
@@ -26,36 +27,85 @@ def wait_for_rate_limit():
                 time.sleep(sleep_time)
             break
     request_times.append(now)
-# Configure logging
+
+# Configure logging with more detailed format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 logger = logging.getLogger(__name__)
 
-# Initialize OpenAI client with better error handling
+# Global client instance with better state management
+_openai_client = None
+_last_client_error = None
+_last_client_init = None
+_client_error_count = 0
+MAX_ERROR_COUNT = 3
+CLIENT_RETRY_INTERVAL = 300  # 5 minutes
+
 def get_openai_client() -> Optional[OpenAI]:
     """
-    Get OpenAI client with improved error handling and rate limit management
+    Get OpenAI client with improved error handling, rate limit management, and state tracking
     """
+    global _openai_client, _last_client_error, _last_client_init, _client_error_count
+    
     try:
+        # Check if we have a recent error and should wait
+        if _last_client_error and _client_error_count >= MAX_ERROR_COUNT:
+            wait_time = CLIENT_RETRY_INTERVAL - (time.time() - _last_client_init)
+            if wait_time > 0:
+                logger.warning(f"Waiting {wait_time:.0f}s before retrying client initialization")
+                return None
+
+        # Reset error count if we're retrying after waiting
+        if _last_client_init and (time.time() - _last_client_init) > CLIENT_RETRY_INTERVAL:
+            _client_error_count = 0
+            
+        # Check for API key
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
             logger.error("OpenAI API key not found in environment variables")
             return None
             
-        client = OpenAI(api_key=api_key)
+        # Return existing client if available and valid
+        if _openai_client is not None:
+            return _openai_client
+            
+        # Initialize new client
+        _openai_client = OpenAI(api_key=api_key)
+        _last_client_init = time.time()
         
         # Test the client with a minimal request
         try:
-            client.models.list(limit=1)
-            return client
+            _openai_client.models.list(limit=1)
+            logger.info("OpenAI client initialized and tested successfully")
+            _client_error_count = 0
+            _last_client_error = None
+            return _openai_client
+            
         except Exception as e:
-            if "rate limit" in str(e).lower():
-                logger.warning("Rate limit hit during client test, implementing backoff")
+            error_msg = str(e).lower()
+            if "rate limit" in error_msg:
+                logger.warning(f"Rate limit during initialization: {str(e)}")
                 time.sleep(5)  # Basic backoff
-                return client
-            logger.error(f"Client test failed: {str(e)}")
+                return _openai_client
+            elif "invalid api key" in error_msg:
+                logger.error("Invalid API key configuration")
+                _last_client_error = "Invalid API key"
+            else:
+                logger.error(f"Client test failed: {str(e)}")
+                _last_client_error = str(e)
+                
+            _client_error_count += 1
+            _openai_client = None
             return None
             
     except Exception as e:
         logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+        _last_client_error = str(e)
+        _client_error_count += 1
+        _openai_client = None
         return None
 
 CATEGORIES = [
