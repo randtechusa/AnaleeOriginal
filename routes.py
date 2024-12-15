@@ -700,7 +700,7 @@ def expense_forecast():
         flash('Error generating expense forecast')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/verify-rollback', methods=['POST'])
+@main.route('/verify-rollback', methods=['GET', 'POST'])
 @login_required
 def verify_rollback():
     """
