@@ -194,8 +194,8 @@ def predict_account(description: str, explanation: str, available_accounts: List
         if not client:
             logger.error("Failed to initialize OpenAI client after retries")
             return rule_based_account_matching(description, available_accounts)
-    
-    try:
+            
+        # Format available accounts
         # Format available accounts
         account_info = "\n".join([
             f"- {acc['name']}\n  Category: {acc['category']}\n  Code: {acc['link']}\n  Purpose: Standard {acc['category']} account for {acc['name'].lower()} transactions"
@@ -261,34 +261,27 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
                 return rule_based_account_matching(description, available_accounts)
             
             # Enhanced response validation
+            content = content.strip()
+            # Remove any non-JSON prefix/suffix that might have been added
+            start_idx = content.find('[')
+            end_idx = content.rfind(']')
+            if start_idx == -1 or end_idx == -1:
+                logger.error("Invalid JSON format in AI response")
+                return rule_based_account_matching(description, available_accounts)
+            
+            content = content[start_idx:end_idx + 1]
+            
+            # Validate JSON structure
             try:
-                content = content.strip()
-                # Remove any non-JSON prefix/suffix that might have been added
-                start_idx = content.find('[')
-                end_idx = content.rfind(']')
-                if start_idx == -1 or end_idx == -1:
-                    logger.error("Invalid JSON format in AI response")
-                    return rule_based_account_matching(description, available_accounts)
-                
-                content = content[start_idx:end_idx + 1]
-                # Validate JSON structure
                 suggestions = json.loads(content)
-                
                 if not isinstance(suggestions, list):
                     logger.error("AI response is not a list")
                     return rule_based_account_matching(description, available_accounts)
-                    
             except json.JSONDecodeError as je:
                 logger.error(f"JSON parsing error: {str(je)}")
                 return rule_based_account_matching(description, available_accounts)
             except Exception as e:
                 logger.error(f"Unexpected error parsing AI response: {str(e)}")
-                return rule_based_account_matching(description, available_accounts)
-                
-            try:
-                suggestions = json.loads(content)
-            except json.JSONDecodeError as je:
-                logger.error(f"JSON parsing error: {str(je)}")
                 return rule_based_account_matching(description, available_accounts)
             
             # Enhanced validation and formatting

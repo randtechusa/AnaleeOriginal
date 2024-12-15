@@ -22,4 +22,5 @@ dependencies = [
     "weasyprint>=63.1",
     "flask-apscheduler>=1.13.1",
     "tenacity>=9.0.0",
+    "alembic",
 ]

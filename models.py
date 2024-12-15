@@ -1,19 +1,23 @@
-from flask_login import UserMixin
+import logging
 from datetime import datetime
+from flask_login import UserMixin, LoginManager
+from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.orm import relationship
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize extensions
 db = SQLAlchemy()
 login_manager = LoginManager()
-import logging
 
 logger = logging.getLogger(__name__)
 
 class User(UserMixin, db.Model):
-    __tablename__ = 'users'
+    __tablename__ = 'user'
     
     id = Column(Integer, primary_key=True)
     username = Column(String(64), unique=True, nullable=False)
@@ -22,10 +26,10 @@ class User(UserMixin, db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
-    transactions = relationship('Transaction', backref='user', lazy=True)
-    accounts = relationship('Account', backref='user', lazy=True)
-    company_settings = relationship('CompanySettings', backref='user', uselist=False, lazy=True)
+    # Relationships with cascade deletes for proper cleanup
+    transactions = relationship('Transaction', backref='user', lazy=True, cascade='all, delete-orphan')
+    accounts = relationship('Account', backref='user', lazy=True, cascade='all, delete-orphan')
+    company_settings = relationship('CompanySettings', backref='user', uselist=False, lazy=True, cascade='all, delete-orphan')
 
     def set_password(self, password):
         """Set hashed password."""
@@ -87,17 +91,18 @@ class UploadedFile(db.Model):
     transactions = relationship('Transaction', backref='file', lazy=True, cascade='all, delete-orphan')
 
 class Transaction(db.Model):
-    __tablename__ = 'transactions'
+    __tablename__ = 'transaction'
     
     id = Column(Integer, primary_key=True)
     date = Column(DateTime, nullable=False)
     description = Column(String(200), nullable=False)
     amount = Column(Float, nullable=False)
-    explanation = Column(String(255))
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    category = Column(String(50))
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     account_id = Column(Integer, ForeignKey('account.id'))
-    bank_account_id = Column(Integer, ForeignKey('account.id'))
-    file_id = Column(Integer, ForeignKey('uploaded_files.id'), nullable=False)
+    ai_category = Column(String(50))
+    ai_confidence = Column(Float)
+    ai_explanation = Column(String(200))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -114,7 +119,7 @@ class Account(db.Model):
     sub_category = Column(String(100))
     account_code = Column(String(20))
     name = Column(String(100), nullable=False)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
