@@ -26,19 +26,19 @@ def get_openai_client():
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
-    Account Suggestion Feature (ASF): AI-powered account suggestions with fallback to rule-based matching
-    only when AI services are unavailable or rate limited.
+    Account Suggestion Feature (ASF): AI-powered account suggestions
+    Makes direct API calls for predictions, with fallback options
     """
     if not description or not available_accounts:
         logger.error("Missing required parameters for account prediction")
         return []
 
+    logger.info(f"ASF: Predicting account for description: {description}")
+    
     try:
-        logger.debug(f"ASF: Starting account prediction for description: {description}")
         client = get_openai_client()
-        logger.info("Using AI-powered prediction for account suggestions")
         
-        # Format available accounts with enhanced structure
+        # Format available accounts
         account_info = "\n".join([
             f"- {acc['name']}\n  Category: {acc['category']}\n  Code: {acc['link']}\n  Purpose: Standard {acc['category']} account for {acc['name'].lower()} transactions"
             for acc in available_accounts
@@ -83,7 +83,7 @@ Format response as a JSON list with this structure:
 
 Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist in the provided Chart of Accounts."""
 
-        # Make API call with error handling
+        # Make direct API call
         try:
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -98,30 +98,34 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
             
             # Parse response
             content = response.choices[0].message.content.strip()
-            suggestions = []
             
-            # Safely evaluate the response content
             if content.startswith('[') and content.endswith(']'):
                 suggestions = json.loads(content)
+                
+                # Validate and format suggestions
+                valid_suggestions = []
+                for suggestion in suggestions:
+                    # Only include suggestions that match existing accounts
+                    matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
+                    if matching_accounts:
+                        financial_insight = suggestion.get('financial_insight', suggestion.get('reasoning', ''))
+                        valid_suggestions.append({
+                            **suggestion,
+                            'account': matching_accounts[0],
+                            'financial_insight': financial_insight
+                        })
+                
+                return valid_suggestions[:3]  # Return top 3 suggestions
             else:
                 logger.error("Invalid response format from AI")
+                raise ValueError("Invalid AI response format")
                 
-            # Validate and format suggestions
-            valid_suggestions = []
-            for suggestion in suggestions:
-                # Only include suggestions that match existing accounts
-                matching_accounts = [acc for acc in available_accounts if acc['name'].lower() == suggestion['account_name'].lower()]
-                if matching_accounts:
-                    # Extract financial insight or use reasoning if insight not provided
-                    financial_insight = suggestion.get('financial_insight', suggestion.get('reasoning', ''))
-                    
-                    valid_suggestions.append({
-                        **suggestion,
-                        'account': matching_accounts[0],
-                        'financial_insight': financial_insight
-                    })
-            
-            return valid_suggestions[:3]  # Return top 3 suggestions
+        except Exception as e:
+            if "rate limit" in str(e).lower():
+                logger.warning("Rate limit encountered, falling back to rule-based matching")
+            else:
+                logger.error(f"AI prediction failed: {str(e)}")
+            raise
             
         except json.JSONDecodeError as e:
             logger.error(f"Error parsing AI suggestions: {str(e)}")
@@ -709,35 +713,37 @@ def suggest_explanation(description: str, similar_transactions: list = None) -> 
                 "factors_considered": [f"Error: {str(fallback_error)}"]
             }
 
-def verify_ai_features(self) -> bool:
-        """
-        Verifies AI features functionality
-        """
-        try:
-            from ai_utils import predict_account, suggest_explanation, find_similar_transactions
-            has_ai = True
-        except ImportError:
-            self.logger.warning("AI utilities not available, will test manual fallback")
-            has_ai = False
+def verify_ai_features() -> bool:
+    """
+    Verifies AI features functionality with direct API calls
+    """
+    logger.info("Starting AI features verification...")
+    
+    try:
+        # Test ASF - Account Suggestion Feature
+        test_account = predict_account(
+            "Monthly Office Rent Payment",
+            "Regular monthly office space rental",
+            [{'name': 'Rent Expense', 'category': 'Expenses', 'link': '510'}]
+        )
+        logger.info("ASF test successful")
         
-        try:
-            if has_ai:
-                # Test ASF without immediate rate limit handling
-                try:
-                    test_result = predict_account(
-                        "Test transaction",
-                        "Test explanation",
-                        [{'name': 'Test Account', 'category': 'Test', 'link': 'test'}]
-                    )
-                    self.logger.info("AI prediction test successful")
-                except Exception as e:
-                    if "rate limit" in str(e).lower():
-                        self.logger.warning("Rate limit encountered during AI feature testing")
-                    else:
-                        self.logger.error(f"AI prediction failed: {str(e)}")
-                    return False
-        except Exception as e:
-            self.logger.error(f"Error during AI features verification: {e}")
-            return False
-
+        # Test ERF - Explanation Recognition Feature
+        similar_trans = find_similar_transactions(
+            "Monthly Office Rent Payment",
+            [{'description': 'Office Rent March 2024', 'id': 1}]
+        )
+        logger.info("ERF test successful")
+        
+        # Test ESF - Explanation Suggestion Feature
+        explanation = suggest_explanation(
+            "Monthly Office Rent Payment",
+            similar_trans if similar_trans else None
+        )
+        logger.info("ESF test successful")
+        
         return True
+        
+    except Exception as e:
+        logger.error(f"AI features verification failed: {str(e)}")
+        return False
