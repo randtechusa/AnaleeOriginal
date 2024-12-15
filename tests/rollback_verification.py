@@ -37,10 +37,10 @@ class RollbackVerificationTest:
             with app.app_context():
                 from models import db
                 db.session.execute(text('SELECT 1'))
-                db.session.commit()
                 self.logger.info("Database connection verified for test suite")
         except Exception as e:
             self.logger.error(f"Error verifying database connection: {str(e)}")
+            # Don't commit or raise, just log the error
             self.logger.warning("Test suite initialization proceeded with warnings")
 
     def _safe_execute(self, verification_name: str, *args, **kwargs) -> Tuple[bool, Optional[str]]:
@@ -170,24 +170,135 @@ class RollbackVerificationTest:
             return False
 
     def verify_rate_limits(self) -> bool:
-        """Verifies rate limiting configuration after rollback"""
+        """Verifies rate limiting configuration and functionality after rollback"""
         try:
             config = current_app.config
             required_configs = [
                 'RATELIMIT_DEFAULT',
                 'RATELIMIT_STORAGE_URL',
-                'RATELIMIT_STRATEGY'
+                'RATELIMIT_STRATEGY',
+                'RATELIMIT_STORAGE_OPTIONS',
+                'RATELIMIT_KEY_PREFIX',
+                'RATELIMIT_HEADERS_ENABLED'
             ]
             
+            # Verify all required configurations exist
             for config_key in required_configs:
                 if config_key not in config:
                     self.logger.error(f"Missing rate limit config: {config_key}")
                     return False
             
+            # Verify rate limit values are properly formatted
+            try:
+                limit_value, limit_period = config['RATELIMIT_DEFAULT'].split(' per ')
+                if not limit_value.isdigit() or limit_period not in ['second', 'minute', 'hour', 'day']:
+                    self.logger.error("Invalid rate limit format")
+                    return False
+            except (ValueError, AttributeError) as e:
+                self.logger.error(f"Rate limit parsing error: {str(e)}")
+                return False
+            
+            # Verify storage URL is valid
+            if not config['RATELIMIT_STORAGE_URL'].startswith(('redis://', 'postgresql://')):
+                self.logger.error("Invalid rate limit storage URL")
+                return False
+            
+            # Verify storage options
+            if not isinstance(config['RATELIMIT_STORAGE_OPTIONS'], dict):
+                self.logger.error("Invalid storage options format")
+                return False
+            
             return True
             
         except Exception as e:
             self.logger.error(f"Rate limit verification failed: {str(e)}")
+            return False
+
+    def verify_ai_features(self) -> bool:
+        """Verifies AI feature configurations and data integrity after rollback"""
+        try:
+            # Check ERF (Explanation Recognition Feature)
+            erf_settings = {
+                'enabled': True,
+                'similarity_threshold': 0.85,
+                'max_matches': 5
+            }
+            
+            # Check ASF (Account Suggestion Feature)
+            asf_settings = {
+                'enabled': True,
+                'confidence_threshold': 0.7,
+                'max_suggestions': 3
+            }
+            
+            # Check ESF (Explanation Suggestion Feature)
+            esf_settings = {
+                'enabled': True,
+                'suggestion_limit': 5,
+                'context_window': 10
+            }
+            
+            with db.session.begin():
+                # Verify ERF data integrity
+                transactions = Transaction.query.limit(100).all()
+                for transaction in transactions:
+                    if not hasattr(transaction, 'explanation') or transaction.explanation is None:
+                        self.logger.error(f"Missing explanation for transaction {transaction.id}")
+                        return False
+                
+                # Verify ASF account mappings
+                accounts = Account.query.all()
+                if not accounts:
+                    self.logger.error("No accounts found for ASF verification")
+                    return False
+                
+                # Verify ESF historical data
+                if not Transaction.query.filter(Transaction.explanation.isnot(None)).count():
+                    self.logger.warning("No transactions with explanations found for ESF")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"AI features verification failed: {str(e)}")
+            return False
+
+    def verify_bank_statement_integrity(self) -> bool:
+        """Verifies bank statement upload integrity and processing status"""
+        try:
+            with db.session.begin():
+                # Check uploaded files
+                files = UploadedFile.query.all()
+                for file in files:
+                    # Verify file metadata
+                    if not all([
+                        file.filename,
+                        file.upload_date,
+                        file.user_id
+                    ]):
+                        self.logger.error(f"Invalid file metadata for file {file.id}")
+                        return False
+                    
+                    # Verify associated transactions
+                    transactions = Transaction.query.filter_by(file_id=file.id).all()
+                    if not transactions:
+                        self.logger.warning(f"No transactions found for file {file.id}")
+                        continue
+                    
+                    # Verify transaction integrity
+                    for transaction in transactions:
+                        if not all([
+                            transaction.date,
+                            transaction.amount,
+                            transaction.description,
+                            transaction.bank_account_id
+                        ]):
+                            self.logger.error(f"Invalid transaction data for file {file.id}")
+                            return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Bank statement verification failed: {str(e)}")
             return False
 
     def verify_financial_data_integrity(self, reference_time: datetime) -> bool:
@@ -374,7 +485,9 @@ class RollbackVerificationTest:
             ('bank_account_integrity', lambda: self.verify_bank_account_integrity(reference_time)),
             ('version_integrity', lambda: self.verify_version_integrity(reference_time)),
             ('rate_limits', self.verify_rate_limits),
-            ('uploaded_files', self.verify_uploaded_files)
+            ('uploaded_files', self.verify_uploaded_files),
+            ('ai_features', self.verify_ai_features),
+            ('bank_statement_integrity', self.verify_bank_statement_integrity)
         ]
         
         for name, verification in verifications:

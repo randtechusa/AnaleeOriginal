@@ -58,25 +58,6 @@ class User(UserMixin, db.Model):
         """Required for Flask-Login."""
         return False
 
-    def get_id(self):
-        """Required for Flask-Login."""
-        return str(self.id)
-
-    @property
-    def is_active(self):
-        """Required for Flask-Login."""
-        return True
-
-    @property
-    def is_authenticated(self):
-        """Required for Flask-Login."""
-        return True
-
-    @property
-    def is_anonymous(self):
-        """Required for Flask-Login."""
-        return False
-
     @property
     def password(self):
         """Password getter - prevents direct access."""
