@@ -64,15 +64,12 @@ def create_app(env='production'):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
         
     # Configure Flask app
-    # Environment-specific configuration
+    # Base configuration
     config = {
         'ENV': env,
-        'TESTING': env == 'testing',
-        'ENABLE_ROLLBACK_TESTS': env == 'testing',
         'SECRET_KEY': os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
         'SQLALCHEMY_TRACK_MODIFICATIONS': False,
         'TEMPLATES_AUTO_RELOAD': True,
-        'DEBUG': True,
         'RATELIMIT_DEFAULT': "100 per minute",
         'RATELIMIT_STRATEGY': 'fixed-window',
         'RATELIMIT_KEY_PREFIX': 'global_',
@@ -80,6 +77,24 @@ def create_app(env='production'):
         'SCHEDULER_EXECUTORS': {'default': {'type': 'threadpool', 'max_workers': 20}},
         'SCHEDULER_JOB_DEFAULTS': {'coalesce': False, 'max_instances': 3}
     }
+    
+    # Environment-specific configuration
+    if env == 'testing':
+        config.update({
+            'TESTING': True,
+            'DEBUG': True,
+            'ENABLE_ROLLBACK_TESTS': True,
+            'SQLALCHEMY_DATABASE_URI': os.environ.get('TEST_DATABASE_URL', f"{database_url}_test"),
+            'RATELIMIT_STORAGE_URL': os.environ.get('TEST_DATABASE_URL', f"{database_url}_test")
+        })
+    else:
+        config.update({
+            'TESTING': False,
+            'DEBUG': False,
+            'ENABLE_ROLLBACK_TESTS': False,
+            'SQLALCHEMY_DATABASE_URI': database_url,
+            'RATELIMIT_STORAGE_URL': database_url
+        })
     
     # Set database URL based on environment
     if env == 'testing':

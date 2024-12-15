@@ -42,7 +42,27 @@ class RollbackVerificationTest:
         try:
             # Verify database connection in app context
             with app.app_context():
+                def __init__(self, app=None):
+        """Initialize the test suite with optional Flask app"""
+        self.app = app
+        self.logger = logging.getLogger(__name__)
+        self.verification_results = {}
+        
+        if app is not None:
+            self.init_app(app)
+    
+    def init_app(self, app):
+        """Initialize the test suite with a Flask application"""
+        self.app = app
+        try:
+            with app.app_context():
                 from models import db
+                db.session.execute(text('SELECT 1'))
+                self.logger.info("Database connection verified for test suite")
+        except Exception as e:
+            self.logger.error(f"Error verifying database connection: {str(e)}")
+            self.logger.warning("Test suite initialization proceeded with warnings")
+            
     def _check_environment(self) -> bool:
         """Verify we're in a safe environment for testing"""
         if not self.app:
@@ -57,12 +77,6 @@ class RollbackVerificationTest:
             return False
             
         return True
-                db.session.execute(text('SELECT 1'))
-                self.logger.info("Database connection verified for test suite")
-        except Exception as e:
-            self.logger.error(f"Error verifying database connection: {str(e)}")
-            # Don't commit or raise, just log the error
-            self.logger.warning("Test suite initialization proceeded with warnings")
 
     def _safe_execute(self, verification_name: str, *args, **kwargs) -> Tuple[bool, Optional[str]]:
         """
