@@ -3,12 +3,11 @@ import logging
 import sys
 from datetime import datetime
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
 from flask_migrate import Migrate
 from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
+from models import db, login_manager
 
 # Load environment variables
 load_dotenv()
@@ -22,9 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize Flask extensions
-db = SQLAlchemy()
 migrate = Migrate()
-login_manager = LoginManager()
 scheduler = APScheduler()
 
 # Configure APScheduler
@@ -88,6 +85,10 @@ def create_app():
     migrate.init_app(app, db)
     login_manager.init_app(app)
     login_manager.login_view = 'main.login'
+    
+    # Import user loader here to avoid circular imports
+    from models import load_user
+    login_manager.user_loader(load_user)
     
     # Initialize scheduler
     scheduler.init_app(app)
