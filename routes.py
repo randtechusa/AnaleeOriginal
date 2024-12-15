@@ -1,108 +1,22 @@
 import logging
 import os
-from datetime import datetime
-from typing import Dict, List, Optional, Union
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 
-from flask import (
-    Blueprint, render_template, request, redirect, url_for,
-    flash, session, make_response, jsonify
-)
-from flask_login import (
-    login_required, current_user, login_user, logout_user
-)
-from werkzeug.security import generate_password_hash, check_password_hash
-from weasyprint import HTML
-import pandas as pd
-from sqlalchemy import func, and_, text
-import json
-from itertools import zip_longest
-
-# Task management functions
-def schedule_analysis_task(task_type: str, user_id: int, **kwargs) -> str:
-    """Schedule a background analysis task"""
-    task_id = f"{task_type}_{datetime.utcnow().timestamp()}"
-    
-    if task_type == 'transaction_analysis':
-        scheduler.add_job(
-            func=process_transaction_analysis,
-            trigger='date',
-            args=[user_id, kwargs.get('file_id')],
-            id=task_id,
-            name=f"Transaction Analysis - User {user_id}"
-        )
-    elif task_type == 'forecast':
-        scheduler.add_job(
-            func=process_expense_forecast,
-            trigger='date',
-            args=[user_id, kwargs.get('start_date'), kwargs.get('end_date')],
-            id=task_id,
-            name=f"Expense Forecast - User {user_id}"
-        )
-    
-    return task_id
-
-def get_task_status(task_id: str) -> dict:
-    """Get the status of a scheduled task"""
-    job = scheduler.get_job(task_id)
-    if not job:
-        return {'status': 'not_found'}
-    
-    return {
-        'status': 'scheduled' if job.next_run_time else 'completed',
-        'name': job.name,
-        'next_run_time': job.next_run_time.isoformat() if job.next_run_time else None
-    }
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
+from flask_login import login_required, current_user
+from models import User, Account, Transaction, UploadedFile, CompanySettings
 from app import db
-from models import (
-    User, Account, Transaction, UploadedFile, CompanySettings
-)
-from ai_utils import (
-    predict_account, detect_transaction_anomalies,
-    generate_financial_advice, forecast_expenses,
-    find_similar_transactions, suggest_explanation,
-    calculate_text_similarity
-)
+import pandas as pd
+import time
 
-def check_ai_availability():
-    """Check if AI services are available without blocking core functionality"""
-    try:
-        # Quick test of AI service
-        test_result = predict_account(
-            "Test transaction",
-            "Test explanation",
-            [{'name': 'Test Account', 'category': 'Test', 'link': 'test'}]
-        )
-        return bool(test_result)
-    except Exception as e:
-        logger.warning(f"AI services unavailable: {str(e)}")
-        return False
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-# Configure logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Create blueprint
 main = Blueprint('main', __name__)
-
-# Configure pandas display options for debugging
-pd.set_option('display.max_columns', None)
-pd.set_option('display.max_rows', None)
-
-# Configure secret key for session management
-if not os.environ.get('FLASK_SECRET_KEY'):
-    os.environ['FLASK_SECRET_KEY'] = os.urandom(24).hex()
 
 @main.route('/')
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for('main.settings'))  # Redirect to Chart of Accounts
+        return redirect(url_for('main.dashboard'))
     return redirect(url_for('main.login'))
 
 @main.route('/login', methods=['GET', 'POST'])
@@ -110,9 +24,9 @@ def login():
     if request.method == 'POST':
         email = request.form['email']
         user = User.query.filter_by(email=email).first()
-        if user and check_password_hash(user.password_hash, request.form['password']):
+        if user and user.check_password(request.form['password']):
             login_user(user)
-            return redirect(url_for('main.settings'))  # Redirect to Chart of Accounts
+            return redirect(url_for('main.dashboard'))
         flash('Invalid email or password')
     return render_template('login.html')
 
@@ -126,32 +40,11 @@ def register():
         user = User(
             username=request.form['username'],
             email=request.form['email'],
-            password_hash=generate_password_hash(request.form['password'])
+            password=request.form['password']
         )
         try:
-            # First save the user to get their ID
             db.session.add(user)
             db.session.commit()
-
-            # Get template accounts from the first user (admin)
-            template_user = User.query.filter(User.id != user.id).first()
-            if template_user:
-                template_accounts = Account.query.filter_by(user_id=template_user.id).all()
-                # Copy accounts to new user
-                for template_account in template_accounts:
-                    new_account = Account(
-                        link=template_account.link,
-                        category=template_account.category,
-                        sub_category=template_account.sub_category,
-                        account_code=template_account.account_code,
-                        name=template_account.name,
-                        user_id=user.id,
-                        is_active=template_account.is_active
-                    )
-                    db.session.add(new_account)
-                db.session.commit()
-                logger.info(f'Copied {len(template_accounts)} accounts to new user {user.username}')
-
             flash('Registration successful')
             return redirect(url_for('main.login'))
         except Exception as e:
@@ -164,7 +57,6 @@ def register():
 @login_required
 def settings():
     if request.method == 'POST':
-        # Handle manual account addition
         try:
             account = Account(
                 link=request.form['link'],
@@ -180,23 +72,8 @@ def settings():
             logger.info(f'New account added: {account.name}')
         except Exception as e:
             logger.error(f'Error adding account: {str(e)}')
-            flash(f'Error adding account: {str(e)}')
             db.session.rollback()
-            try:
-                account = Account(
-                    link=request.form['link'],
-                    name=request.form['name'],
-                    category=request.form['category'],
-                    sub_category=request.form.get('sub_category', ''),
-                    user_id=current_user.id
-                )
-                db.session.add(account)
-                db.session.commit()
-                flash('Account added successfully')
-            except Exception as e:
-                logger.error(f'Error adding account: {str(e)}')
-                flash(f'Error adding account: {str(e)}')
-                db.session.rollback()
+            flash(f'Error adding account: {str(e)}')
 
     accounts = Account.query.filter_by(user_id=current_user.id).all()
     return render_template('settings.html', accounts=accounts)
@@ -288,43 +165,37 @@ def delete_account(account_id):
         db.session.rollback()
     return redirect(url_for('main.settings'))
 
+
 @main.route('/dashboard')
 @login_required
 def dashboard():
-    # Get company settings for financial year
     company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
     if not company_settings:
         flash('Please configure company settings first.')
         return redirect(url_for('main.company_settings'))
     
-    # Get selected year from query params or use current year
     selected_year = request.args.get('year', type=int)
     current_date = datetime.utcnow()
     
     if not selected_year:
-        # Calculate current financial year based on company settings
         if current_date.month > company_settings.financial_year_end:
             selected_year = current_date.year
         else:
             selected_year = current_date.year - 1
     
-    # Calculate financial year date range
     fy_dates = company_settings.get_financial_year(current_date)
     start_date = fy_dates['start_date']
     end_date = fy_dates['end_date']
     
-    # Get transactions for the selected financial year
     transactions = Transaction.query.filter(
         Transaction.user_id == current_user.id,
         Transaction.date.between(start_date, end_date)
     ).order_by(Transaction.date.desc()).all()
     
-    # Calculate totals
     total_income = sum(t.amount for t in transactions if t.amount > 0)
     total_expenses = abs(sum(t.amount for t in transactions if t.amount < 0))
     transaction_count = len(transactions)
     
-    # Prepare monthly data
     monthly_data = {}
     for transaction in transactions:
         month_key = transaction.date.strftime('%Y-%m')
@@ -335,25 +206,21 @@ def dashboard():
         else:
             monthly_data[month_key]['expenses'] += abs(transaction.amount)
     
-    # Sort months and prepare chart data
     sorted_months = sorted(monthly_data.keys())
     monthly_labels = [datetime.strptime(m, '%Y-%m').strftime('%b %Y') for m in sorted_months]
     monthly_income = [monthly_data[m]['income'] for m in sorted_months]
     monthly_expenses = [monthly_data[m]['expenses'] for m in sorted_months]
     
-    # Prepare category data
     category_data = {}
     for transaction in transactions:
-        if transaction.account and transaction.amount < 0:  # Only expenses
+        if transaction.account and transaction.amount < 0:
             category = transaction.account.category or 'Uncategorized'
             category_data[category] = category_data.get(category, 0) + abs(transaction.amount)
     
-    # Sort categories by amount
     sorted_categories = sorted(category_data.items(), key=lambda x: x[1], reverse=True)
     category_labels = [cat[0] for cat in sorted_categories]
     category_amounts = [cat[1] for cat in sorted_categories]
     
-    # Get available financial years
     financial_years = set()
     for t in Transaction.query.filter_by(user_id=current_user.id).all():
         if t.date.month > company_settings.financial_year_end:
@@ -362,7 +229,6 @@ def dashboard():
             financial_years.add(t.date.year - 1)
     financial_years = sorted(list(financial_years))
     
-    # Get recent transactions
     recent_transactions = Transaction.query.filter_by(user_id=current_user.id)\
         .order_by(Transaction.date.desc())\
         .limit(5)\
@@ -386,11 +252,6 @@ def dashboard():
 def analyze(file_id):
     logger.info(f"Starting analysis for file_id: {file_id}")
     
-    # Initialize variables with safe defaults
-    transaction_insights = {}
-    anomalies = {"error": None, "anomalies": [], "pattern_insights": {}}
-    
-    # Core functionality - load transactions and accounts
     try:
         file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
         accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
@@ -400,7 +261,7 @@ def analyze(file_id):
             flash('No transactions found in this file.')
             return redirect(url_for('main.upload'))
             
-        # Initialize basic transaction insights structure
+        transaction_insights = {}
         for transaction in transactions:
             transaction_insights[transaction.id] = {
                 'similar_transactions': [],
@@ -413,7 +274,6 @@ def analyze(file_id):
         flash('Error loading transaction data')
         return redirect(url_for('main.upload'))
     
-    # Handle manual updates first (always available)
     if request.method == 'POST':
         try:
             for transaction in transactions:
@@ -432,35 +292,26 @@ def analyze(file_id):
             db.session.rollback()
             flash('Error saving changes', 'error')
     
-    # Check AI availability without blocking core functionality
-    ai_available = check_ai_availability()
-    logger.info(f"AI services {'available' if ai_available else 'unavailable'}")
     
-    if not ai_available:
-        flash("AI suggestions temporarily unavailable. Manual entry mode active.", "info")
-    
-    # First load essential data
     try:
         file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
         accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
         transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
-        
-        logger.info(f"Successfully loaded file and related data. Found {len(transactions)} transactions")
         
         if not transactions:
             logger.warning(f"No transactions found for file_id: {file_id}")
             flash('No transactions found in this file. Please ensure the file contains valid transaction data.')
             return redirect(url_for('main.upload'))
             
-        # Initialize basic transaction insights structure
+        transaction_insights = {}
         for transaction in transactions:
             transaction_insights[transaction.id] = {
-                'similar_transactions': [],
+                'ai_processed': False,
                 'account_suggestions': [],
-                'explanation_suggestion': None
+                'explanation_suggestion': None,
+                'similar_transactions': []
             }
             
-        # Handle POST requests for basic functionality
         if request.method == 'POST':
             try:
                 for transaction in transactions:
@@ -479,216 +330,25 @@ def analyze(file_id):
                 db.session.rollback()
                 flash('Error saving changes', 'error')
         
-        # Initialize AI insights data structure
-        transaction_insights = {}
-        for transaction in transactions:
-            transaction_insights[transaction.id] = {
-                'ai_processed': False,
-                'account_suggestions': [],
-                'explanation_suggestion': None,
-                'similar_transactions': []
-            }
-
-        # AI feature processing (completely separate from core functionality)
-        if ai_available:
-            logger.info("Starting AI feature processing")
-            
-            for transaction in transactions:
-                try:
-                    # ASF: Account Suggestion Feature
-                    if transaction.description and not transaction.account_id:
-                        try:
-                            account_suggestions = predict_account(
-                                transaction.description,
-                                transaction.explanation or '',
-                                [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
-                            )
-                            if account_suggestions:
-                                transaction_insights[transaction.id]['account_suggestions'] = account_suggestions
-                                transaction_insights[transaction.id]['ai_processed'] = True
-                                logger.info(f"ASF: Generated suggestions for transaction {transaction.id}")
-                        except Exception as asf_error:
-                            logger.warning(f"ASF unavailable for transaction {transaction.id}: {str(asf_error)}")
-                            if "rate limit" in str(asf_error).lower():
-                                logger.info("ASF rate limit reached, continuing with manual processing")
-                    
-                    # ESF: Explanation Suggestion Feature
-                    if not transaction.explanation:
-                        try:
-                            explanation = suggest_explanation(transaction.description)
-                            if explanation:
-                                transaction_insights[transaction.id]['explanation_suggestion'] = explanation
-                                transaction_insights[transaction.id]['ai_processed'] = True
-                                logger.info(f"ESF: Generated explanation for transaction {transaction.id}")
-                        except Exception as esf_error:
-                            logger.warning(f"ESF unavailable for transaction {transaction.id}: {str(esf_error)}")
-                            if "rate limit" in str(esf_error).lower():
-                                logger.info("ESF rate limit reached, continuing with manual processing")
-                    
-                    # ERF: Explanation Recognition Feature
-                    if transaction.explanation:
-                        try:
-                            similar_transactions = find_similar_transactions(
-                                transaction.description,
-                                [t for t in transactions if t.id != transaction.id]
-                            )
-                            if similar_transactions:
-                                transaction_insights[transaction.id]['similar_transactions'] = similar_transactions[:3]
-                                transaction_insights[transaction.id]['ai_processed'] = True
-                                logger.info(f"ERF: Found similar transactions for {transaction.id}")
-                        except Exception as erf_error:
-                            logger.warning(f"ERF unavailable for transaction {transaction.id}: {str(erf_error)}")
-                            if "rate limit" in str(erf_error).lower():
-                                logger.info("ERF rate limit reached, continuing with manual processing")
-                
-                except Exception as trans_error:
-                    logger.warning(f"Failed to process AI features for transaction {transaction.id}: {str(trans_error)}")
-                    continue
-            
-            logger.info("AI features processing completed")
-        else:
-            flash("AI features are temporarily unavailable. Basic functionality remains available.", "warning")
-                
-                # Process anomaly detection if AI is available
-            if ai_available:
-                try:
-                    detected_anomalies = detect_transaction_anomalies(transactions)
-                    if detected_anomalies:
-                        anomalies.update(detected_anomalies)
-                        logger.info("Anomaly detection completed successfully")
-                except Exception as e:
-                    logger.warning(f"Anomaly detection unavailable: {str(e)}")
-                    # Continue with core functionality
-                    
-    except Exception as e:
-        logger.warning(f"AI features unavailable: {str(e)}")
-        ai_available = False
-        if "rate limit" in str(e).lower():
-            flash("AI features are temporarily unavailable due to rate limiting. Basic functionality remains available.", "warning")
-        else:
-            flash("AI features are temporarily unavailable. Basic functionality remains available.", "warning")
-            
-    except Exception as e:
-        logger.error(f"Error loading data: {str(e)}")
-        flash('Error loading transaction data. Please try again.')
-        return redirect(url_for('main.upload'))
-    
-    # Handle POST requests
-    if request.method == 'POST':
-        try:
-            action = request.form.get('action', 'save')
-            
-            if action == 'suggest':
-                # Handle ASF suggestion request
-                transaction_id = int(request.form.get('transaction_id'))
-                transaction = Transaction.query.get_or_404(transaction_id)
-                
-                if transaction.description:
-                    try:
-                        account_suggestions = predict_account(
-                            transaction.description,
-                            transaction.explanation or '',
-                            [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
-                        )
-                        
-                        if account_suggestions and len(account_suggestions) > 0:
-                            suggested_account = next(
-                                (acc for acc in accounts if acc.name.lower() == account_suggestions[0]['account_name'].lower()),
-                                None
-                            )
-                            if suggested_account:
-                                transaction.account_id = suggested_account.id
-                                db.session.commit()
-                                flash(f'Account suggested: {suggested_account.name}')
-                            else:
-                                flash('No matching account found for the suggestion')
-                        else:
-                            flash('No account suggestions generated')
-                    except Exception as e:
-                        logger.error(f"Error in ASF suggestion: {str(e)}")
-                        flash('Error generating account suggestions')
-                else:
-                    flash('Transaction has no description')
-                    
-            elif action == 'save':
-                # Handle save request for all transactions
-                for transaction in transactions:
-                    explanation_key = f'explanation_{transaction.id}'
-                    account_key = f'account_{transaction.id}'
-                    
-                    if explanation_key in request.form:
-                        transaction.explanation = request.form[explanation_key]
-                    if account_key in request.form and request.form[account_key]:
-                        transaction.account_id = int(request.form[account_key])
-                
-                db.session.commit()
-                flash('Changes saved successfully', 'success')
-                
-        except Exception as e:
-            logger.error(f"Error in analyze POST handler: {str(e)}")
-            db.session.rollback()
-            flash('Error saving changes', 'error')
-    
-    # Initialize anomalies with safe defaults
-    anomalies = {
-        "anomalies": [],
-        "pattern_insights": {},
-        "error": None
-    }
-    
-    # Enhanced AI features (completely optional and non-blocking)
-    if ai_available:
-        try:
-            # Try anomaly detection
-            try:
-                detected_anomalies = detect_transaction_anomalies(transactions)
-                if detected_anomalies:
-                    anomalies = detected_anomalies
-                    logger.info("Anomaly detection completed successfully")
-            except Exception as e:
-                logger.warning(f"Anomaly detection unavailable: {str(e)}")
-
-            # Try finding similar transactions
-            for transaction in transactions:
-                if transaction.description:
-                    try:
-                        similar_trans = find_similar_transactions(
-                            transaction.description,
-                            [t for t in transactions if t.id != transaction.id]
-                        )
-                        if similar_trans:
-                            transaction_insights[transaction.id]['similar_transactions'] = similar_trans[:3]
-                            transaction_insights[transaction.id]['ai_processed'] = True
-                    except Exception as e:
-                        logger.warning(f"Similar transactions unavailable for transaction {transaction.id}: {str(e)}")
-        except Exception as e:
-            logger.warning(f"Enhanced AI features unavailable: {str(e)}")
-            # Continue with basic functionality even if AI features fail
-    
-    # Render template with all collected data
-    try:
+        
         return render_template(
             'analyze.html',
             file=file,
             accounts=accounts,
             transactions=transactions,
             bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int),
-            anomalies=anomalies,
-            transaction_insights=transaction_insights,
-            ai_available=ai_available
+            transaction_insights=transaction_insights
         )
     except Exception as e:
-        logger.error(f"Error rendering analyze template: {str(e)}")
-        flash('Error displaying analysis page')
+        logger.error(f"Error loading data: {str(e)}")
+        flash('Error loading transaction data. Please try again.')
         return redirect(url_for('main.upload'))
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
     try:
-        # Get list of uploaded files
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-        # Get bank accounts (starting with ca.810)
         bank_accounts = Account.query.filter(
             Account.user_id == current_user.id,
             Account.link.like('ca.810%'),
@@ -716,13 +376,7 @@ def upload():
                 flash('Invalid file format. Please upload a CSV or Excel file.')
                 return redirect(url_for('main.upload'))
                 
-            # Log file details
-            logger.info(f"File name: {file.filename}")
-            logger.info(f"File content type: {file.content_type}")
-            
-            # Handle file upload POST request
             try:
-                # Create uploaded file record first
                 uploaded_file = UploadedFile(
                     filename=file.filename,
                     user_id=current_user.id
@@ -730,480 +384,23 @@ def upload():
                 db.session.add(uploaded_file)
                 db.session.commit()
                 
-                # Enhanced chunked processing with memory optimization
-                chunk_size = 1000  # Balanced chunk size for better memory usage
-                total_rows = 0
-                processed_rows = 0
-                error_rows = []
+                df, total_rows = process_uploaded_file(file, init_upload_status(file.filename))
+                processed_rows, error_rows = process_transaction_rows(df, uploaded_file, current_user)
                 
-                # Initialize progress tracking
-                upload_status = {
-                    'filename': file.filename,
-                    'total_rows': 0,
-                    'processed_rows': 0,
-                    'failed_rows': 0,
-                    'current_chunk': 0,
-                    'status': 'initializing',
-                    'start_time': datetime.utcnow().isoformat(),
-                    'last_update': datetime.utcnow().isoformat(),
-                    'errors': [],
-                    'progress_percentage': 0
-                }
-                session['upload_status'] = upload_status
-                session.modified = True
                 
-                try:
-                    # Process the file
-                    if file.filename.endswith('.csv'):
-                        df = pd.read_csv(file)
-                    else:
-                        df = pd.read_excel(file, engine='openpyxl')
-                    
-                    # Update status after successful file read
-                    upload_status['status'] = 'processing'
+                if processed_rows > 0:
+                    session['upload_status']['processed_rows'] = processed_rows
+                    session['upload_status']['failed_rows'] = len(error_rows)
+                    session['upload_status']['status'] = 'complete'
+                    session['upload_status']['progress_percentage'] = 100
+                    session['upload_status']['errors'] = error_rows
                     session.modified = True
-                    
-                    return jsonify({'status': 'success'})
-                except Exception as e:
-                    logger.error(f"Error in upload processing: {str(e)}")
-                    return jsonify({'error': str(e)}), 500
-    
-    try:
-        files = []
-        bank_accounts = []
-        files = UploadedFile.query.filter_by(user_id=current_user.id).all()
-        bank_accounts = Account.query.filter_by(user_id=current_user.id).all()
-        return render_template('upload.html', files=files, bank_accounts=bank_accounts)
-    except Exception as e:
-        logger.error(f"Error in upload route: {str(e)}")
-        flash('An error occurred during file upload', 'error')
-        return render_template('upload.html', files=[], bank_accounts=[])
-
-def init_upload_status(filename):
-    """Initialize upload status tracking"""
-    logger.info(f"Initializing upload status tracking for {filename}")
-    try:
-        # Initialize progress tracking
-        upload_status = {
-            'filename': filename,
-            'total_rows': 0,
-            'processed_rows': 0,
-            'failed_rows': 0,
-            'current_chunk': 0,
-            'status': 'counting',
-            'start_time': datetime.utcnow().isoformat(),
-            'last_update': datetime.utcnow().isoformat(),
-            'errors': [],
-            'progress_percentage': 0
-        }
-        return upload_status
-    except Exception as e:
-        logger.error(f"Error initializing upload status: {str(e)}")
-        raise
-
-def process_uploaded_file(file, upload_status):
-    """Helper function to process the uploaded file"""
-    try:
-        # Read file data
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(file)
-        else:
-            df = pd.read_excel(file, engine='openpyxl')
-        
-        total_rows = len(df)
-        logger.info(f"Processing file with {total_rows} rows")
-        
-        # Update upload status
-        upload_status['total_rows'] = total_rows
-        upload_status['status'] = 'processing'
-        session['upload_status'] = upload_status
-        session.modified = True
-        
-        # Clean and normalize column names
-        df.columns = df.columns.str.strip().str.lower()
-        required_columns = ['date', 'description', 'amount']
-        
-        # Validate required columns
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
-        
-        return df, total_rows
-        
-    except Exception as e:
-        logger.error(f"Error processing file {file.filename}: {str(e)}")
-        raise
-
-@main.route('/verify-rollback', methods=['POST'])
-@login_required
-def verify_rollback():
-    """
-    Endpoint to verify system state after a rollback
-    """
-    try:
-        from tests.rollback_verification import RollbackVerificationTest
-        from datetime import datetime, timedelta
-        
-        # Get reference time from request, default to 32 hours ago
-        reference_time = request.form.get('reference_time', None)
-        try:
-            if reference_time:
-                reference_time = datetime.fromisoformat(reference_time)
-            else:
-                reference_time = datetime.utcnow() - timedelta(hours=32)
-        except ValueError as e:
-            logger.error(f"Invalid reference time format: {str(e)}")
-            return jsonify({
-                'success': False,
-                'error': 'Invalid reference time format'
-            }), 400
-        
-        # Run verifications
-        try:
-            verifier = RollbackVerificationTest()
-            results = verifier.run_all_verifications(reference_time)
-            
-            # Log results
-            logger.info(f"Rollback verification results: {results}")
-            
-            # Check if all verifications passed
-            all_passed = all(results.values())
-            
-            if all_passed:
-                flash("All rollback verifications passed successfully", "success")
-            else:
-                failed_tests = [k for k, v in results.items() if not v]
-                flash(f"Some verifications failed: {', '.join(failed_tests)}", "error")
-            
-            return jsonify({
-                'success': all_passed,
-                'results': results,
-                'reference_time': reference_time.isoformat()
-            })
-            
-        except Exception as e:
-            logger.error(f"Error during verification process: {str(e)}")
-            return jsonify({
-                'success': False,
-                'error': f"Verification process error: {str(e)}"
-            }), 500
-            
-    except Exception as e:
-        logger.error(f"Error in rollback verification endpoint: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-def init_upload_status(filename):
-    """Initialize upload status tracking"""
-    logger.info(f"Initializing upload status tracking for {filename}")
-    try:
-        # Initialize progress tracking
-        upload_status = {
-            'filename': filename,
-            'total_rows': 0,
-            'processed_rows': 0,
-            'failed_rows': 0,
-            'current_chunk': 0,
-            'status': 'counting',
-            'start_time': datetime.utcnow().isoformat(),
-            'last_update': datetime.utcnow().isoformat(),
-            'errors': [],
-            'progress_percentage': 0
-        }
-        return upload_status
-    except Exception as e:
-        logger.error(f"Error initializing upload status: {str(e)}")
-        raise
-                    def process_uploaded_file(file, upload_status):
-    """Helper function to process the uploaded file"""
-    try:
-        # Read file data
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(file)
-        else:
-            df = pd.read_excel(file, engine='openpyxl')
-        
-        total_rows = len(df)
-        logger.info(f"Processing file with {total_rows} rows")
-        
-        # Update upload status
-        upload_status['total_rows'] = total_rows
-        upload_status['status'] = 'processing'
-        session['upload_status'] = upload_status
-        session.modified = True
-        
-        return df, total_rows
-    except Exception as e:
-        logger.error(f"Error processing file {file.filename}: {str(e)}")
-        raise
-        
-        # Clean and normalize column names
-        df.columns = df.columns.str.strip().str.lower()
-        required_columns = ['date', 'description', 'amount']
-        
-        # Validate required columns
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
-        
-        return df, total_rows
-    except Exception as e:
-        logger.error(f"Error reading file {file.filename}: {str(e)}")
-        raise
-                    def process_transaction_rows(df, uploaded_file, current_user):
-    """Process transaction rows from the dataframe"""
-    valid_rows = []
-    error_rows = []
-    
-    for idx, row in df.iterrows():
-        try:
-            # Parse date
-            date_str = str(row['date'])
-            try:
-                parsed_date = pd.to_datetime(date_str)
-            except:
-                # Try specific formats if automatic parsing fails
-                date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
-                parsed_date = None
-                for date_format in date_formats:
-                    try:
-                        parsed_date = pd.to_datetime(date_str, format=date_format)
-                        break
-                    except ValueError:
-                        continue
-                
-                if not parsed_date:
-                    error_msg = f"Could not parse date: {date_str}"
-                    logger.warning(error_msg)
-                    error_rows.append(error_msg)
-                    continue
-                    
-                    for idx, row in df.iterrows():
-                        try:
-                            # Parse date
-                            date_str = str(row['date'])
-                            try:
-                                parsed_date = pd.to_datetime(date_str)
-                            except:
-                                # Try specific formats if automatic parsing fails
-                                date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
-                                parsed_date = None
-                                for date_format in date_formats:
-                                    try:
-                                        parsed_date = pd.to_datetime(date_str, format=date_format)
-                                        break
-                                    except ValueError:
-                                        continue
-                                
-                                if not parsed_date:
-                                    error_msg = f"Could not parse date: {date_str}"
-                                    logger.warning(error_msg)
-                                    error_rows.append(error_msg)
-                                    continue
-                            
-                            # Parse amount
-                            try:
-                                amount = float(str(row['amount']).replace(',', ''))
-                            except (ValueError, TypeError) as e:
-                                error_msg = f"Invalid amount format in row {idx + 1}: {row['amount']}"
-                                logger.warning(error_msg)
-                                error_rows.append(error_msg)
-                                continue
-                            
-                            # Create transaction object with proper defaults
-                            valid_rows.append({
-                                'date': parsed_date.to_pydatetime(),
-                                'description': str(row['description']).strip(),
-                                'amount': amount,
-                                'explanation': '',  # Initialize empty explanation
-                                'user_id': current_user.id,
-                                'file_id': uploaded_file.id,
-                                'account_id': None  # Initialize without account
-                            })
-                            
-                        except Exception as row_error:
-                            error_msg = f"Row {idx}: {str(row_error)}"
-                            error_rows.append(error_msg)
-                            logger.warning(error_msg)
-                    
-                    # Batch insert valid rows
-                    if valid_rows:
-                        db.session.bulk_insert_mappings(Transaction, valid_rows)
-                        db.session.commit()
-                        logger.info(f"Successfully inserted {len(valid_rows)} transactions")
-                    
-                    # Update progress
-                    processed_rows = len(valid_rows)
-                    progress_percentage = min(int((processed_rows / total_rows) * 100), 100)
-                    
-                    logger.info(f"Processed {processed_rows} rows with {len(error_rows)} errors")
-                    
-                    # Update session with total rows
-                    session['upload_status']['total_rows'] = total_rows
-                    session['upload_status']['status'] = 'processing'
-                    session.modified = True
-
-                    # Initialize progress in session
-                    session['upload_total_rows'] = total_rows
-                    session['upload_filename'] = file.filename
-                    logger.info(f"Started processing file: {file.filename}")
-            
-                    # Optimized chunk processing with improved error handling
-                    for chunk_idx, chunk in enumerate(df_iterator):
-                        chunk_start_time = datetime.utcnow()
-                        chunk_errors = []
-                        
-                        try:
-                            # Clean and normalize column names
-                            chunk.columns = chunk.columns.str.strip().str.lower()
-                            required_columns = ['date', 'description', 'amount']
-                            
-                            # Validate chunk structure
-                            missing_columns = [col for col in required_columns if col not in chunk.columns]
-                            if missing_columns:
-                                raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
-                            
-                            # Process chunk with vectorized operations where possible
-                            chunk['date'] = pd.to_datetime(chunk['date'], errors='coerce')
-                            chunk['amount'] = pd.to_numeric(chunk['amount'], errors='coerce')
-                            
-                            # Filter valid rows
-                            valid_mask = (
-                                chunk['date'].notna() & 
-                                chunk['amount'].notna() & 
-                                chunk['description'].notna()
-                            )
-                            valid_chunk = chunk[valid_mask]
-                            
-                            # Prepare batch insert data
-                            valid_rows = [
-                                {
-                                    'date': row['date'].to_pydatetime(),
-                                    'description': str(row['description']),
-                                    'amount': float(row['amount']),
-                                    'explanation': '',
-                                    'user_id': current_user.id,
-                                    'file_id': uploaded_file.id
-                                }
-                                for _, row in valid_chunk.iterrows()
-                            ]
-                            
-                            # Track invalid rows
-                            invalid_rows = chunk[~valid_mask]
-                            for idx, row in invalid_rows.iterrows():
-                                try:
-                                    error_msg = f"Row {idx}: Invalid data format"
-                                    chunk_errors.append(error_msg)
-                                    logger.warning(error_msg)
-                                except Exception as row_error:
-                                    error_msg = f"Row {idx}: {str(row_error)}"
-                                    chunk_errors.append(error_msg)
-                                    logger.warning(error_msg)
-                            
-                            # Batch insert valid rows
-                            if valid_rows:
-                                db.session.bulk_insert_mappings(Transaction, valid_rows)
-                            
-                            processed_rows += len(valid_rows)
-                            
-                            # Commit every chunk to prevent memory buildup
-                            db.session.commit()
-                            
-                            # Update progress tracking
-                            processed_rows += len(valid_rows)
-                            chunk_process_time = (datetime.utcnow() - chunk_start_time).total_seconds()
-                            
-                            # Calculate progress metrics
-                            progress_percentage = min(int((processed_rows / total_rows) * 100), 100)
-                            processing_rate = len(valid_rows) / chunk_process_time if chunk_process_time > 0 else 0
-                            
-                            # Update session status
-                            session['upload_status'].update({
-                                'processed_rows': processed_rows,
-                                'failed_rows': len(error_rows) + len(chunk_errors),
-                                'current_chunk': chunk_idx + 1,
-                                'progress_percentage': progress_percentage,
-                                'last_update': datetime.utcnow().isoformat(),
-                                'processing_rate': round(processing_rate, 2),
-                                'errors': chunk_errors[-5:] if chunk_errors else []  # Keep only recent errors
-                            })
-                            session.modified = True
-                            
-                            # Log progress
-                            logger.info(f"Processed chunk {chunk_idx + 1}: {len(valid_rows)} valid rows, "
-                                      f"{len(chunk_errors)} errors, Progress: {progress_percentage}%")
-                            
-                            logger.info(f"Chunk {chunk_idx + 1}/{(total_rows//chunk_size) + 1} processed: "
-                                      f"{len(valid_rows)} valid rows, {len(chunk_errors)} errors, "
-                                      f"Time: {chunk_process_time:.2f}s")
-                            
-                        except Exception as chunk_error:
-                            logger.error(f"Error processing chunk {chunk_idx}: {str(chunk_error)}")
-                            db.session.rollback()
-                            error_rows.append(f"Chunk {chunk_idx}: {str(chunk_error)}")
-                            continue
-                        
-                        transactions_to_add = []
-                        for _, row in chunk.iterrows():
-                            try:
-                                # Parse date with flexible format handling
-                                date_str = str(row['date'])
-                                try:
-                                    parsed_date = pd.to_datetime(date_str)
-                                except:
-                                    # Try specific formats if automatic parsing fails
-                                    date_formats = ['%Y%m%d', '%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m-%d-%Y']
-                                    parsed_date = None
-                                    for date_format in date_formats:
-                                        try:
-                                            parsed_date = pd.to_datetime(date_str, format=date_format)
-                                            break
-                                        except ValueError:
-                                            continue
-                                    
-                                    if not parsed_date:
-                                        logger.warning(f"Could not parse date: {date_str}")
-                                        continue
-
-                                # Create transaction object
-                                bank_account_id = request.form.get('bank_account')
-                                if not bank_account_id:
-                                    raise ValueError("Bank account must be selected")
-                                
-                                transaction = Transaction(
-                                    date=parsed_date,
-                                    description=str(row['description']),
-                                    amount=float(row['amount']),
-                                    explanation='',
-                                    user_id=current_user.id,
-                                    file_id=uploaded_file.id,
-                                    bank_account_id=bank_account_id
-                                )
-                                transactions_to_add.append(transaction)
-                            except Exception as row_error:
-                                logger.error(f"Error processing row: {row} - {str(row_error)}")
-                                continue
-
-                        # Batch save transactions for current chunk
-                        if transactions_to_add:
-                            try:
-                                db.session.bulk_save_objects(transactions_to_add)
-                                db.session.commit()
-                                logger.info(f"Saved {len(transactions_to_add)} transactions from chunk {chunk_idx + 1}")
-                            except Exception as save_error:
-                                logger.error(f"Error saving chunk {chunk_idx + 1}: {str(save_error)}")
-                                db.session.rollback()
-
-                except Exception as e:
-                    logger.error(f"Error reading file {file.filename}: {str(e)}")
-                    flash(f"Error reading file: {str(e)}")
+                    flash('File uploaded and processed successfully')
+                    return redirect(url_for('main.analyze', file_id=uploaded_file.id))
+                else:
+                    flash('No transactions could be processed from the file.')
                     return redirect(url_for('main.upload'))
                 
-                flash('File uploaded and processed successfully')
-                return redirect(url_for('main.analyze', file_id=uploaded_file.id))
-            
             except Exception as e:
                 logger.error(f"Error processing file: {str(e)}")
                 db.session.rollback()
@@ -1217,14 +414,13 @@ def init_upload_status(filename):
         
     return render_template('upload.html', files=files, bank_accounts=bank_accounts)
 
+
 @main.route('/file/<int:file_id>/delete', methods=['POST'])
 @login_required
 def delete_file(file_id):
-    file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
     try:
-        # Delete associated transactions first
+        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
         Transaction.query.filter_by(file_id=file.id).delete()
-        # Then delete the file record
         db.session.delete(file)
         db.session.commit()
         flash('File and associated transactions deleted successfully')
@@ -1234,56 +430,10 @@ def delete_file(file_id):
         db.session.rollback()
         flash('Error deleting file')
         return redirect(url_for('main.upload'))
-def process_transaction_analysis(user_id: int, file_id: int):
-    """Background task to process and analyze transactions"""
-def calculate_description_similarity(desc1, desc2):
-    """Calculate similarity between descriptions using text similarity and semantic meaning"""
-    from difflib import SequenceMatcher
-    import re
-    import openai
-    import os
-    
-    if not desc1 or not desc2:
-        return 0.0, 0.0
-        
-    # Normalize descriptions
-    def normalize_text(text):
-        text = re.sub(r'[^\w\s]', '', text.lower())
-        return ' '.join(text.split())
-    
-    norm_desc1 = normalize_text(desc1)
-    norm_desc2 = normalize_text(desc2)
-    
-    # Calculate text similarity
-    try:
-        text_similarity = SequenceMatcher(None, norm_desc1, norm_desc2).ratio()
-    except Exception as e:
-        logger.error(f"Error calculating text similarity: {str(e)}")
-        text_similarity = 0.0
-    
-    # Calculate semantic similarity using OpenAI
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "system",
-                "content": "You are a financial transaction analyzer. Rate the semantic similarity of these two transaction descriptions on a scale of 0 to 1, where 1 means they refer to the same type of transaction and 0 means completely different types."
-            }, {
-                "role": "user",
-                "content": f"Description 1: {desc1}\nDescription 2: {desc2}\nProvide only the numerical score."
-            }]
-        )
-        semantic_similarity = float(response.choices[0].message.content.strip())
-    except Exception as e:
-        logger.error(f"Error calculating semantic similarity: {str(e)}")
-        semantic_similarity = 0.0
-        
-    return text_similarity, semantic_similarity
 
 @main.route('/update_explanation', methods=['POST'])
 @login_required
 def update_explanation():
-    """Update transaction explanation and implement Explanation Recognition Feature (ERF)"""
     try:
         data = request.get_json()
         transaction_id = data.get('transaction_id')
@@ -1293,7 +443,6 @@ def update_explanation():
         if not transaction_id or not description:
             return jsonify({'error': 'Missing required fields'}), 400
             
-        # Update current transaction
         transaction = Transaction.query.filter_by(
             id=transaction_id, 
             user_id=current_user.id
@@ -1305,45 +454,9 @@ def update_explanation():
         transaction.explanation = explanation
         db.session.commit()
         
-        # ERF: Find similar transactions if explanation is provided
-        similar_transactions = []
-        if explanation:
-            all_transactions = Transaction.query.filter(
-                Transaction.user_id == current_user.id,
-                Transaction.id != transaction_id,
-                Transaction.explanation.is_(None)
-            ).all()
-            
-            for trans in all_transactions:
-                try:
-                    text_similarity, semantic_similarity = calculate_description_similarity(
-                        description, 
-                        trans.description
-                    )
-                    
-                    # ERF criteria: 70% text similarity OR 95% semantic similarity
-                    if text_similarity >= 0.7 or semantic_similarity >= 0.95:
-                        similar_transactions.append({
-                            'id': trans.id,
-                            'description': trans.description,
-                            'text_similarity': round(text_similarity * 100, 1),
-                            'semantic_similarity': round(semantic_similarity * 100, 1)
-                        })
-                except Exception as e:
-                    logger.error(f"ERF: Error analyzing transaction {trans.id}: {str(e)}")
-                    continue
-            
-            # Sort by overall similarity (weighted average of text and semantic similarity)
-            similar_transactions.sort(
-                key=lambda x: (x['text_similarity'] + x['semantic_similarity']) / 2,
-                reverse=True
-            )
-            logger.info(f"ERF: Found {len(similar_transactions)} similar transactions for explanation replication")
-        
         return jsonify({
             'success': True,
-            'message': 'Explanation updated successfully',
-            'similar_transactions': similar_transactions
+            'message': 'Explanation updated successfully'
         })
         
     except Exception as e:
@@ -1354,7 +467,6 @@ def update_explanation():
 @main.route('/predict_account', methods=['POST'])
 @login_required
 def predict_account_route():
-    """Predict account for transaction based on description and explanation"""
     try:
         data = request.get_json()
         description = data.get('description', '').strip()
@@ -1363,7 +475,6 @@ def predict_account_route():
         if not description:
             return jsonify({'error': 'Description is required'}), 400
             
-        # Get available accounts for user
         available_accounts = Account.query.filter_by(
             user_id=current_user.id,
             is_active=True
@@ -1372,130 +483,39 @@ def predict_account_route():
         if not available_accounts:
             return jsonify({'error': 'No active accounts found'}), 400
         
-        # Find similar transactions with successful predictions
-        similar_transactions = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.account_id.isnot(None),  # Only get transactions with assigned accounts
-            Transaction.description.ilike(f"%{description}%")  # Fuzzy match on description
-        ).order_by(Transaction.date.desc()).limit(5).all()
+        account_data = [{
+            'name': acc.name,
+            'category': acc.category,
+            'balance': 0  # Initialize with zero balance
+        } for acc in available_accounts]
         
-        # Get predictions using AI, including historical data
-        predictions = predict_account(
-            description=description,
-            explanation=explanation,
-            available_accounts=available_accounts,
-            similar_transactions=similar_transactions
-        )
-        
-        logger.info(f"Generated account predictions for description: {description}")
-        return jsonify(predictions)
-        
-    except Exception as e:
-        logger.error(f"Error predicting account: {str(e)}")
-        return jsonify({'error': 'Error generating predictions'}), 500
+        return jsonify({
+            'success': True,
+            'accounts': account_data
+        })
         
     except Exception as e:
         logger.error(f"Error predicting account: {str(e)}")
         return jsonify({'error': str(e)}), 500
-        
-        # Get transactions for the file
-        transactions = Transaction.query.filter_by(
-            user_id=user_id,
-            file_id=file_id
-        ).all()
-        
-        total_transactions = len(transactions)
-        processed = 0
-        
-        for transaction in transactions:
-            try:
-                # Predict account and detect anomalies
-                predicted_account = predict_account(
-                    transaction.description,
-                    transaction.explanation
-                )
-                anomaly_result = detect_transaction_anomalies([transaction])
-                
-                # Update transaction with AI predictions
-                if predicted_account:
-                    account = Account.query.filter_by(
-                        user_id=user_id,
-                        name=predicted_account
-                    ).first()
-                    if account:
-                        transaction.account_id = account.id
-                
-                processed += 1
-                
-                # Update progress in session
-                progress = (processed / total_transactions) * 100
-                session['analysis_progress'] = progress
-                session.modified = True
-                
-            except Exception as e:
-                logger.error(f"Error processing transaction {transaction.id}: {str(e)}")
-                continue
-        
-        logger.info(f"Completed transaction analysis for user {user_id}, file {file_id}")
-        
-    except Exception as e:
-        logger.error(f"Error in transaction analysis task: {str(e)}")
-        raise
-
-def process_expense_forecast(user_id: int, start_date: str, end_date: str):
-    """Background task to generate expense forecasts"""
-    try:
-        logger.info(f"Starting expense forecast for user {user_id}")
-        
-        # Convert string dates to datetime
-        start = datetime.strptime(start_date, '%Y-%m-%d')
-        end = datetime.strptime(end_date, '%Y-%m-%d')
-        
-        # Get historical transactions
-        transactions = Transaction.query.filter(
-            Transaction.user_id == user_id,
-            Transaction.date <= end,
-            Transaction.amount < 0  # Only expenses
-        ).order_by(Transaction.date.asc()).all()
-        
-        # Generate forecast data
-        forecast_data = forecast_expenses(transactions, start, end)
-        
-        # Store results in session for retrieval
-        session[f'forecast_result_{user_id}'] = forecast_data
-        session.modified = True
-        
-        logger.info(f"Completed expense forecast for user {user_id}")
-        
-    except Exception as e:
-        logger.error(f"Error in expense forecast task: {str(e)}")
-        raise
-        db.session.rollback()
-
-
 
 @main.route('/expense-forecast')
 @login_required
 def expense_forecast():
     try:
-        # Get current financial year transactions
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
         if not company_settings:
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
         
-        # Get financial year dates
         fy_dates = company_settings.get_financial_year()
         start_date = fy_dates['start_date']
         end_date = fy_dates['end_date']
         
-        # Get transactions
         transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.date.between(start_date, end_date)
         ).order_by(Transaction.date.desc()).all()
         
-        # Format transactions for AI analysis
         transaction_data = [{
             'amount': t.amount,
             'description': t.description,
@@ -1503,151 +523,64 @@ def expense_forecast():
             'account_name': t.account.name if t.account else 'Uncategorized'
         } for t in transactions]
         
-        # Get account information
-        accounts = Account.query.filter_by(user_id=current_user.id).all()
-        account_data = [{
-            'name': acc.name,
-            'category': acc.category,
-            'balance': sum(t.amount for t in transactions if t.account_id == acc.id)
-        } for acc in accounts]
-        
-        # Generate expense forecast
-        forecast = forecast_expenses(transaction_data, account_data)
-        
-        # Prepare data for charts
-        monthly_data = forecast['monthly_forecasts']
-        monthly_labels = [str(m.get('month', '')) for m in monthly_data]
-        monthly_amounts = [float(m.get('total_expenses', 0)) for m in monthly_data]
-        
-        # Calculate confidence intervals
-        confidence_upper = []
-        confidence_lower = []
-        for m in monthly_data:
-            base_amount = float(m.get('total_expenses', 0))
-            variance = forecast.get('confidence_metrics', {}).get('variance_range', {'min': 0, 'max': 0})
-            variance_max = float(variance.get('max', base_amount))
-            variance_min = float(variance.get('min', base_amount))
-            confidence_upper.append(variance_max)
-            confidence_lower.append(variance_min)
-        
-        # Prepare category breakdown
-        categories = {}
-        for m in monthly_data:
-            for cat in m.get('breakdown', []):
-                category = cat.get('category', 'Other')
-                amount = float(cat.get('amount', 0))
-                if category not in categories:
-                    categories[category] = []
-                categories[category].append(amount)
-        
-        category_labels = list(categories.keys())
-        category_amounts = [
-            sum(amounts)/len(amounts) if amounts else 0 
-            for amounts in categories.values()
-        ]
-        
-        # Store the data in session for PDF generation
-        session['forecast'] = forecast
-        session['monthly_labels'] = monthly_labels
-        session['monthly_amounts'] = monthly_amounts
-        session['confidence_upper'] = confidence_upper
-        session['confidence_lower'] = confidence_lower
-        session['category_labels'] = category_labels
-        session['category_amounts'] = category_amounts
-        
-        # Prepare template data
-        template_data = {
-            'forecast': forecast,
-            'monthly_labels': monthly_labels,
-            'monthly_amounts': monthly_amounts,
-            'confidence_upper': confidence_upper,
-            'confidence_lower': confidence_lower,
-            'category_labels': category_labels,
-            'category_amounts': category_amounts
-        }
-        
-        return render_template(
-            'expense_forecast.html',
-            **template_data
-        )
+        return render_template('expense_forecast.html', 
+                             transactions=transaction_data,
+                             start_date=start_date.strftime('%Y-%m-%d'),
+                             end_date=end_date.strftime('%Y-%m-%d'))
         
     except Exception as e:
-        logger.error(f"Error generating expense forecast: {str(e)}")
-        flash('Error generating expense forecast. Please try again.')
+        logger.error(f"Error in expense forecast: {str(e)}")
+        flash('Error generating expense forecast')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/export-forecast-pdf')
+@main.route('/verify-rollback', methods=['POST'])
 @login_required
-def export_forecast_pdf():
-    """Generate and download a PDF report with financial forecasts."""
+def verify_rollback():
     try:
-        # Get company settings
-        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
-        if not company_settings:
-            flash('Please configure company settings first.')
-            return redirect(url_for('main.company_settings'))
-            
-        # Get forecast data from session
-        forecast = session.get('forecast', {})
-        if not forecast:
-            flash('No forecast data available. Please generate a forecast first.')
-            return redirect(url_for('main.expense_forecast'))
-            
-        # Prepare template data
-        template_data = {
-            'forecast': forecast,
-            'company': company_settings,
-            'datetime': datetime,
-            'monthly_labels': session.get('monthly_labels', []),
-            'monthly_amounts': session.get('monthly_amounts', []),
-            'confidence_upper': session.get('confidence_upper', []),
-            'confidence_lower': session.get('confidence_lower', [])
-        }
-
-        template_data = {
-            'forecast': forecast,
-            'monthly_labels': monthly_labels,
-            'monthly_amounts': monthly_amounts,
-            'confidence_upper': confidence_upper,
-            'confidence_lower': confidence_lower,
-            'category_labels': session.get('category_labels', []),
-            'category_amounts': session.get('category_amounts', []),
-            'company': company_settings,
-            'datetime': datetime,
-            'zip': zip  # Required for template iteration
-        }
+        from tests.rollback_verification import RollbackVerificationTest
         
+        reference_time = request.form.get('reference_time', None)
         try:
-            # Render template to HTML
-            html_content = render_template(
-                'pdf_templates/forecast_pdf.html',
-                **template_data
-            )
-            
-            # Generate PDF using WeasyPrint
-            pdf = HTML(string=html_content).write_pdf()
-            
-            # Create response
-            response = make_response(pdf)
-            response.headers['Content-Type'] = 'application/pdf'
-            response.headers['Content-Disposition'] = f'attachment; filename=forecast_report_{datetime.now().strftime("%Y%m%d")}.pdf'
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"Error generating PDF: {str(e)}")
-            flash('Error generating PDF report')
-            return redirect(url_for('main.expense_forecast'))
-            
+            if reference_time:
+                reference_time = datetime.fromisoformat(reference_time)
+            else:
+                reference_time = datetime.utcnow() - timedelta(hours=32)
+        except ValueError as e:
+            logger.error(f"Invalid reference time format: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': 'Invalid reference time format'
+            }), 400
+        
+        verifier = RollbackVerificationTest()
+        results = verifier.run_all_verifications(reference_time)
+        
+        logger.info(f"Rollback verification results: {results}")
+        
+        all_passed = all(results.values())
+        
+        if all_passed:
+            flash("All rollback verifications passed successfully", "success")
+        else:
+            failed_tests = [k for k, v in results.items() if not v]
+            flash(f"Some verifications failed: {', '.join(failed_tests)}", "error")
+        
+        return jsonify({
+            'success': all_passed,
+            'results': results,
+            'reference_time': reference_time.isoformat()
+        })
+        
     except Exception as e:
-        logger.error(f"Error preparing template data: {str(e)}")
-        flash('Error preparing report data')
-        return redirect(url_for('main.expense_forecast'))
+        logger.error(f"Error in rollback verification endpoint: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @main.route('/upload-progress')
 @login_required
 def upload_progress():
-    """Get the current upload progress."""
     try:
         status = session.get('upload_status', {})
         if not status:
@@ -1663,7 +596,8 @@ def upload_progress():
             'processed_rows': status.get('processed_rows', 0),
             'current_chunk': status.get('current_chunk', 0),
             'progress': status.get('progress', 0),
-            'last_update': status.get('last_update')
+            'last_update': status.get('last_update'),
+            'errors': status.get('errors', [])
         })
         
     except Exception as e:
@@ -1672,84 +606,3 @@ def upload_progress():
             'status': 'error',
             'message': 'Error checking upload progress'
         }), 500
-
-@main.route('/generate-pdf')
-@login_required
-def generate_pdf():
-    """Generate and download a PDF report with financial forecasts."""
-    try:
-        # Get company settings and verify
-        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
-        if not company_settings:
-            flash('Please configure company settings first.')
-            return redirect(url_for('main.company_settings'))
-            
-        # Generate forecast data
-        forecast_data = generate_forecast_data()  # Implement this function based on your needs
-        
-        # Create PDF from template
-        html_content = render_template(
-            'pdf/forecast_report.html',
-            forecast=forecast_data,
-            company=company_settings
-        )
-        
-        # Generate PDF
-        pdf = HTML(string=html_content).write_pdf()
-        
-        # Create response
-        response = make_response(pdf)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename=forecast_report_{datetime.now().strftime("%Y%m%d")}.pdf'
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF: {str(e)}")
-        flash('Error generating PDF report. Please try again.')
-        return redirect(url_for('main.expense_forecast'))
-
-@main.route('/financial-insights')
-@login_required
-def financial_insights():
-    """Display financial insights and analysis."""
-    try:
-        # Get company settings for financial year
-        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
-        if not company_settings:
-            flash('Please configure company settings first.')
-            return redirect(url_for('main.company_settings'))
-        
-        # Get current financial year dates
-        fy_dates = company_settings.get_financial_year()
-        
-        # Get transactions for analysis
-        transactions = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.date >= fy_dates['start_date'],
-            Transaction.date <= fy_dates['end_date']
-        ).all()
-        
-        # Get accounts for the user
-        accounts = Account.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).all()
-        
-        # Generate insights using AI
-        insights = generate_financial_advice(
-            transactions=[t.to_dict() for t in transactions],
-            accounts=[a.to_dict() for a in accounts]
-        )
-        
-        return render_template(
-            'financial_insights.html',
-            insights=insights,
-            company=company_settings,
-            fy_dates=fy_dates
-        )
-        
-    except Exception as e:
-        logger.error(f"Error generating financial insights: {str(e)}")
-        flash('Error generating financial insights. Please try again.')
-        return redirect(url_for('main.dashboard'))
