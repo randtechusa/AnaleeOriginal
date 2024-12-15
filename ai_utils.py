@@ -1,53 +1,105 @@
-import openai
+from openai import OpenAI, RateLimitError, APIError
 from datetime import datetime
 import logging
 import json
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 import time
 
-def handle_rate_limit(func, max_retries=3, base_delay=1):
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+def handle_rate_limit(func, max_retries=3, base_delay=2):
     """
-    Enhanced decorator to handle rate limiting with proper retry-after handling
+    Enhanced decorator to handle rate limiting with adaptive retry strategy and proper error handling
     """
+    @retry(
+        retry=retry_if_exception_type((RateLimitError, Exception)),
+        stop=stop_after_attempt(max_retries),
+        wait=wait_exponential(multiplier=base_delay, min=4, max=30),  # Increased max wait time
+        reraise=True
+    )
     def wrapper(*args, **kwargs):
-        remaining_retries = max_retries
-        while remaining_retries > 0:
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                if isinstance(e, openai.RateLimitError) or "rate limit" in str(e).lower():
-                    if remaining_retries > 1:
-                        # Extract retry-after if available, otherwise use exponential backoff
-                        if hasattr(e, 'response') and e.response.headers.get('retry-after'):
-                            delay = float(e.response.headers['retry-after'])
-                        else:
-                            delay = base_delay * (2 ** (max_retries - remaining_retries))
-                        
-                        logger.info(f"Rate limit hit, waiting {delay} seconds before retry {max_retries - remaining_retries + 1}/{max_retries}")
-                        time.sleep(delay)
-                        remaining_retries -= 1
-                        continue
-                logger.error(f"Rate limit exceeded after {max_retries} retries: {str(e)}")
-                raise
-        return None
+        try:
+            return func(*args, **kwargs)
+        except RateLimitError as e:
+            retry_after = None
+            if hasattr(e, 'response') and e.response is not None:
+                # Extract retry-after from headers if available
+                retry_after = e.response.headers.get('retry-after')
+                if retry_after:
+                    try:
+                        retry_after = int(retry_after)
+                        logger.warning(f"Rate limit hit, server suggests waiting {retry_after} seconds")
+                        time.sleep(retry_after)
+                    except (ValueError, TypeError):
+                        pass
+            
+            logger.warning(f"Rate limit hit: {str(e)}")
+            raise
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(phrase in error_msg for phrase in ["rate limit", "too many requests", "429"]):
+                logger.warning(f"Rate limit related error: {str(e)}")
+                raise RateLimitError("Rate limit exceeded")
+                
+            if "invalid api key" in error_msg:
+                logger.error("Invalid API key detected")
+                raise ValueError("Invalid OpenAI API key configuration")
+                
+            logger.error(f"Non-rate limit error in API call: {str(e)}")
+            raise
     return wrapper
 
-def process_in_batches(items, process_func, batch_size=5):
+def process_in_batches(items, process_func, batch_size=3):
     """
-    Process items in batches to avoid hitting rate limits
+    Process items in batches with improved rate limit handling and dynamic backoff
     """
     results = []
+    total_batches = (len(items) + batch_size - 1) // batch_size
+    base_delay = 2  # Base delay between batches in seconds
+    
     for i in range(0, len(items), batch_size):
         batch = items[i:i + batch_size]
-        for item in batch:
+        batch_number = i // batch_size + 1
+        logger.info(f"Processing batch {batch_number}/{total_batches}")
+        
+        retry_count = 0
+        max_retries = 3
+        
+        while retry_count < max_retries:
             try:
-                result = handle_rate_limit(process_func)(item)
-                if result is not None:
-                    results.append(result)
+                batch_results = []
+                for item in batch:
+                    try:
+                        result = handle_rate_limit(process_func)(item)
+                        if result is not None:
+                            batch_results.append(result)
+                    except RateLimitError as e:
+                        logger.warning(f"Rate limit hit processing item in batch {batch_number}: {str(e)}")
+                        # Exponential backoff
+                        wait_time = base_delay * (2 ** retry_count)
+                        logger.info(f"Waiting {wait_time} seconds before retry")
+                        time.sleep(wait_time)
+                        raise  # Re-raise to trigger batch retry
+                    except Exception as e:
+                        logger.error(f"Error processing item in batch {batch_number}: {str(e)}")
+                        continue
+                
+                results.extend(batch_results)
+                # Successful batch, add base delay before next batch
+                time.sleep(base_delay)
+                break  # Break while loop on success
+                
+            except RateLimitError:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    logger.error(f"Failed to process batch {batch_number} after {max_retries} retries")
+                    break
             except Exception as e:
-                logger.error(f"Error processing batch item: {str(e)}")
-        time.sleep(1)  # Small delay between batches
+                logger.error(f"Unexpected error processing batch {batch_number}: {str(e)}")
+                break
+                
     return results
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -61,32 +113,57 @@ _client_error_threshold = 3
 
 def get_openai_client():
     """
-    Get or create OpenAI client with improved error handling and caching
+    Get or create OpenAI client with improved error handling, caching, and automatic retry
     """
     global _openai_client, _last_client_error, _client_error_threshold
     
-    try:
-        # Return existing client if available
-        if _openai_client is not None:
-            return _openai_client
-            
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True
+    )
+    def initialize_client():
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
             logger.error("OpenAI API key not found in environment variables")
             raise ValueError("OpenAI API key not configured")
+        return openai.OpenAI(api_key=api_key)
+    
+    try:
+        # Return existing client if available and working
+        if _openai_client is not None:
+            try:
+                # Quick test to verify client is working
+                _openai_client.models.list(limit=1)
+                return _openai_client
+            except Exception:
+                logger.warning("Existing client failed, reinitializing...")
+                _openai_client = None
         
-        _openai_client = openai.OpenAI(api_key=api_key)
+        # Initialize new client
+        _openai_client = initialize_client()
         logger.info("OpenAI client initialized successfully")
         return _openai_client
         
+    except ValueError as e:
+        # Configuration errors
+        _last_client_error = str(e)
+        logger.error(f"Configuration error: {_last_client_error}")
+        raise
+        
     except Exception as e:
+        # Other errors
         _last_client_error = str(e)
         logger.error(f"Error initializing OpenAI client: {_last_client_error}")
         
-        # Check if we need to verify the API key
         if "invalid api key" in str(e).lower():
             logger.critical("Invalid API key detected - please verify your OpenAI API key")
-        
+            raise ValueError("Invalid OpenAI API key")
+            
+        if "rate limit" in str(e).lower():
+            logger.warning("Rate limit hit during client initialization")
+            raise RateLimitError("Rate limit exceeded during initialization")
+            
         raise
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
@@ -677,28 +754,61 @@ def rule_based_account_matching(description: str, available_accounts: List[Dict]
         return []
 
 def calculate_similarity(transaction_description: str, comparison_description: str) -> float:
-    """Calculate semantic similarity between two transaction descriptions"""
+    """Calculate semantic similarity between two transaction descriptions with improved error handling"""
+    if not transaction_description or not comparison_description:
+        logger.warning("Empty description provided for similarity calculation")
+        return 0.0
+        
     prompt = f"""Compare these two transaction descriptions and rate their semantic similarity:
     Description 1: {transaction_description.strip()}
     Description 2: {comparison_description.strip()}
     
     Consider both textual similarity and semantic meaning.
-    Return only a single float number between 0 and 1."""
+    Your response must be ONLY a single number between 0 and 1.
+    For example: 0.75
+    
+    DO NOT include any explanation or text, just the number."""
     
     client = get_openai_client()
+    if not client:
+        logger.error("Failed to initialize OpenAI client")
+        return 0.0
     
     @handle_rate_limit
     def make_similarity_request():
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a financial text analysis expert. Analyze transaction descriptions for similarity."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.1,
-            max_tokens=50
-        )
-        return float(response.choices[0].message.content.strip())
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a similarity scoring system. You MUST respond with only a single float number between 0 and 1."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=10  # Reduced to prevent verbose responses
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            # Clean the response to handle potential formatting issues
+            content = content.replace(',', '.').strip('%')
+            
+            # Extract the first number found in the response
+            import re
+            numbers = re.findall(r"[-+]?\d*\.\d+|\d+", content)
+            if numbers:
+                value = float(numbers[0])
+                # Ensure the value is between 0 and 1
+                return max(0.0, min(1.0, value))
+            else:
+                logger.error(f"No valid number found in response: {content}")
+                return 0.0
+                
+        except ValueError as ve:
+            logger.error(f"Error parsing similarity score: {str(ve)}")
+            return 0.0
+        except Exception as e:
+            logger.error(f"Error in similarity request: {str(e)}")
+            raise  # Let handle_rate_limit handle retries if needed
     
     try:
         return make_similarity_request()
