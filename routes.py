@@ -479,42 +479,75 @@ def analyze(file_id):
                 db.session.rollback()
                 flash('Error saving changes', 'error')
         
+        # Initialize AI insights data structure
+        transaction_insights = {}
+        for transaction in transactions:
+            transaction_insights[transaction.id] = {
+                'ai_processed': False,
+                'account_suggestions': [],
+                'explanation_suggestion': None,
+                'similar_transactions': []
+            }
+
         # AI feature processing (completely separate from core functionality)
         if ai_available:
-            try:
-                for transaction in transactions:
+            logger.info("Starting AI feature processing")
+            
+            for transaction in transactions:
+                try:
+                    # ASF: Account Suggestion Feature
                     if transaction.description and not transaction.account_id:
-                        # Process AI features for each transaction independently
-                for transaction in transactions:
-                    try:
-                        # Try account suggestions (ASF) if no account is assigned
-                        if transaction.description and not transaction.account_id:
-                            try:
-                                account_suggestions = predict_account(
-                                    transaction.description,
-                                    transaction.explanation or '',
-                                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
-                                )
-                                if account_suggestions:
-                                    transaction_insights[transaction.id]['account_suggestions'] = account_suggestions
-                                    transaction_insights[transaction.id]['ai_processed'] = True
-                            except Exception as e:
-                                logger.warning(f"ASF unavailable for transaction {transaction.id}: {str(e)}")
-                                
-                        # Try explanation suggestion (ESF) if no explanation exists
-                        if not transaction.explanation:
-                            try:
-                                explanation = suggest_explanation(transaction.description)
-                                if explanation:
-                                    transaction_insights[transaction.id]['explanation_suggestion'] = explanation
-                                    transaction_insights[transaction.id]['ai_processed'] = True
-                            except Exception as e:
-                                logger.warning(f"ESF unavailable for transaction {transaction.id}: {str(e)}")
-                    except Exception as e:
-                        logger.warning(f"Failed to process AI features for transaction {transaction.id}: {str(e)}")
-                        continue
-
-                logger.info("AI features processing completed")
+                        try:
+                            account_suggestions = predict_account(
+                                transaction.description,
+                                transaction.explanation or '',
+                                [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                            )
+                            if account_suggestions:
+                                transaction_insights[transaction.id]['account_suggestions'] = account_suggestions
+                                transaction_insights[transaction.id]['ai_processed'] = True
+                                logger.info(f"ASF: Generated suggestions for transaction {transaction.id}")
+                        except Exception as asf_error:
+                            logger.warning(f"ASF unavailable for transaction {transaction.id}: {str(asf_error)}")
+                            if "rate limit" in str(asf_error).lower():
+                                logger.info("ASF rate limit reached, continuing with manual processing")
+                    
+                    # ESF: Explanation Suggestion Feature
+                    if not transaction.explanation:
+                        try:
+                            explanation = suggest_explanation(transaction.description)
+                            if explanation:
+                                transaction_insights[transaction.id]['explanation_suggestion'] = explanation
+                                transaction_insights[transaction.id]['ai_processed'] = True
+                                logger.info(f"ESF: Generated explanation for transaction {transaction.id}")
+                        except Exception as esf_error:
+                            logger.warning(f"ESF unavailable for transaction {transaction.id}: {str(esf_error)}")
+                            if "rate limit" in str(esf_error).lower():
+                                logger.info("ESF rate limit reached, continuing with manual processing")
+                    
+                    # ERF: Explanation Recognition Feature
+                    if transaction.explanation:
+                        try:
+                            similar_transactions = find_similar_transactions(
+                                transaction.description,
+                                [t for t in transactions if t.id != transaction.id]
+                            )
+                            if similar_transactions:
+                                transaction_insights[transaction.id]['similar_transactions'] = similar_transactions[:3]
+                                transaction_insights[transaction.id]['ai_processed'] = True
+                                logger.info(f"ERF: Found similar transactions for {transaction.id}")
+                        except Exception as erf_error:
+                            logger.warning(f"ERF unavailable for transaction {transaction.id}: {str(erf_error)}")
+                            if "rate limit" in str(erf_error).lower():
+                                logger.info("ERF rate limit reached, continuing with manual processing")
+                
+                except Exception as trans_error:
+                    logger.warning(f"Failed to process AI features for transaction {transaction.id}: {str(trans_error)}")
+                    continue
+            
+            logger.info("AI features processing completed")
+        else:
+            flash("AI features are temporarily unavailable. Basic functionality remains available.", "warning")
                 
                 # Process anomaly detection if AI is available
                 if ai_available:
