@@ -700,7 +700,34 @@ def expense_forecast():
         flash('Error generating expense forecast')
         return redirect(url_for('main.dashboard'))
 
-# Removed problematic verification endpoint to restore stability
+@main.route('/api/suggest-explanation', methods=['POST'])
+@login_required
+def suggest_explanation_api():
+    """API endpoint for ESF (Explanation Suggestion Feature)"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+        
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+            
+        similar_transactions = find_similar_transactions(
+            description,
+            Transaction.query.filter(
+                Transaction.user_id == current_user.id,
+                Transaction.explanation.isnot(None)
+            ).all()
+        )
+        
+        suggestion = suggest_explanation(description, similar_transactions)
+        return jsonify({
+            'success': True,
+            'suggestion': suggestion
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in ESF: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/upload-progress')
 @login_required
