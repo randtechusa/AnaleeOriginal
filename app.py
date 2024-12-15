@@ -1,13 +1,14 @@
 import os
 import logging
 import sys
-import time # Added import for time.sleep
-from flask import Flask
+from datetime import datetime
+import time
+from flask import Flask, current_app
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from dotenv import load_dotenv
-from sqlalchemy import text
+from sqlalchemy import text, create_engine
 from flask_apscheduler import APScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from utils.backup_manager import DatabaseBackupManager, init_backup_scheduler
@@ -127,6 +128,44 @@ def create_app():
                 # Import models here to avoid circular imports
                 from models import User, Account, Transaction, UploadedFile, CompanySettings
                 logger.debug("Models imported")
+
+                # Initialize test suite with proper error handling and database verification
+                try:
+                    # Verify database connection before initializing test suite
+                    db.session.execute(text('SELECT 1'))
+                    db.session.commit()
+                    
+                    # Import test suite after confirming database connection
+                    try:
+                        from tests.rollback_verification import RollbackVerificationTest
+                        if not hasattr(app, 'rollback_verification'):
+                            logger.info("Initializing rollback verification test suite...")
+                            app.rollback_verification = RollbackVerificationTest(app)
+                            
+                            # Initialize test suite without immediate verification
+                            logger.info("Rollback verification test suite initialized")
+                            
+                            # Schedule verification for after app startup
+                            @app.before_first_request
+                            def verify_test_suite():
+                                try:
+                                    reference_time = datetime.utcnow()
+                                    verification_result = app.rollback_verification.verify_transaction_consistency(reference_time)
+                                    if verification_result:
+                                        logger.info("Rollback verification test suite verified successfully")
+                                    else:
+                                        logger.warning("Rollback verification test suite verification failed")
+                                except Exception as verify_error:
+                                    logger.error(f"Error during test suite verification: {str(verify_error)}")
+                        else:
+                            logger.info("Rollback verification test suite already initialized")
+                    except ImportError as import_error:
+                        logger.error(f"Could not import rollback verification test suite: {str(import_error)}")
+                        logger.warning("Application will continue without rollback verification capability")
+                except Exception as test_suite_error:
+                    logger.error(f"Error setting up rollback verification: {str(test_suite_error)}")
+                    if current_app.debug:
+                        logger.exception("Full traceback for test suite setup error:")
 
                 # Test database connection with improved retry mechanism
                 max_retries = 3
