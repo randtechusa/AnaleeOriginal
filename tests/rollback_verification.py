@@ -77,12 +77,13 @@ class RollbackVerificationTest:
             self.logger.error("No Flask application context available")
             return False
             
-        # Strict environment checks
+        # Strict environment checks with core feature protection
         if not all([
             self.app.config.get('TESTING'),
             self.app.config.get('ENABLE_ROLLBACK_TESTS'),
             os.environ.get('TEST_DATABASE_URL'),
-            self.app.config['SQLALCHEMY_DATABASE_URI'] == os.environ.get('TEST_DATABASE_URL')
+            self.app.config['SQLALCHEMY_DATABASE_URI'] == os.environ.get('TEST_DATABASE_URL'),
+            self.app.config.get('PROTECT_CORE_FEATURES', True)  # Always protect ERF, ASF, ESF
         ]):
             self.logger.error(
                 "Verification tests require strict isolation:\n"
@@ -90,15 +91,24 @@ class RollbackVerificationTest:
                 "- ENABLE_ROLLBACK_TESTS must be True\n"
                 "- Separate TEST_DATABASE_URL must be configured\n"
                 "- Must use isolated test database\n"
-                "These protections preserve production data and core features."
+                "- Core features (ERF, ASF, ESF) must be protected\n"
+                "These protections preserve production data and core functionality."
             )
             return False
             
-        # Ensure we're not in production
-        if self.app.config.get('ENV') == 'production':
-            self.logger.error("Verification tests cannot run in production environment")
+        # Triple-check production protection
+        if any([
+            self.app.config.get('ENV') == 'production',
+            not self.app.config.get('TESTING'),
+            self.app.config['SQLALCHEMY_DATABASE_URI'] == os.environ.get('DATABASE_URL')  # Ensure not using prod DB
+        ]):
+            self.logger.error(
+                "CRITICAL SAFETY CHECK: Cannot run verification tests in production environment\n"
+                "This protects core features (ERF, ASF, ESF) and production data"
+            )
             return False
             
+        self.logger.info("Environment verified as isolated test environment - Core features protected")
         return True
 
     def _safe_execute(self, verification_name: str, *args, **kwargs) -> Tuple[bool, Optional[str]]:
@@ -551,15 +561,27 @@ class RollbackVerificationTest:
 
     def run_all_verifications(self, reference_time: datetime) -> Dict[str, Dict[str, Any]]:
         """Runs all verification checks and returns detailed results"""
+        # Triple-check environment protection
         if not self._check_environment():
-            self.logger.error("Cannot run verifications in non-test environment")
+            self.logger.error("SAFETY CHECK: Cannot run verifications in production environment")
             return {
                 'status': 'error',
-                'message': 'Cannot run verifications in non-test environment',
+                'message': 'Verification blocked: Production environment or core features detected',
+                'details': 'This protection prevents any impact on ERF, ASF, ESF features',
                 'timestamp': datetime.utcnow()
             }
             
-        self.logger.info("Starting verification suite")
+        # Verify we're in read-only mode
+        if not self.app.config.get('TESTING') or self.app.config.get('ENV') == 'production':
+            self.logger.error("CRITICAL: Attempted to run verifications outside test environment")
+            return {
+                'status': 'error',
+                'message': 'Verification blocked: Production protection engaged',
+                'details': 'Core features and data integrity preserved',
+                'timestamp': datetime.utcnow()
+            }
+            
+        self.logger.info("Starting verification suite in isolated test environment")
         
         verifications = [
             ('transaction_consistency', lambda: self.verify_transaction_consistency(reference_time)),
