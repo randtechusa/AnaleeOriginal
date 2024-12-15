@@ -16,6 +16,9 @@ from ai_utils import (
     handle_rate_limit
 )
 
+logger = logging.getLogger(__name__)
+main = Blueprint('main', __name__)
+
 def process_uploaded_file(file, status):
     """Process the uploaded file and return dataframe and total rows."""
     try:
@@ -75,8 +78,6 @@ def process_transaction_rows(df, uploaded_file, user):
         logger.error(f"Error processing transactions: {str(e)}")
         db.session.rollback()
         raise
-logger = logging.getLogger(__name__)
-main = Blueprint('main', __name__)
 
 @main.route('/')
 def index():
@@ -217,6 +218,115 @@ def company_settings():
         months=months
     )
 
+@main.route('/analyze/<int:file_id>', methods=['GET', 'POST'])
+@login_required
+def analyze(file_id):
+    logger.info(f"Starting analysis for file_id: {file_id}")
+    
+    try:
+        # Load file and verify ownership
+        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first()
+        if not file:
+            logger.error(f"File {file_id} not found or unauthorized access")
+            flash('File not found or unauthorized access')
+            return redirect(url_for('main.upload'))
+            
+        # Load active accounts
+        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
+        
+        # Load transactions with error handling
+        try:
+            transactions = Transaction.query.filter_by(
+                file_id=file_id, 
+                user_id=current_user.id
+            ).order_by(Transaction.date).all()
+        except Exception as db_error:
+            logger.error(f"Database error loading transactions: {str(db_error)}")
+            flash('Error loading transactions from database')
+            return redirect(url_for('main.upload'))
+        
+        if not transactions:
+            flash('No transactions found in this file')
+            return redirect(url_for('main.upload'))
+            
+        # Initialize insights dictionary for AI features
+        transaction_insights = {}
+        
+        # Process POST request if any
+        if request.method == 'POST':
+            try:
+                for transaction in transactions:
+                    explanation_key = f'explanation_{transaction.id}'
+                    account_key = f'account_{transaction.id}'
+                    
+                    if explanation_key in request.form:
+                        transaction.explanation = request.form[explanation_key]
+                    if account_key in request.form and request.form[account_key]:
+                        transaction.account_id = int(request.form[account_key])
+                
+                db.session.commit()
+                flash('Changes saved successfully', 'success')
+            except Exception as e:
+                logger.error(f"Error saving changes: {str(e)}")
+                db.session.rollback()
+                flash('Error saving changes', 'error')
+        
+        # Process AI features for each transaction
+        for transaction in transactions:
+            try:
+                # Find similar transactions (ERF)
+                similar_trans = find_similar_transactions(
+                    transaction.description,
+                    Transaction.query.filter(
+                        Transaction.user_id == current_user.id,
+                        Transaction.id != transaction.id
+                    ).all()
+                )
+                
+                # Get account suggestions (ASF)
+                account_suggestions = predict_account(
+                    transaction.description,
+                    transaction.explanation or '',
+                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
+                )
+                
+                # Get explanation suggestions (ESF)
+                explanation = suggest_explanation(
+                    transaction.description,
+                    similar_trans
+                )
+                
+                transaction_insights[transaction.id] = {
+                    'similar_transactions': similar_trans,
+                    'account_suggestions': account_suggestions,
+                    'explanation_suggestion': explanation,
+                    'ai_processed': True
+                }
+                
+            except Exception as e:
+                logger.error(f"Error processing AI features for transaction {transaction.id}: {str(e)}")
+                transaction_insights[transaction.id] = {
+                    'similar_transactions': [],
+                    'account_suggestions': [],
+                    'explanation_suggestion': None,
+                    'ai_processed': False,
+                    'error': str(e)
+                }
+        
+        return render_template(
+            'analyze.html',
+            file=file,
+            accounts=accounts,
+            transactions=transactions,
+            bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int),
+            transaction_insights=transaction_insights
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in analyze route: {str(e)}")
+        flash('Error loading transaction data')
+        return redirect(url_for('main.upload'))
+
 @main.route('/account/<int:account_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_account(account_id):
@@ -340,154 +450,6 @@ def dashboard():
                          category_amounts=category_amounts,
                          financial_years=financial_years,
                          current_year=selected_year)
-
-@main.route('/analyze/<int:file_id>', methods=['GET', 'POST'])
-@login_required
-def analyze(file_id):
-    logger.info(f"Starting analysis for file_id: {file_id}")
-    
-    try:
-        # Load file and verify ownership
-        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first()
-        if not file:
-            logger.error(f"File {file_id} not found or unauthorized access")
-            flash('File not found or unauthorized access')
-            return redirect(url_for('main.upload'))
-            
-        # Load active accounts
-        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
-        
-        # Load transactions with error handling
-        try:
-            transactions = Transaction.query.filter_by(
-                file_id=file_id, 
-                user_id=current_user.id
-            ).order_by(Transaction.date).all()
-        except Exception as db_error:
-            logger.error(f"Database error loading transactions: {str(db_error)}")
-            flash('Error loading transactions from database')
-            return redirect(url_for('main.upload'))
-        
-        if not transactions:
-            flash('No transactions found in this file')
-            return redirect(url_for('main.upload'))
-            
-        # Initialize insights dictionary for AI features
-        transaction_insights = {}
-        for transaction in transactions:
-            try:
-                # Find similar transactions (ERF)
-                similar_trans = find_similar_transactions(
-                    transaction.description,
-                    Transaction.query.filter(
-                        Transaction.user_id == current_user.id,
-                        Transaction.id != transaction.id
-                    ).all()
-                )
-                
-                # Get account suggestions (ASF)
-                account_suggestions = predict_account(
-                    transaction.description,
-                    transaction.explanation or '',
-                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
-                )
-                
-                # Get explanation suggestions (ESF)
-                explanation = suggest_explanation(
-                    transaction.description,
-                    similar_trans if similar_trans else None
-                )
-                
-                transaction_insights[transaction.id] = {
-                    'similar_transactions': similar_trans,
-                    'account_suggestions': account_suggestions,
-                    'explanation_suggestion': explanation,
-                    'ai_processed': True
-                }
-                
-            except Exception as e:
-                logger.error(f"Error processing AI features for transaction {transaction.id}: {str(e)}")
-                transaction_insights[transaction.id] = {
-                    'similar_transactions': [],
-                    'account_suggestions': [],
-                    'explanation_suggestion': None,
-                    'ai_processed': False,
-                    'error': str(e)
-                }
-    except Exception as e:
-        logger.error(f"Error loading core data: {str(e)}")
-        flash('Error loading transaction data')
-        return redirect(url_for('main.upload'))
-    
-    if request.method == 'POST':
-        try:
-            for transaction in transactions:
-                explanation_key = f'explanation_{transaction.id}'
-                account_key = f'account_{transaction.id}'
-                
-                if explanation_key in request.form:
-                    transaction.explanation = request.form[explanation_key]
-                if account_key in request.form and request.form[account_key]:
-                    transaction.account_id = int(request.form[account_key])
-            
-            db.session.commit()
-            flash('Changes saved successfully', 'success')
-        except Exception as e:
-            logger.error(f"Error saving changes: {str(e)}")
-            db.session.rollback()
-            flash('Error saving changes', 'error')
-    
-    
-    try:
-        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
-        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
-        transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
-        
-        if not transactions:
-            logger.warning(f"No transactions found for file_id: {file_id}")
-            flash('No transactions found in this file. Please ensure the file contains valid transaction data.')
-            return redirect(url_for('main.upload'))
-            
-        transaction_insights = {}
-        for transaction in transactions:
-            transaction_insights[transaction.id] = {
-                'ai_processed': False,
-                'account_suggestions': [],
-                'explanation_suggestion': None,
-                'similar_transactions': []
-            }
-            
-        if request.method == 'POST':
-            try:
-                for transaction in transactions:
-                    explanation_key = f'explanation_{transaction.id}'
-                    account_key = f'account_{transaction.id}'
-                    
-                    if explanation_key in request.form:
-                        transaction.explanation = request.form[explanation_key]
-                    if account_key in request.form and request.form[account_key]:
-                        transaction.account_id = int(request.form[account_key])
-                
-                db.session.commit()
-                flash('Changes saved successfully', 'success')
-            except Exception as e:
-                logger.error(f"Error saving changes: {str(e)}")
-                db.session.rollback()
-                flash('Error saving changes', 'error')
-        
-        
-        return render_template(
-            'analyze.html',
-            file=file,
-            accounts=accounts,
-            transactions=transactions,
-            bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int),
-            transaction_insights=transaction_insights
-        )
-    except Exception as e:
-        logger.error(f"Error loading data: {str(e)}")
-        flash('Error loading transaction data. Please try again.')
-        return redirect(url_for('main.upload'))
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -728,25 +690,44 @@ def verify_rollback():
                 'error': 'Invalid reference time format'
             }), 400
         
-        verifier = RollbackVerificationTest()
-        results = verifier.run_all_verifications(reference_time)
+        # Initialize verifier with current app context
+        verifier = RollbackVerificationTest(current_app._get_current_object())
         
-        logger.info(f"Rollback verification results: {results}")
+        # Enable testing mode temporarily for verification
+        current_app.config['TESTING'] = True
+        current_app.config['ENABLE_ROLLBACK_TESTS'] = True
         
-        all_passed = all(results.values())
-        
-        if all_passed:
-            flash("All rollback verifications passed successfully", "success")
-        else:
-            failed_tests = [k for k, v in results.items() if not v]
-            flash(f"Some verifications failed: {', '.join(failed_tests)}", "error")
-        
-        return jsonify({
-            'success': all_passed,
-            'results': results,
-            'reference_time': reference_time.isoformat()
-        })
-        
+        try:
+            results = verifier.run_all_verifications(reference_time)
+            
+            logger.info(f"Rollback verification results: {results}")
+            
+            # Check if core AI features are preserved
+            ai_features_intact = results.get('ai_features', {}).get('success', False)
+            if not ai_features_intact:
+                logger.error("Core AI features (ERF, ASF, ESF) verification failed")
+                flash("Warning: Core AI features integrity check failed", "error")
+            
+            all_passed = all(isinstance(v, dict) and v.get('success', False) for v in results.values())
+            
+            if all_passed:
+                flash("All rollback verifications passed successfully", "success")
+            else:
+                failed_tests = [k for k, v in results.items() if isinstance(v, dict) and not v.get('success', False)]
+                flash(f"Some verifications failed: {', '.join(failed_tests)}", "error")
+            
+            return jsonify({
+                'success': all_passed,
+                'results': results,
+                'reference_time': reference_time.isoformat(),
+                'ai_features_intact': ai_features_intact
+            })
+            
+        finally:
+            # Restore original config
+            current_app.config['TESTING'] = False
+            current_app.config['ENABLE_ROLLBACK_TESTS'] = False
+            
     except Exception as e:
         logger.error(f"Error in rollback verification endpoint: {str(e)}")
         return jsonify({
