@@ -751,36 +751,132 @@ def upload():
                 }
                 session['upload_status'] = upload_status
                 session.modified = True
-                
-                logger.info(f"Initialized upload status tracking for {file.filename}")
-
                 try:
-                    # Initialize progress tracking
-                    upload_status = {
-                        'filename': file.filename,
-                        'total_rows': 0,
-                        'processed_rows': 0,
-                        'failed_rows': 0,
-                        'current_chunk': 0,
-                        'status': 'counting',
-                        'start_time': datetime.utcnow().isoformat(),
-                        'last_update': datetime.utcnow().isoformat(),
-                        'errors': [],
-                        'progress_percentage': 0
-                    }
-                    session['upload_status'] = upload_status
-                    session.modified = True
-                    
-                    logger.info(f"Initialized upload status tracking for {file.filename}")
-                    
-                    # Read file data
+                    # Process the file
                     if file.filename.endswith('.csv'):
                         df = pd.read_csv(file)
                     else:
                         df = pd.read_excel(file, engine='openpyxl')
                     
-                    total_rows = len(df)
-                    logger.info(f"Processing file with {total_rows} rows")
+                    # Update status after successful file read
+                    upload_status['status'] = 'processing'
+                    session.modified = True
+                    
+                    return jsonify({'status': 'success'})
+                except Exception as e:
+                    logger.error(f"Error in upload processing: {str(e)}")
+                    return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        logger.error(f"Error in file upload: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+    # Default render if no file upload
+    return render_template('upload.html', files=files, bank_accounts=bank_accounts)
+
+@main.route('/verify-rollback', methods=['POST'])
+@login_required
+def verify_rollback():
+    """
+    Endpoint to verify system state after a rollback
+    """
+    try:
+        from tests.rollback_verification import RollbackVerificationTest
+        from datetime import datetime, timedelta
+        
+        # Get reference time from request, default to 32 hours ago
+        reference_time = request.form.get('reference_time', None)
+        try:
+            if reference_time:
+                reference_time = datetime.fromisoformat(reference_time)
+            else:
+                reference_time = datetime.utcnow() - timedelta(hours=32)
+        except ValueError as e:
+            logger.error(f"Invalid reference time format: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': 'Invalid reference time format'
+            }), 400
+        
+        # Run verifications
+        try:
+            verifier = RollbackVerificationTest()
+            results = verifier.run_all_verifications(reference_time)
+            
+            # Log results
+            logger.info(f"Rollback verification results: {results}")
+            
+            # Check if all verifications passed
+            all_passed = all(results.values())
+            
+            if all_passed:
+                flash("All rollback verifications passed successfully", "success")
+            else:
+                failed_tests = [k for k, v in results.items() if not v]
+                flash(f"Some verifications failed: {', '.join(failed_tests)}", "error")
+            
+            return jsonify({
+                'success': all_passed,
+                'results': results,
+                'reference_time': reference_time.isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"Error during verification process: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': f"Verification process error: {str(e)}"
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error in rollback verification endpoint: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+def init_upload_status(filename):
+    """Initialize upload status tracking"""
+    logger.info(f"Initializing upload status tracking for {filename}")
+    try:
+        # Initialize progress tracking
+        upload_status = {
+            'filename': filename,
+            'total_rows': 0,
+            'processed_rows': 0,
+            'failed_rows': 0,
+            'current_chunk': 0,
+            'status': 'counting',
+            'start_time': datetime.utcnow().isoformat(),
+            'last_update': datetime.utcnow().isoformat(),
+            'errors': [],
+            'progress_percentage': 0
+        }
+        return upload_status
+    except Exception as e:
+        logger.error(f"Error initializing upload status: {str(e)}")
+        raise
+                    def process_uploaded_file(file, upload_status):
+            """Helper function to process the uploaded file"""
+            try:
+                # Read file data
+                if file.filename.endswith('.csv'):
+                    df = pd.read_csv(file)
+                else:
+                    df = pd.read_excel(file, engine='openpyxl')
+                
+                total_rows = len(df)
+                logger.info(f"Processing file with {total_rows} rows")
+                
+                # Update upload status
+                upload_status['total_rows'] = total_rows
+                upload_status['status'] = 'processing'
+                session['upload_status'] = upload_status
+                session.modified = True
+                
+                return df, total_rows
+            except Exception as e:
+                logger.error(f"Error reading file {file.filename}: {str(e)}")
+                raise
                     
                     # Clean and normalize column names
                     df.columns = df.columns.str.strip().str.lower()
