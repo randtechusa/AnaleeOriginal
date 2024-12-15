@@ -64,6 +64,12 @@ class RollbackVerificationTest:
     def verify_transaction_consistency(self, reference_time: datetime) -> bool:
         """
         Verifies transaction data consistency after rollback
+        
+        Args:
+            reference_time: The timestamp to check transactions from
+            
+        Returns:
+            bool: True if all consistency checks pass, False otherwise
         """
         self.logger.info(f"Verifying transaction consistency from {reference_time}")
         try:
@@ -83,33 +89,75 @@ class RollbackVerificationTest:
                 # Check for transaction record integrity
                 transactions = Transaction.query.filter(
                     Transaction.date >= reference_time
-                ).all()
+                ).order_by(Transaction.date).all()
+                
+                if not transactions:
+                    self.logger.warning("No transactions found after reference time")
+                    return True
                 
                 for transaction in transactions:
-                    # Verify required fields
-                    if not all([
-                        transaction.date,
-                        transaction.description,
-                        transaction.amount,
-                        transaction.user_id
-                    ]):
-                        self.logger.error(f"Invalid transaction data: {transaction.id}")
+                    # Verify required fields with detailed error messages
+                    required_fields = {
+                        'date': transaction.date,
+                        'description': transaction.description,
+                        'amount': transaction.amount,
+                        'user_id': transaction.user_id,
+                        'file_id': transaction.file_id
+                    }
+                    
+                    missing_fields = [field for field, value in required_fields.items() if not value]
+                    if missing_fields:
+                        self.logger.error(
+                            f"Transaction {transaction.id} missing required fields: {', '.join(missing_fields)}"
+                        )
                         return False
                     
-                    # Verify account references
+                    # Verify numerical consistency
+                    if not isinstance(transaction.amount, (int, float)):
+                        self.logger.error(f"Invalid amount type in transaction {transaction.id}")
+                        return False
+                    
+                    # Verify account references and relationships
                     if transaction.account_id:
                         account = Account.query.get(transaction.account_id)
                         if not account:
                             self.logger.error(f"Invalid account reference in transaction {transaction.id}")
                             return False
-                
-                # Check transaction sequence integrity
-                transactions = sorted(transactions, key=lambda x: x.date)
-                for i in range(1, len(transactions)):
-                    if transactions[i].date < transactions[i-1].date:
-                        self.logger.error("Transaction sequence error detected")
+                        
+                        # Verify account-user relationship
+                        if account.user_id != transaction.user_id:
+                            self.logger.error(
+                                f"Transaction {transaction.id} references account {account.id} "
+                                "belonging to different user"
+                            )
+                            return False
+                    
+                    # Verify file reference
+                    uploaded_file = UploadedFile.query.get(transaction.file_id)
+                    if not uploaded_file:
+                        self.logger.error(f"Invalid file reference in transaction {transaction.id}")
                         return False
                 
+                # Check transaction sequence integrity
+                for i in range(1, len(transactions)):
+                    curr_trans = transactions[i]
+                    prev_trans = transactions[i-1]
+                    
+                    # Verify chronological order
+                    if curr_trans.date < prev_trans.date:
+                        self.logger.error(
+                            f"Transaction sequence error: {curr_trans.id} dated {curr_trans.date} "
+                            f"occurs before {prev_trans.id} dated {prev_trans.date}"
+                        )
+                        return False
+                    
+                    # Verify creation timestamps
+                    if curr_trans.created_at and prev_trans.created_at:
+                        if curr_trans.created_at < reference_time or prev_trans.created_at < reference_time:
+                            self.logger.error("Found transaction created before reference time")
+                            return False
+                
+                self.logger.info(f"Successfully verified {len(transactions)} transactions")
                 return True
                 
         except Exception as e:
