@@ -550,23 +550,23 @@ def analyze(file_id):
             flash("AI features are temporarily unavailable. Basic functionality remains available.", "warning")
                 
                 # Process anomaly detection if AI is available
-                if ai_available:
-                    try:
-                        detected_anomalies = detect_transaction_anomalies(transactions)
-                        if detected_anomalies:
-                            anomalies.update(detected_anomalies)
-                            logger.info("Anomaly detection completed successfully")
-                    except Exception as e:
-                        logger.warning(f"Anomaly detection unavailable: {str(e)}")
-                        # Continue with core functionality
-                            
-        except Exception as e:
-            logger.warning(f"AI features unavailable: {str(e)}")
-            ai_available = False
-            if "rate limit" in str(e).lower():
-                flash("AI features are temporarily unavailable due to rate limiting. Basic functionality remains available.", "warning")
-            else:
-                flash("AI features are temporarily unavailable. Basic functionality remains available.", "warning")
+            if ai_available:
+                try:
+                    detected_anomalies = detect_transaction_anomalies(transactions)
+                    if detected_anomalies:
+                        anomalies.update(detected_anomalies)
+                        logger.info("Anomaly detection completed successfully")
+                except Exception as e:
+                    logger.warning(f"Anomaly detection unavailable: {str(e)}")
+                    # Continue with core functionality
+                    
+    except Exception as e:
+        logger.warning(f"AI features unavailable: {str(e)}")
+        ai_available = False
+        if "rate limit" in str(e).lower():
+            flash("AI features are temporarily unavailable due to rate limiting. Basic functionality remains available.", "warning")
+        else:
+            flash("AI features are temporarily unavailable. Basic functionality remains available.", "warning")
             
     except Exception as e:
         logger.error(f"Error loading data: {str(e)}")
