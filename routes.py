@@ -499,6 +499,36 @@ def predict_account_route():
         return jsonify({'error': str(e)}), 500
 
 @main.route('/expense-forecast')
+@main.route('/financial-insights')
+@login_required
+def financial_insights():
+    """Financial insights view showing detailed analysis"""
+    try:
+        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+        if not company_settings:
+            flash('Please configure company settings first.')
+            return redirect(url_for('main.company_settings'))
+        
+        # Get current financial year dates
+        fy_dates = company_settings.get_financial_year()
+        start_date = fy_dates['start_date']
+        end_date = fy_dates['end_date']
+        
+        # Get transactions for analysis
+        transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.date.between(start_date, end_date)
+        ).order_by(Transaction.date.desc()).all()
+        
+        return render_template('financial_insights.html',
+                             transactions=transactions,
+                             start_date=start_date,
+                             end_date=end_date)
+                             
+    except Exception as e:
+        logger.error(f"Error in financial insights: {str(e)}")
+        flash('Error generating financial insights')
+        return redirect(url_for('main.dashboard'))
 @login_required
 def expense_forecast():
     try:
