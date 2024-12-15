@@ -1,6 +1,7 @@
 import os
 import logging
 import sys
+import time # Added import for time.sleep
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
@@ -9,7 +10,7 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from utils.backup_manager import DatabaseBackupManager, init_backup_scheduler # Added import for backup manager
+from utils.backup_manager import DatabaseBackupManager, init_backup_scheduler
 
 # Load environment variables
 load_dotenv()
@@ -97,15 +98,16 @@ def create_app():
         # Initialize and start scheduler with improved rate limit handling
         try:
             # Configure rate limiting with exponential backoff
+            # Configure rate limiting with improved stability
             app.config.update({
-                'RATELIMIT_DEFAULT': 100,  # Conservative rate limit per minute
-                'RATELIMIT_HEADERS_ENABLED': True,
+                'RATELIMIT_DEFAULT': "100 per minute",
                 'RATELIMIT_STORAGE_URL': database_url,
-                'RATELIMIT_STRATEGY': 'moving-window',  # More precise rate limiting
-                'RATELIMIT_IN_MEMORY': True,  # Faster rate limit checking
-                'RATELIMIT_BACKOFF_BASE': 2,  # Exponential backoff base
-                'RATELIMIT_BACKOFF_MAX': 60,  # Max 60 seconds wait
-                'RATELIMIT_KEY_PREFIX': 'global_'
+                'RATELIMIT_STRATEGY': 'fixed-window',
+                'RATELIMIT_STORAGE_OPTIONS': {'connection_pool': True},
+                'RATELIMIT_KEY_PREFIX': 'global_',
+                'RATELIMIT_HEADERS_ENABLED': True,
+                'SCHEDULER_EXECUTORS': {'default': {'type': 'threadpool', 'max_workers': 20}},
+                'SCHEDULER_JOB_DEFAULTS': {'coalesce': False, 'max_instances': 3}
             })
             
             app.config.from_object(Config)
@@ -126,19 +128,28 @@ def create_app():
                 from models import User, Account, Transaction, UploadedFile, CompanySettings
                 logger.debug("Models imported")
 
-                # Test database connection first
-                try:
-                    # Test database connection with detailed error logging
-                    logger.info("Testing database connection...")
-                    result = db.session.execute(text('SELECT current_database(), current_user, version()'))
-                    connection_info = result.fetchone()
-                    logger.info(f"Connected to database: {connection_info[0]} as user: {connection_info[1]}")
-                    logger.info(f"Database version: {connection_info[2]}")
-                    logger.debug("Database connection test successful")
-                except Exception as db_error:
-                    logger.error(f"Database connection test failed: {str(db_error)}")
-                    logger.error("Full error details:", exc_info=True)
-                    raise
+                # Test database connection with improved retry mechanism
+                max_retries = 3
+                retry_delay = 2
+                
+                for attempt in range(max_retries):
+                    try:
+                        logger.info(f"Testing database connection (attempt {attempt + 1}/{max_retries})...")
+                        result = db.session.execute(text('SELECT current_database(), current_user, version()'))
+                        connection_info = result.fetchone()
+                        logger.info(f"Connected to database: {connection_info[0]} as user: {connection_info[1]}")
+                        logger.info(f"Database version: {connection_info[2]}")
+                        logger.debug("Database connection test successful")
+                        break
+                    except Exception as db_error:
+                        logger.error(f"Database connection attempt {attempt + 1} failed: {str(db_error)}")
+                        if attempt < max_retries - 1:
+                            logger.info(f"Retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            logger.error("All database connection attempts failed:", exc_info=True)
+                            raise
 
                 # Register blueprints first
                 try:
