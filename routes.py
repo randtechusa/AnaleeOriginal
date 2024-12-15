@@ -751,6 +751,7 @@ def upload():
                 }
                 session['upload_status'] = upload_status
                 session.modified = True
+                
                 try:
                     # Process the file
                     if file.filename.endswith('.csv'):
@@ -766,10 +767,7 @@ def upload():
                 except Exception as e:
                     logger.error(f"Error in upload processing: {str(e)}")
                     return jsonify({'error': str(e)}), 500
-    except Exception as e:
-        logger.error(f"Error in file upload: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
+    
     # Default render if no file upload
     return render_template('upload.html', files=files, bank_accounts=bank_accounts)
 
@@ -856,29 +854,41 @@ def init_upload_status(filename):
         logger.error(f"Error initializing upload status: {str(e)}")
         raise
                     def process_uploaded_file(file, upload_status):
-            """Helper function to process the uploaded file"""
-            try:
-                # Read file data
-                if file.filename.endswith('.csv'):
-                    df = pd.read_csv(file)
-                else:
-                    df = pd.read_excel(file, engine='openpyxl')
-                
-                total_rows = len(df)
-                logger.info(f"Processing file with {total_rows} rows")
-                
-                # Update upload status
-                upload_status['total_rows'] = total_rows
-                upload_status['status'] = 'processing'
-                session['upload_status'] = upload_status
-                session.modified = True
-                
-                return df, total_rows
-            except Exception as e:
-                logger.error(f"Error reading file {file.filename}: {str(e)}")
-                raise
-                    
-                    # Clean and normalize column names
+    """Helper function to process the uploaded file"""
+    try:
+        # Read file data
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file, engine='openpyxl')
+        
+        total_rows = len(df)
+        logger.info(f"Processing file with {total_rows} rows")
+        
+        # Update upload status
+        upload_status['total_rows'] = total_rows
+        upload_status['status'] = 'processing'
+        session['upload_status'] = upload_status
+        session.modified = True
+        
+        return df, total_rows
+    except Exception as e:
+        logger.error(f"Error processing file {file.filename}: {str(e)}")
+        raise
+        
+        # Clean and normalize column names
+        df.columns = df.columns.str.strip().str.lower()
+        required_columns = ['date', 'description', 'amount']
+        
+        # Validate required columns
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+        
+        return df, total_rows
+    except Exception as e:
+        logger.error(f"Error reading file {file.filename}: {str(e)}")
+        raise
                     df.columns = df.columns.str.strip().str.lower()
                     required_columns = ['date', 'description', 'amount']
                     
