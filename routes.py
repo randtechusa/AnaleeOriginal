@@ -225,8 +225,11 @@ def analyze(file_id):
     logger.debug("Loading file and verifying ownership")
     
     try:
+        logger.info("Attempting to establish database connection")
         # Load file and verify ownership with detailed logging
         file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first()
+        logger.info(f"Database query completed. File found: {file is not None}")
+        
         if not file:
             logger.error(f"File {file_id} not found or unauthorized access for user {current_user.id}")
             flash('File not found or unauthorized access')
