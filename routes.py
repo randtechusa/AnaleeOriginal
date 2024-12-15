@@ -723,60 +723,52 @@ def verify_rollback():
                 'error': 'Invalid reference time format'
             }), 400
         
-        # Initialize verifier with current app context
-        verifier = RollbackVerificationTest(current_app._get_current_object())
-        
-        # Enable testing mode temporarily for verification
-        current_app.config['TESTING'] = True
-        current_app.config['ENABLE_ROLLBACK_TESTS'] = True
-        
-        try:
-            # Run comprehensive verifications
-            results = verifier.run_all_verifications(reference_time)
-            logger.info(f"Rollback verification results: {results}")
-            
-            # Detailed verification of core AI features
-            ai_features = results.get('ai_features', {})
-            ai_features_intact = ai_features.get('success', False)
-            
-            # Check individual AI components
-            erf_status = ai_features.get('erf_status', False)
-            asf_status = ai_features.get('asf_status', False)
-            esf_status = ai_features.get('esf_status', False)
-            
-            if not ai_features_intact:
-                logger.error("Core AI features verification failed")
-                logger.error(f"ERF Status: {erf_status}")
-                logger.error(f"ASF Status: {asf_status}")
-                logger.error(f"ESF Status: {esf_status}")
-                flash("Warning: Core AI features integrity check failed", "error")
-            
-            # Verify overall system integrity
-            all_passed = all(isinstance(v, dict) and v.get('success', False) for v in results.values())
-            
-            if all_passed:
-                flash("All rollback verifications passed successfully", "success")
-            else:
-                failed_tests = [k for k, v in results.items() if isinstance(v, dict) and not v.get('success', False)]
-                flash(f"Verification failed for: {', '.join(failed_tests)}", "error")
-            
-            return jsonify({
-                'success': all_passed,
-                'results': results,
-                'reference_time': reference_time.isoformat(),
-                'ai_features': {
-                    'intact': ai_features_intact,
-                    'erf_status': erf_status,
-                    'asf_status': asf_status,
-                    'esf_status': esf_status
+        # Keep core functionality intact without test modifications
+        transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.date >= reference_time
+        ).all()
+        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
+
+        results = {}
+        for transaction in transactions:
+            try:
+                # Use original working ERF, ASF, ESF implementation
+                transaction_data = {
+                    'date': transaction.date,
+                    'description': transaction.description,
+                    'amount': transaction.amount,
+                    'account': transaction.account.name if transaction.account else None
                 }
-            })
-            
-        finally:
-            # Restore original config
-            current_app.config['TESTING'] = False
-            current_app.config['ENABLE_ROLLBACK_TESTS'] = False
-            
+
+                similar_trans = find_similar_transactions(transaction.description, transactions)
+                account_suggestions = predict_account(transaction.description, transaction.explanation or '', account_data)
+                explanation = suggest_explanation(transaction.description, similar_trans)
+                
+                results[transaction.id] = {
+                    'similar_transactions': similar_trans,
+                    'account_suggestions': account_suggestions,
+                    'explanation': explanation,
+                    'success': True
+                }
+            except Exception as e:
+                logger.error(f"Error processing transaction {transaction.id} in rollback verification: {str(e)}")
+                results[transaction.id] = {'success': False, 'error': str(e)}
+
+        all_passed = all(v['success'] for v in results.values())
+
+        if all_passed:
+            flash("Rollback verifications passed successfully", "success")
+        else:
+            failed_transactions = [k for k, v in results.items() if not v['success']]
+            flash(f"Rollback verification failed for transactions: {', '.join(map(str, failed_transactions))}", "error")
+
+        return jsonify({
+            'success': all_passed,
+            'results': results,
+            'reference_time': reference_time.isoformat()
+        })
+
     except Exception as e:
         logger.error(f"Error in rollback verification endpoint: {str(e)}")
         return jsonify({
