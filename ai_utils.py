@@ -27,15 +27,16 @@ def get_openai_client():
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
     Account Suggestion Feature (ASF): AI-powered account suggestions with fallback to rule-based matching
-    when AI services are unavailable.
+    only when AI services are unavailable or rate limited.
     """
+    if not description or not available_accounts:
+        logger.error("Missing required parameters for account prediction")
+        return []
+
     try:
         logger.debug(f"ASF: Starting account prediction for description: {description}")
-        
-        # Try AI-powered prediction first
-        try:
-            client = get_openai_client()
-            logger.info("Using AI-powered prediction for account suggestions")
+        client = get_openai_client()
+        logger.info("Using AI-powered prediction for account suggestions")
         
         # Format available accounts with enhanced structure
         account_info = "\n".join([
@@ -707,3 +708,36 @@ def suggest_explanation(description: str, similar_transactions: list = None) -> 
                 "confidence": 0.0,
                 "factors_considered": [f"Error: {str(fallback_error)}"]
             }
+
+def verify_ai_features(self) -> bool:
+        """
+        Verifies AI features functionality
+        """
+        try:
+            from ai_utils import predict_account, suggest_explanation, find_similar_transactions
+            has_ai = True
+        except ImportError:
+            self.logger.warning("AI utilities not available, will test manual fallback")
+            has_ai = False
+        
+        try:
+            if has_ai:
+                # Test ASF without immediate rate limit handling
+                try:
+                    test_result = predict_account(
+                        "Test transaction",
+                        "Test explanation",
+                        [{'name': 'Test Account', 'category': 'Test', 'link': 'test'}]
+                    )
+                    self.logger.info("AI prediction test successful")
+                except Exception as e:
+                    if "rate limit" in str(e).lower():
+                        self.logger.warning("Rate limit encountered during AI feature testing")
+                    else:
+                        self.logger.error(f"AI prediction failed: {str(e)}")
+                    return False
+        except Exception as e:
+            self.logger.error(f"Error during AI features verification: {e}")
+            return False
+
+        return True
