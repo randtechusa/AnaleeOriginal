@@ -271,36 +271,33 @@ def analyze(file_id):
                 db.session.rollback()
                 flash('Error saving changes', 'error')
         
-        # Process AI features for each transaction
+        # Process predictions for each transaction using hybrid approach
         for transaction in transactions:
             try:
-                # Find similar transactions (ERF)
-                similar_trans = find_similar_transactions(
+                from predictive_utils import PredictiveEngine
+                engine = PredictiveEngine()
+                
+                # Get suggestions using all methods while preserving core features
+                suggestions = engine.get_hybrid_suggestions(
                     transaction.description,
-                    Transaction.query.filter(
-                        Transaction.user_id == current_user.id,
-                        Transaction.id != transaction.id
-                    ).all()
+                    transaction.amount,
+                    current_user.id,
+                    accounts
                 )
                 
-                # Get account suggestions (ASF)
-                account_suggestions = predict_account(
-                    transaction.description,
-                    transaction.explanation or '',
-                    [{'name': acc.name, 'category': acc.category, 'link': acc.link} for acc in accounts]
-                )
-                
-                # Get explanation suggestions (ESF)
-                explanation = suggest_explanation(
-                    transaction.description,
-                    similar_trans
-                )
+                # Combine suggestions while maintaining original AI features
+                best_account_id, best_explanation = engine.combine_suggestions(suggestions)
                 
                 transaction_insights[transaction.id] = {
-                    'similar_transactions': similar_trans,
-                    'account_suggestions': account_suggestions,
-                    'explanation_suggestion': explanation,
-                    'ai_processed': True
+                    'similar_transactions': suggestions['pattern_matches'],  # Pattern-based matches
+                    'account_suggestions': [
+                        *suggestions['rule_matches'],  # Rule-based matches
+                        *suggestions.get('ai_suggestions', [])  # Preserved AI suggestions
+                    ],
+                    'explanation_suggestion': best_explanation,
+                    'ai_processed': True,
+                    'pattern_matches': suggestions['pattern_matches'],  # Additional pattern insights
+                    'rule_matches': suggestions['rule_matches']  # Additional rule insights
                 }
                 
             except Exception as e:
