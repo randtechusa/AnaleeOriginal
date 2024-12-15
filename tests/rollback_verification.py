@@ -114,11 +114,22 @@ class RollbackVerificationTest:
                 
                 for attempt in range(max_retries):
                     try:
+                        # Test with exponential backoff
+                for attempt in range(max_retries):
+                    try:
                         test_result = predict_account(
                             "Test transaction",
                             "Test explanation",
                             [{'name': 'Test Account', 'category': 'Test', 'link': 'test'}]
                         )
+                        break
+                    except Exception as e:
+                        if "rate limit" in str(e).lower() and attempt < max_retries - 1:
+                            delay = base_delay * (2 ** attempt)
+                            self.logger.info(f"Rate limit hit, waiting {delay} seconds")
+                            time.sleep(delay)
+                            continue
+                        raise
                         break
                     except Exception as e:
                         if "rate limit" in str(e).lower():

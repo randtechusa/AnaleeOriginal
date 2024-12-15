@@ -4,6 +4,7 @@ import logging
 import json
 import os
 from typing import List, Dict
+import time
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -24,10 +25,10 @@ def get_openai_client():
         logger.error(f"Error initializing OpenAI client: {str(e)}")
         raise
 
-def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
+def predict_account(description: str, explanation: str, available_accounts: List[Dict], max_retries: int = 3, base_delay: float = 1.0) -> List[Dict]:
     """
     Account Suggestion Feature (ASF): AI-powered account suggestions
-    Makes direct API calls for predictions, with fallback options
+    Makes direct API calls for predictions with exponential backoff for rate limits
     """
     if not description or not available_accounts:
         logger.error("Missing required parameters for account prediction")
@@ -35,8 +36,11 @@ def predict_account(description: str, explanation: str, available_accounts: List
 
     logger.info(f"ASF: Predicting account for description: {description}")
     
-    try:
-        client = get_openai_client()
+    # Initialize OpenAI client
+    client = get_openai_client()
+    
+    for attempt in range(max_retries):
+        try:
         
         # Format available accounts
         account_info = "\n".join([
@@ -121,11 +125,16 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
                 raise ValueError("Invalid AI response format")
                 
         except Exception as e:
-            if "rate limit" in str(e).lower():
-                logger.warning("Rate limit encountered, falling back to rule-based matching")
-            else:
-                logger.error(f"AI prediction failed: {str(e)}")
-            raise
+            if "rate limit" in str(e).lower() and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.info(f"Rate limit hit, waiting {delay} seconds before retry {attempt + 1}/{max_retries}")
+                time.sleep(delay)
+                continue
+            logger.error(f"AI prediction failed: {str(e)}")
+            if attempt == max_retries - 1:
+                logger.warning("All retries failed, falling back to rule-based matching")
+                raise
+            continue
             
         except json.JSONDecodeError as e:
             logger.error(f"Error parsing AI suggestions: {str(e)}")
@@ -635,12 +644,14 @@ def find_similar_transactions(transaction_description: str, transactions: list, 
         logger.error(f"Error in find_similar_transactions: {str(e)}")
         return []
 
-def suggest_explanation(description: str, similar_transactions: list = None) -> dict:
-    """Generate explanation suggestions using AI when available, with fallback to pattern matching."""
-    try:
+def suggest_explanation(description: str, similar_transactions: list = None, max_retries: int = 3, base_delay: float = 1.0) -> dict:
+    """Generate explanation suggestions using AI with exponential backoff for rate limits."""
+    logger.info("Using AI-powered explanation generation")
+    
+    client = get_openai_client()
+    
+    for attempt in range(max_retries):
         try:
-            client = get_openai_client()
-            logger.info("Using AI-powered explanation generation")
         
         # Format similar transactions for context
         similar_context = ""
