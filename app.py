@@ -46,19 +46,37 @@ def create_app():
         app = Flask(__name__)
         logger.info("Starting Flask application initialization...")
         
-        # Configure Flask application
+        # Configure Flask application with improved error handling
         database_url = os.environ.get("DATABASE_URL")
         if not database_url:
             logger.error("DATABASE_URL environment variable is not set")
             raise ValueError("DATABASE_URL environment variable is not set")
 
-        # Handle legacy database URLs and ensure proper format
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-        elif not database_url.startswith("postgresql://"):
-            database_url = f"postgresql://{database_url}"
+        # Handle legacy database URLs and ensure proper format with validation
+        try:
+            if database_url.startswith("postgres://"):
+                database_url = database_url.replace("postgres://", "postgresql://", 1)
             
-        logger.info("Database URL configured successfully")
+            # Validate database URL format
+            if not any(database_url.startswith(prefix) for prefix in ['postgresql://', 'postgresql+psycopg2://']):
+                if '@' in database_url and ':' in database_url:
+                    database_url = f"postgresql://{database_url}"
+                else:
+                    raise ValueError("Invalid database URL format")
+            
+            logger.info("Database URL validated successfully")
+            
+            # Test database connection
+            from sqlalchemy import create_engine
+            engine = create_engine(database_url)
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                logger.info("Database connection test successful")
+                
+        except Exception as e:
+            logger.error(f"Database configuration error: {str(e)}")
+            raise
+
         
         # Configure Flask app
         app.config.update(
@@ -76,8 +94,20 @@ def create_app():
         login_manager.init_app(app)
         login_manager.login_view = 'main.login'
         
-        # Initialize and start scheduler
+        # Initialize and start scheduler with improved rate limit handling
         try:
+            # Configure rate limiting with exponential backoff
+            app.config.update({
+                'RATELIMIT_DEFAULT': 100,  # Conservative rate limit per minute
+                'RATELIMIT_HEADERS_ENABLED': True,
+                'RATELIMIT_STORAGE_URL': database_url,
+                'RATELIMIT_STRATEGY': 'moving-window',  # More precise rate limiting
+                'RATELIMIT_IN_MEMORY': True,  # Faster rate limit checking
+                'RATELIMIT_BACKOFF_BASE': 2,  # Exponential backoff base
+                'RATELIMIT_BACKOFF_MAX': 60,  # Max 60 seconds wait
+                'RATELIMIT_KEY_PREFIX': 'global_'
+            })
+            
             app.config.from_object(Config)
             scheduler.init_app(app)
             if not scheduler.running:
@@ -85,7 +115,7 @@ def create_app():
                 logger.debug("Scheduler started successfully")
             else:
                 logger.debug("Scheduler already running")
-            logger.debug("Flask extensions and scheduler initialized successfully")
+            logger.info("Flask extensions, scheduler, and rate limiting initialized successfully")
         except Exception as scheduler_error:
             logger.error(f"Error initializing scheduler: {str(scheduler_error)}")
             logger.warning("Application will continue without background task scheduling")

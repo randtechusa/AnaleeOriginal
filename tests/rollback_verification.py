@@ -5,6 +5,8 @@ from typing import Dict, List, Optional
 
 from sqlalchemy import func
 from flask import current_app
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
 from models import User, Account, Transaction, UploadedFile, CompanySettings
 from app import db
 from utils.backup_manager import DatabaseBackupManager
@@ -93,138 +95,290 @@ class RollbackVerificationTest:
             self.logger.error(f"Error verifying system state: {str(e)}")
             return False
 
+    def _test_with_backoff(self, test_func, test_name, max_retries=5, base_delay=2):
+        """Helper method to run tests with improved exponential backoff and detailed logging"""
+        last_error = None
+        total_wait_time = 0
+        
+        for attempt in range(max_retries):
+            try:
+                start_time = time.time()
+                result = test_func()
+                execution_time = time.time() - start_time
+                
+                self.logger.info(
+                    f"{test_name} test successful on attempt {attempt + 1}\n"
+                    f"Total wait time: {total_wait_time:.2f}s\n"
+                    f"Execution time: {execution_time:.2f}s"
+                )
+                
+                return {
+                    'success': True,
+                    'result': result,
+                    'attempts': attempt + 1,
+                    'total_wait_time': total_wait_time,
+                    'execution_time': execution_time
+                }
+            except Exception as e:
+                last_error = str(e)
+                is_rate_limit = "rate limit" in str(e).lower()
+                
+                if is_rate_limit and attempt < max_retries - 1:
+                    delay = min(base_delay * (2 ** attempt), 60)  # Cap at 60 seconds
+                    total_wait_time += delay
+                    
+                    self.logger.info(
+                        f"Rate limit hit for {test_name}\n"
+                        f"Attempt: {attempt + 1}/{max_retries}\n"
+                        f"Waiting: {delay}s\n"
+                        f"Total wait time: {total_wait_time:.2f}s"
+                    )
+                    
+                    time.sleep(delay)
+                    continue
+                
+                error_type = "Rate limit" if is_rate_limit else "Execution"
+                self.logger.warning(
+                    f"{error_type} error in {test_name}\n"
+                    f"Attempt: {attempt + 1}/{max_retries}\n"
+                    f"Error: {str(e)}\n"
+                    f"Total wait time: {total_wait_time:.2f}s"
+                )
+        
+        return {
+            'success': False,
+            'error': last_error,
+            'attempts': max_retries,
+            'total_wait_time': total_wait_time
+        }
+
     def verify_ai_features(self) -> bool:
         """
-        Verifies AI features functionality
+        Verifies AI features functionality with improved error handling and rate limiting
         """
         try:
             from ai_utils import predict_account, suggest_explanation, find_similar_transactions
-            has_ai = True
-        except ImportError:
-            self.logger.warning("AI utilities not available, will test manual fallback")
-            has_ai = False
-        
-        try:
-            if has_ai:
-                # Test ASF with exponential backoff
-                max_retries = 3
-                base_delay = 1
-                
-                for attempt in range(max_retries):
-                    try:
-                        test_result = predict_account(
-                            "Test transaction",
-                            "Test explanation",
-                            [{'name': 'Test Account', 'category': 'Test', 'link': 'test'}]
-                        )
-                        if test_result:
-                            self.logger.info("ASF test successful")
-                            break
-                    except Exception as e:
-                        if "rate limit" in str(e).lower() and attempt < max_retries - 1:
-                            delay = base_delay * (2 ** attempt)
-                            self.logger.info(f"Rate limit hit, waiting {delay} seconds before retry")
-                            time.sleep(delay)
-                            continue
-                        self.logger.warning(f"AI prediction failed: {str(e)}, falling back to manual")
-                        break
-            else:
-                # Test manual fallback
-                self.logger.info("Testing manual processing fallback")
             
-            # Test ESF with rate limit handling
-            for attempt in range(max_retries):
-                try:
-                    explanation = suggest_explanation("Test transaction")
-                    if explanation and explanation.get('suggested_explanation'):
-                        self.logger.info("ESF test successful")
-                        break
-                    else:
-                        self.logger.warning("ESF verification: No explanation generated")
-                except Exception as e:
-                    if "rate limit" in str(e).lower() and attempt < max_retries - 1:
-                        delay = base_delay * (2 ** attempt)
-                        self.logger.info(f"Rate limit hit, waiting {delay} seconds before retry")
-                        time.sleep(delay)
-                        continue
-                    self.logger.warning(f"ESF test failed: {str(e)}")
-                    break
-
-            # Test ERF with rate limit handling
-            for attempt in range(max_retries):
-                try:
-                    similar = find_similar_transactions(
-                        "Test transaction",
-                        [{'description': 'Similar test transaction', 'id': 1}]
+            # Test data
+            test_transaction = {
+                'description': "Monthly office rent payment",
+                'explanation': "Regular monthly payment for office space",
+                'test_accounts': [
+                    {'name': 'Rent Expense', 'category': 'Expenses', 'link': '510'},
+                    {'name': 'Office Expenses', 'category': 'Expenses', 'link': '520'}
+                ]
+            }
+            
+            test_results = {
+                'ASF': {'status': None, 'details': None},
+                'ESF': {'status': None, 'details': None},
+                'ERF': {'status': None, 'details': None}
+            }
+            
+            # Test ASF
+            def test_asf():
+                result = predict_account(
+                    test_transaction['description'],
+                    test_transaction['explanation'],
+                    test_transaction['test_accounts']
+                )
+                if not result:
+                    raise ValueError("ASF returned no predictions")
+                return result
+            
+            test_results['ASF'] = self._test_with_backoff(
+                test_asf,
+                "Account Suggestion Feature (ASF)"
+            )
+            
+            # Test ESF
+            def test_esf():
+                result = suggest_explanation(test_transaction['description'])
+                if not result or not result.get('suggested_explanation'):
+                    raise ValueError("ESF returned no explanation")
+                return result
+            
+            test_results['ESF'] = self._test_with_backoff(
+                test_esf,
+                "Explanation Suggestion Feature (ESF)"
+            )
+            
+            # Test ERF
+            def test_erf():
+                result = find_similar_transactions(
+                    test_transaction['description'],
+                    [{'description': 'Office Rent Payment Q4', 'id': 1}]
+                )
+                if not result:
+                    raise ValueError("ERF found no similar transactions")
+                return result
+            
+            test_results['ERF'] = self._test_with_backoff(
+                test_erf,
+                "Explanation Recognition Feature (ERF)"
+            )
+            
+            # Log detailed results
+            for feature, result in test_results.items():
+                if result['success']:
+                    self.logger.info(
+                        f"{feature} verification successful after {result['attempts']} attempt(s)"
                     )
-                    if similar:
-                        self.logger.info("ERF test successful")
-                        break
-                    else:
-                        self.logger.warning("ERF verification: No similar transactions found")
-                except Exception as e:
-                    if "rate limit" in str(e).lower() and attempt < max_retries - 1:
-                        delay = base_delay * (2 ** attempt)
-                        self.logger.info(f"Rate limit hit, waiting {delay} seconds before retry")
-                        time.sleep(delay)
-                        continue
-                    self.logger.warning(f"ERF test failed: {str(e)}")
-                    break
+                else:
+                    self.logger.error(
+                        f"{feature} verification failed after {result['attempts']} attempt(s): {result['error']}"
+                    )
             
-            self.verification_results['ai_features'] = True
-            return True
+            # Verify all features working
+            all_features_working = all(result['success'] for result in test_results.values())
             
+            if all_features_working:
+                self.logger.info("All AI features verified successfully")
+                self.verification_results['ai_features'] = True
+                return True
+            else:
+                failed_features = [f for f, r in test_results.items() if not r['success']]
+                self.logger.error(f"AI features verification failed for: {', '.join(failed_features)}")
+                return False
+                
+        except ImportError as ie:
+            self.logger.error(f"AI utilities not available: {str(ie)}")
+            return False
         except Exception as e:
             self.logger.error(f"Error verifying AI features: {str(e)}")
             return False
+            
+            # Already set in the previous block
+            pass
     
-    def verify_rate_limits(self) -> bool:
+    def verify_rate_limits(self, concurrent_requests=3) -> bool:
         """
-        Verifies rate limit handling with exponential backoff
+        Verifies rate limit handling with parallel request processing and improved backoff
+        
+        Args:
+            concurrent_requests: Number of concurrent requests to test with
         """
         try:
-            from ai_utils import predict_account
+            from ai_utils import predict_account, suggest_explanation, find_similar_transactions
             
-            # Test rate limit handling with exponential backoff
+            # Test configuration
             max_retries = 3
             base_delay = 1
             test_requests = 5
-            success_count = 0
-            rate_limit_count = 0
+            results = {
+                'ASF': {'success': 0, 'rate_limits': 0},
+                'ESF': {'success': 0, 'rate_limits': 0},
+                'ERF': {'success': 0, 'rate_limits': 0}
+            }
             
-            for request_num in range(test_requests):
-                for attempt in range(max_retries):
-                    try:
-                        result = predict_account(
-                            "Test transaction",
-                            "Test explanation",
-                            [{'name': 'Test Account', 'category': 'Test', 'link': 'test'}]
-                        )
-                        success_count += 1
-                        break
-                    except Exception as e:
-                        if "rate limit" in str(e).lower():
-                            rate_limit_count += 1
-                            if attempt < max_retries - 1:
-                                delay = base_delay * (2 ** attempt)
-                                self.logger.info(f"Rate limit hit, waiting {delay} seconds before retry")
-                                time.sleep(delay)
-                                continue
-                        else:
-                            raise
+            test_data = {
+                'description': "Monthly office rent payment",
+                'explanation': "Regular monthly payment for office space",
+                'accounts': [{'name': 'Rent Expense', 'category': 'Expenses', 'link': '510'}]
+            }
+
+            # Define test functions for each feature
+            features_test = {
+                'ASF': lambda: predict_account(
+                    test_data['description'],
+                    test_data['explanation'],
+                    test_data['accounts']
+                ),
+                'ESF': lambda: suggest_explanation(test_data['description']),
+                'ERF': lambda: find_similar_transactions(
+                    test_data['description'],
+                    [{'description': 'Similar rent payment', 'id': 1}]
+                )
+            }
+            
+            def run_feature_test(feature_name, test_func, request_id):
+                result = self._test_with_backoff(
+                    test_func,
+                    f"{feature_name} (Request {request_id})"
+                )
                 
-                # Add a small delay between requests to prevent rapid succession
-                time.sleep(0.5)
+                if result['success']:
+                    results[feature_name]['success'] += 1
+                    self.logger.info(
+                        f"{feature_name} request {request_id} succeeded\n"
+                        f"Wait time: {result.get('total_wait_time', 0):.2f}s\n"
+                        f"Execution time: {result.get('execution_time', 0):.2f}s"
+                    )
+                    return True
+                else:
+                    if "rate limit" in str(result.get('error', '')).lower():
+                        results[feature_name]['rate_limits'] += 1
+                    self.logger.error(
+                        f"{feature_name} request {request_id} failed\n"
+                        f"Error: {result.get('error')}\n"
+                        f"Attempts: {result.get('attempts')}\n"
+                        f"Total wait time: {result.get('total_wait_time', 0):.2f}s"
+                    )
+                    return False
             
-            self.logger.info(
-                f"Rate limit test results: {success_count} successes, "
-                f"{rate_limit_count} rate limits handled with exponential backoff"
+            # Run tests in parallel with ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=concurrent_requests) as executor:
+                for feature_name, test_func in features_test.items():
+                    feature_futures = []
+                    for request_id in range(test_requests):
+                        future = executor.submit(
+                            run_feature_test,
+                            feature_name,
+                            test_func,
+                            request_id + 1
+                        )
+                        feature_futures.append(future)
+                    
+                    # Wait for all feature tests to complete
+                    feature_results = [future.result() for future in as_completed(feature_futures)]
+                    if not all(feature_results):
+                        self.logger.error(f"One or more {feature_name} tests failed")
+                        return False
+                    
+                    # Add small delay between features to prevent overwhelming the API
+                    time.sleep(1)
+                
+                return True
+            
+            # Test each feature
+            features_test = {
+                'ASF': lambda: predict_account(
+                    test_data['description'],
+                    test_data['explanation'],
+                    test_data['accounts']
+                ),
+                'ESF': lambda: suggest_explanation(test_data['description']),
+                'ERF': lambda: find_similar_transactions(
+                    test_data['description'],
+                    [{'description': 'Similar rent payment', 'id': 1}]
+                )
+            }
+            
+            all_tests_passed = all(
+                run_feature_test(name, func)
+                for name, func in features_test.items()
             )
             
-            # Consider test successful if we handled rate limits appropriately
-            self.verification_results['rate_limits'] = True
-            return True
-            
+            if all_tests_passed:
+                # Log detailed results
+                for feature, counts in results.items():
+                    success_rate = counts['success'] / test_requests * 100
+                    self.logger.info(
+                        f"{feature} Results: "
+                        f"{counts['success']}/{test_requests} successful requests "
+                        f"({success_rate:.1f}%), "
+                        f"{counts['rate_limits']} rate limits handled"
+                    )
+                
+                self.verification_results['rate_limits'] = True
+                return True
+            else:
+                self.logger.error("One or more rate limit tests failed")
+                return False
+                
+        except ImportError as ie:
+            self.logger.error(f"AI utilities not available: {str(ie)}")
+            return False
         except Exception as e:
             self.logger.error(f"Error verifying rate limits: {str(e)}")
             return False
