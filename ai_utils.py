@@ -26,15 +26,16 @@ def get_openai_client():
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
-    Account Suggestion Feature (ASF): AI-powered account suggestions based on transaction description
-    and existing Chart of Accounts structure. The function learns from the available accounts to make
-    intelligent suggestions for transaction categorization.
+    Account Suggestion Feature (ASF): AI-powered account suggestions with fallback to rule-based matching
+    when AI services are unavailable.
     """
     try:
         logger.debug(f"ASF: Starting account prediction for description: {description}")
         
-        # Initialize OpenAI client
-        client = get_openai_client()
+        # Try AI-powered prediction first
+        try:
+            client = get_openai_client()
+            logger.info("Using AI-powered prediction for account suggestions")
         
         # Format available accounts with enhanced structure
         account_info = "\n".join([
@@ -131,8 +132,41 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
             raise
             
     except Exception as e:
-        logger.error(f"Error in account prediction: {str(e)}")
-        return []
+        logger.warning(f"AI prediction failed, falling back to rule-based matching: {str(e)}")
+        
+        # Fallback: Rule-based matching
+        try:
+            matches = []
+            description_lower = description.lower()
+            
+            for account in available_accounts:
+                score = 0
+                account_terms = set(account['name'].lower().split() + 
+                                 account['category'].lower().split())
+                
+                # Check for exact matches in name or category
+                if any(term in description_lower for term in account_terms):
+                    score += 0.5
+                
+                # Check for partial matches
+                if any(term in description_lower for term in account_terms):
+                    score += 0.3
+                    
+                if score > 0:
+                    matches.append({
+                        'account_name': account['name'],
+                        'confidence': min(score, 0.8),  # Cap confidence at 0.8 for rule-based
+                        'reasoning': 'Matched based on description keywords',
+                        'account': account,
+                        'financial_insight': 'Suggestion based on text matching rules'
+                    })
+            
+            logger.info(f"Rule-based matching found {len(matches)} suggestions")
+            return sorted(matches, key=lambda x: x['confidence'], reverse=True)[:3]
+            
+        except Exception as fallback_error:
+            logger.error(f"Both AI and fallback prediction failed: {str(fallback_error)}")
+            return []
 
 def detect_transaction_anomalies(transactions, historical_data=None):
     """Detect anomalies in transactions using AI analysis."""
@@ -597,9 +631,11 @@ def find_similar_transactions(transaction_description: str, transactions: list, 
         return []
 
 def suggest_explanation(description: str, similar_transactions: list = None) -> dict:
-    """Generate explanation suggestions based on transaction description and similar transactions."""
+    """Generate explanation suggestions using AI when available, with fallback to pattern matching."""
     try:
-        client = get_openai_client()
+        try:
+            client = get_openai_client()
+            logger.info("Using AI-powered explanation generation")
         
         # Format similar transactions for context
         similar_context = ""
@@ -641,9 +677,33 @@ def suggest_explanation(description: str, similar_transactions: list = None) -> 
         return suggestion
         
     except Exception as e:
-        logger.error(f"Error generating explanation suggestion: {str(e)}")
-        return {
-            "suggested_explanation": "",
-            "confidence": 0.0,
-            "factors_considered": [f"Error: {str(e)}"]
-        }
+        logger.warning(f"AI explanation generation failed, falling back to pattern matching: {str(e)}")
+        
+        try:
+            # Fallback: Use similar transactions if available
+            if similar_transactions and len(similar_transactions) > 0:
+                best_match = max(similar_transactions, key=lambda x: x['similarity'])
+                if best_match['similarity'] > 0.7:  # High confidence threshold
+                    return {
+                        "suggested_explanation": best_match['transaction'].explanation or description,
+                        "confidence": best_match['similarity'],
+                        "factors_considered": ["Based on similar transaction pattern"]
+                    }
+            
+            # If no similar transactions, generate a basic explanation
+            words = description.split()
+            basic_explanation = f"Payment for {' '.join(words[:3])}..." if len(words) > 3 else description
+            
+            return {
+                "suggested_explanation": basic_explanation,
+                "confidence": 0.3,  # Low confidence for basic pattern matching
+                "factors_considered": ["Generated from transaction description pattern"]
+            }
+            
+        except Exception as fallback_error:
+            logger.error(f"Both AI and fallback explanation generation failed: {str(fallback_error)}")
+            return {
+                "suggested_explanation": "",
+                "confidence": 0.0,
+                "factors_considered": [f"Error: {str(fallback_error)}"]
+            }
