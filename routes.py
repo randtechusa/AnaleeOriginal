@@ -221,32 +221,38 @@ def company_settings():
 @main.route('/analyze/<int:file_id>', methods=['GET', 'POST'])
 @login_required
 def analyze(file_id):
-    logger.info(f"Starting analysis for file_id: {file_id}")
+    logger.info(f"Starting analysis for file_id: {file_id} for user {current_user.id}")
     
     try:
-        # Load file and verify ownership
+        # Load file and verify ownership with detailed logging
         file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first()
         if not file:
-            logger.error(f"File {file_id} not found or unauthorized access")
+            logger.error(f"File {file_id} not found or unauthorized access for user {current_user.id}")
             flash('File not found or unauthorized access')
             return redirect(url_for('main.upload'))
+            
+        logger.info(f"Successfully found file: {file.filename} for user {current_user.id}")
             
         # Load active accounts
         accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
         
-        # Load transactions with error handling
+        # Load transactions with enhanced error handling
         try:
             transactions = Transaction.query.filter_by(
                 file_id=file_id, 
                 user_id=current_user.id
             ).order_by(Transaction.date).all()
+            
+            if not transactions:
+                logger.warning(f"No transactions found for file {file_id} for user {current_user.id}")
+                flash('No transactions found in this file')
+                return redirect(url_for('main.upload'))
+                
+            logger.info(f"Successfully loaded {len(transactions)} transactions for analysis")
+            
         except Exception as db_error:
-            logger.error(f"Database error loading transactions: {str(db_error)}")
+            logger.error(f"Database error loading transactions for file {file_id}: {str(db_error)}")
             flash('Error loading transactions from database')
-            return redirect(url_for('main.upload'))
-        
-        if not transactions:
-            flash('No transactions found in this file')
             return redirect(url_for('main.upload'))
             
         # Initialize insights dictionary for AI features
