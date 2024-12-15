@@ -347,15 +347,32 @@ def analyze(file_id):
     logger.info(f"Starting analysis for file_id: {file_id}")
     
     try:
-        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first_or_404()
-        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
-        transactions = Transaction.query.filter_by(file_id=file_id, user_id=current_user.id).order_by(Transaction.date).all()
-        
-        if not transactions:
-            flash('No transactions found in this file.')
+        # Load file and verify ownership
+        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first()
+        if not file:
+            logger.error(f"File {file_id} not found or unauthorized access")
+            flash('File not found or unauthorized access')
             return redirect(url_for('main.upload'))
             
-        # Process transactions with AI features
+        # Load active accounts
+        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
+        
+        # Load transactions with error handling
+        try:
+            transactions = Transaction.query.filter_by(
+                file_id=file_id, 
+                user_id=current_user.id
+            ).order_by(Transaction.date).all()
+        except Exception as db_error:
+            logger.error(f"Database error loading transactions: {str(db_error)}")
+            flash('Error loading transactions from database')
+            return redirect(url_for('main.upload'))
+        
+        if not transactions:
+            flash('No transactions found in this file')
+            return redirect(url_for('main.upload'))
+            
+        # Initialize insights dictionary for AI features
         transaction_insights = {}
         for transaction in transactions:
             try:
@@ -765,3 +782,28 @@ def upload_progress():
             'status': 'error',
             'message': 'Error checking upload progress'
         }), 500
+
+def process_transaction(transaction, description):
+    try:
+        if not transaction or not transaction.description:
+            logger.warning(f"Invalid transaction data: {transaction}")
+            return None
+
+        similarity = calculate_similarity(transaction.description, description)
+        if similarity >= TEXT_THRESHOLD or similarity >= SEMANTIC_THRESHOLD:
+            return {
+                'transaction': transaction,
+                'similarity': similarity
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Error processing transaction: {str(e)}")
+        return None
+
+def calculate_similarity(description1, description2):
+    #Implementation for similarity calculation would go here. Placeholder for now.
+    return 0.5 #Placeholder
+
+
+TEXT_THRESHOLD = 0.8
+SEMANTIC_THRESHOLD = 0.7
