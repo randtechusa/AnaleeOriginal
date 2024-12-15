@@ -80,13 +80,42 @@ def index():
 
 @main.route('/login', methods=['GET', 'POST'])
 def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('main.dashboard'))
+        
     if request.method == 'POST':
-        email = request.form['email']
-        user = User.query.filter_by(email=email).first()
-        if user and user.check_password(request.form['password']):
+        try:
+            email = request.form.get('email')
+            password = request.form.get('password')
+            
+            if not email or not password:
+                flash('Please provide both email and password')
+                return render_template('login.html')
+                
+            user = User.query.filter_by(email=email).first()
+            
+            if user is None:
+                flash('Invalid email address')
+                return render_template('login.html')
+            
+            if not hasattr(user, 'check_password'):
+                logger.error('User model missing check_password method')
+                flash('Authentication error')
+                return render_template('login.html')
+                
+            if not user.check_password(password):
+                flash('Invalid password')
+                return render_template('login.html')
+                
             login_user(user)
+            logger.info(f'User {user.email} logged in successfully')
             return redirect(url_for('main.dashboard'))
-        flash('Invalid email or password')
+            
+        except Exception as e:
+            logger.error(f'Login error: {str(e)}')
+            flash('An error occurred during login')
+            return render_template('login.html')
+            
     return render_template('login.html')
 
 @main.route('/register', methods=['GET', 'POST'])

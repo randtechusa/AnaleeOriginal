@@ -2,6 +2,7 @@ from flask_login import UserMixin
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.orm import relationship
+from werkzeug.security import generate_password_hash, check_password_hash
 from app import db, login_manager
 import logging
 
@@ -24,15 +25,67 @@ class User(UserMixin, db.Model):
 
     def set_password(self, password):
         """Set hashed password."""
-        from werkzeug.security import generate_password_hash
+        if not password:
+            raise ValueError('Password cannot be empty')
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
         """Check if provided password matches hash."""
-        from werkzeug.security import check_password_hash
-        if self.password_hash:
+        if not password or not self.password_hash:
+            return False
+        try:
             return check_password_hash(self.password_hash, password)
+        except Exception as e:
+            logger.error(f"Error checking password: {str(e)}")
+            return False
+
+    def get_id(self):
+        """Required for Flask-Login."""
+        return str(self.id)
+
+    @property
+    def is_active(self):
+        """Required for Flask-Login."""
+        return True
+
+    @property
+    def is_authenticated(self):
+        """Required for Flask-Login."""
+        return True
+
+    @property
+    def is_anonymous(self):
+        """Required for Flask-Login."""
         return False
+
+    def get_id(self):
+        """Required for Flask-Login."""
+        return str(self.id)
+
+    @property
+    def is_active(self):
+        """Required for Flask-Login."""
+        return True
+
+    @property
+    def is_authenticated(self):
+        """Required for Flask-Login."""
+        return True
+
+    @property
+    def is_anonymous(self):
+        """Required for Flask-Login."""
+        return False
+
+    @property
+    def password(self):
+        """Password getter - prevents direct access."""
+        raise AttributeError('Password is not a readable attribute')
+
+    @password.setter
+    def password(self, password):
+        """Password setter - automatically hashes the password."""
+        self.set_password(password)
 
     def __repr__(self):
         return f'<User {self.username}>'

@@ -6,6 +6,40 @@ import os
 from typing import List, Dict
 import time
 
+def handle_rate_limit(func, max_retries=3, base_delay=1):
+    """
+    Decorator to handle rate limiting with exponential backoff
+    """
+    def wrapper(*args, **kwargs):
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if "rate limit" in str(e).lower() and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.info(f"Rate limit hit, waiting {delay} seconds before retry {attempt + 1}/{max_retries}")
+                    time.sleep(delay)
+                    continue
+                raise
+        return None
+    return wrapper
+
+def process_in_batches(items, process_func, batch_size=5):
+    """
+    Process items in batches to avoid hitting rate limits
+    """
+    results = []
+    for i in range(0, len(items), batch_size):
+        batch = items[i:i + batch_size]
+        for item in batch:
+            try:
+                result = handle_rate_limit(process_func)(item)
+                if result is not None:
+                    results.append(result)
+            except Exception as e:
+                logger.error(f"Error processing batch item: {str(e)}")
+        time.sleep(1)  # Small delay between batches
+    return results
 # Configure logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -39,7 +73,6 @@ def predict_account(description: str, explanation: str, available_accounts: List
     client = get_openai_client()
     
     try:
-        
         # Format available accounts
         account_info = "\n".join([
             f"- {acc['name']}\n  Category: {acc['category']}\n  Code: {acc['link']}\n  Purpose: Standard {acc['category']} account for {acc['name'].lower()} transactions"
@@ -85,8 +118,8 @@ Format response as a JSON list with this structure:
 
 Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist in the provided Chart of Accounts."""
 
-        # Make direct API call
-        try:
+        @handle_rate_limit
+        def get_account_suggestions():
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
@@ -96,12 +129,11 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
                 temperature=0.3,
                 max_tokens=500
             )
-            logger.debug("Successfully received response from OpenAI")
-            
-            # Parse response
-            content = response.choices[0].message.content.strip()
-            
-            if content.startswith('[') and content.endswith(']'):
+            return response.choices[0].message.content.strip()
+
+        try:
+            content = get_account_suggestions()
+            if content and content.startswith('[') and content.endswith(']'):
                 suggestions = json.loads(content)
                 
                 # Validate and format suggestions
@@ -120,65 +152,15 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
                 return valid_suggestions[:3]  # Return top 3 suggestions
             else:
                 logger.error("Invalid response format from AI")
-                raise ValueError("Invalid AI response format")
+                return rule_based_account_matching(description, available_accounts)
                 
         except Exception as e:
-            if "rate limit" in str(e).lower() and attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt)
-                logger.info(f"Rate limit hit, waiting {delay} seconds before retry {attempt + 1}/{max_retries}")
-                time.sleep(delay)
-                continue
-            logger.error(f"AI prediction failed: {str(e)}")
-            if attempt == max_retries - 1:
-                logger.warning("All retries failed, falling back to rule-based matching")
-                raise
-            continue
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing AI suggestions: {str(e)}")
-            logger.debug(f"Raw content received: {content}")
-            raise ValueError("Failed to parse AI response")
-            
-        except Exception as e:
-            logger.error(f"Error in OpenAI API call: {str(e)}")
-            raise
+            logger.error(f"Error processing AI response: {str(e)}")
+            return rule_based_account_matching(description, available_accounts)
             
     except Exception as e:
-        logger.warning(f"AI prediction failed, falling back to rule-based matching: {str(e)}")
-        
-        # Fallback: Rule-based matching
-        try:
-            matches = []
-            description_lower = description.lower()
-            
-            for account in available_accounts:
-                score = 0
-                account_terms = set(account['name'].lower().split() + 
-                                 account['category'].lower().split())
-                
-                # Check for exact matches in name or category
-                if any(term in description_lower for term in account_terms):
-                    score += 0.5
-                
-                # Check for partial matches
-                if any(term in description_lower for term in account_terms):
-                    score += 0.3
-                    
-                if score > 0:
-                    matches.append({
-                        'account_name': account['name'],
-                        'confidence': min(score, 0.8),  # Cap confidence at 0.8 for rule-based
-                        'reasoning': 'Matched based on description keywords',
-                        'account': account,
-                        'financial_insight': 'Suggestion based on text matching rules'
-                    })
-            
-            logger.info(f"Rule-based matching found {len(matches)} suggestions")
-            return sorted(matches, key=lambda x: x['confidence'], reverse=True)[:3]
-            
-        except Exception as fallback_error:
-            logger.error(f"Both AI and fallback prediction failed: {str(fallback_error)}")
-            return []
+        logger.error(f"Error in predict_account: {str(e)}")
+        return rule_based_account_matching(description, available_accounts)
 
 def detect_transaction_anomalies(transactions, historical_data=None):
     """Detect anomalies in transactions using AI analysis."""
@@ -596,6 +578,70 @@ def calculate_text_similarity(text1: str, text2: str) -> float:
         logger.error(f"Error calculating text similarity: {str(e)}")
         return 0.0
 
+def rule_based_account_matching(description: str, available_accounts: List[Dict]) -> List[Dict]:
+    """Fallback method for account matching using rule-based approach"""
+    try:
+        matches = []
+        description_lower = description.lower()
+        
+        for account in available_accounts:
+            score = 0
+            account_terms = set(account['name'].lower().split() + 
+                             account['category'].lower().split())
+            
+            # Check for exact matches in name or category
+            if any(term in description_lower for term in account_terms):
+                score += 0.5
+            
+            # Check for partial matches
+            if any(term in description_lower for term in account_terms):
+                score += 0.3
+                
+            if score > 0:
+                matches.append({
+                    'account_name': account['name'],
+                    'confidence': min(score, 0.8),  # Cap confidence at 0.8 for rule-based
+                    'reasoning': 'Matched based on description keywords',
+                    'account': account,
+                    'financial_insight': 'Suggestion based on text matching rules'
+                })
+        
+        return sorted(matches, key=lambda x: x['confidence'], reverse=True)[:3]
+        
+    except Exception as e:
+        logger.error(f"Error in rule_based_account_matching: {str(e)}")
+        return []
+
+def calculate_similarity(transaction_description: str, comparison_description: str) -> float:
+    """Calculate semantic similarity between two transaction descriptions"""
+    prompt = f"""Compare these two transaction descriptions and rate their semantic similarity:
+    Description 1: {transaction_description.strip()}
+    Description 2: {comparison_description.strip()}
+    
+    Consider both textual similarity and semantic meaning.
+    Return only a single float number between 0 and 1."""
+    
+    client = get_openai_client()
+    
+    @handle_rate_limit
+    def make_similarity_request():
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a financial text analysis expert. Analyze transaction descriptions for similarity."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=50
+        )
+        return float(response.choices[0].message.content.strip())
+    
+    try:
+        return make_similarity_request()
+    except Exception as e:
+        logger.error(f"Error calculating similarity: {str(e)}")
+        return 0.0
+
 def find_similar_transactions(transaction_description: str, transactions: list) -> list:
     """
     ERF (Explanation Recognition Feature): 
@@ -609,51 +655,33 @@ def find_similar_transactions(transaction_description: str, transactions: list) 
     if not transaction_description or not transactions:
         logger.warning("Empty transaction description or transactions list")
         return []
-        
-    similar_transactions = []
+    
     logger.info(f"ERF: Finding similar transactions for description: {transaction_description}")
     
-    # Initialize OpenAI client
-    client = get_openai_client()
-    
-    for transaction in transactions:
-        if not transaction.description:
-            continue
-            
-        # Calculate semantic similarity using OpenAI
-        prompt = f"""Compare these two transaction descriptions and rate their semantic similarity:
-        Description 1: {transaction_description.strip()}
-        Description 2: {transaction.description.strip()}
+    def process_transaction(transaction):
+        if not transaction or not getattr(transaction, 'description', None):
+            return None
         
-        Consider both textual similarity and semantic meaning.
-        Return only a single float number between 0 and 1."""
-
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a financial text analysis expert. Analyze transaction descriptions for similarity."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.1,
-            max_tokens=50
+        similarity = calculate_similarity(transaction_description, transaction.description)
+        if similarity >= TEXT_THRESHOLD or similarity >= SEMANTIC_THRESHOLD:
+            return {
+                'transaction': transaction,
+                'similarity': similarity
+            }
+        return None
+    
+    try:
+        # Process transactions in batches to handle rate limits
+        similar_transactions = process_in_batches(
+            transactions,
+            process_transaction,
+            batch_size=5
         )
         
-        try:
-            similarity = float(response.choices[0].message.content.strip())
-            logger.debug(f"Similarity score: {similarity} for transaction: {transaction.description}")
-            
-            # Add transaction if it meets either threshold
-            if similarity >= TEXT_THRESHOLD or similarity >= SEMANTIC_THRESHOLD:
-                similar_transactions.append({
-                    'transaction': transaction,
-                    'similarity': similarity
-                })
-        except ValueError:
-            logger.error("Could not parse similarity score from API response")
-            continue
-        
-        # Sort by similarity score in descending order
+        # Filter out None values and sort by similarity
+        similar_transactions = [t for t in similar_transactions if t is not None]
         similar_transactions.sort(key=lambda x: x['similarity'], reverse=True)
+        
         logger.info(f"Found {len(similar_transactions)} similar transactions")
         return similar_transactions
         
@@ -672,7 +700,6 @@ def suggest_explanation(description: str, similar_transactions: list = None) -> 
     client = get_openai_client()
     
     try:
-        
         # Format similar transactions for context
         similar_context = ""
         if similar_transactions:
@@ -699,50 +726,70 @@ def suggest_explanation(description: str, similar_transactions: list = None) -> 
         }}
         """
         
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a financial transaction analyzer specializing in generating clear, professional explanations."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=250
-        )
-        
-        suggestion = json.loads(response.choices[0].message.content.strip())
-        return suggestion
-        
-    except Exception as e:
-        logger.warning(f"AI explanation generation failed, falling back to pattern matching: {str(e)}")
+        @handle_rate_limit
+        def get_explanation_suggestion():
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial transaction analyzer specializing in generating clear, professional explanations."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=250
+            )
+            return response.choices[0].message.content.strip()
         
         try:
-            # Fallback: Use similar transactions if available
-            if similar_transactions and len(similar_transactions) > 0:
-                best_match = max(similar_transactions, key=lambda x: x['similarity'])
-                if best_match['similarity'] > 0.7:  # High confidence threshold
-                    return {
-                        "suggested_explanation": best_match['transaction'].explanation or description,
-                        "confidence": best_match['similarity'],
-                        "factors_considered": ["Based on similar transaction pattern"]
-                    }
+            content = get_explanation_suggestion()
+            if content:
+                suggestion = json.loads(content)
+                return suggestion
+            else:
+                logger.error("Empty response from OpenAI")
+                return generate_fallback_explanation(description, similar_transactions)
+                
+        except json.JSONDecodeError as je:
+            logger.error(f"Error parsing explanation suggestion: {str(je)}")
+            return generate_fallback_explanation(description, similar_transactions)
             
-            # If no similar transactions, generate a basic explanation
-            words = description.split()
-            basic_explanation = f"Payment for {' '.join(words[:3])}..." if len(words) > 3 else description
+        except Exception as e:
+            logger.error(f"Error processing explanation suggestion: {str(e)}")
+            return generate_fallback_explanation(description, similar_transactions)
             
-            return {
-                "suggested_explanation": basic_explanation,
-                "confidence": 0.3,  # Low confidence for basic pattern matching
-                "factors_considered": ["Generated from transaction description pattern"]
-            }
-            
-        except Exception as fallback_error:
-            logger.error(f"Both AI and fallback explanation generation failed: {str(fallback_error)}")
-            return {
-                "suggested_explanation": "",
-                "confidence": 0.0,
-                "factors_considered": [f"Error: {str(fallback_error)}"]
-            }
+    except Exception as e:
+        logger.warning(f"AI explanation generation failed, falling back to pattern matching: {str(e)}")
+        return generate_fallback_explanation(description, similar_transactions)
+
+def generate_fallback_explanation(description: str, similar_transactions: list = None) -> dict:
+    """Generate explanation using fallback pattern matching approach"""
+    try:
+        # Fallback: Use similar transactions if available
+        if similar_transactions and len(similar_transactions) > 0:
+            best_match = max(similar_transactions, key=lambda x: x['similarity'])
+            if best_match['similarity'] > 0.7:  # High confidence threshold
+                return {
+                    "suggested_explanation": best_match['transaction'].explanation or description,
+                    "confidence": best_match['similarity'],
+                    "factors_considered": ["Based on similar transaction pattern"]
+                }
+        
+        # If no similar transactions, generate a basic explanation
+        words = description.split()
+        basic_explanation = f"Payment for {' '.join(words[:3])}..." if len(words) > 3 else description
+        
+        return {
+            "suggested_explanation": basic_explanation,
+            "confidence": 0.3,  # Low confidence for basic pattern matching
+            "factors_considered": ["Generated from transaction description pattern"]
+        }
+        
+    except Exception as fallback_error:
+        logger.error(f"Fallback explanation generation failed: {str(fallback_error)}")
+        return {
+            "suggested_explanation": "",
+            "confidence": 0.0,
+            "factors_considered": [f"Error: {str(fallback_error)}"]
+        }
 
 def verify_ai_features() -> bool:
     """

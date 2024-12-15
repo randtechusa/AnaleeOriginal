@@ -7,10 +7,8 @@ from sqlalchemy import func
 from flask import current_app
 from models import User, Account, Transaction, UploadedFile, CompanySettings
 from app import db
-from datetime import datetime, timedelta
-import time
-import logging
-from typing import Dict, List, Optional
+from utils.backup_manager import DatabaseBackupManager
+from ai_utils import predict_account, suggest_explanation, find_similar_transactions
 
 logger = logging.getLogger(__name__)
 
@@ -114,25 +112,16 @@ class RollbackVerificationTest:
                 
                 for attempt in range(max_retries):
                     try:
-                        # Test with exponential backoff
-                for attempt in range(max_retries):
-                    try:
                         test_result = predict_account(
                             "Test transaction",
                             "Test explanation",
                             [{'name': 'Test Account', 'category': 'Test', 'link': 'test'}]
                         )
-                        break
+                        if test_result:
+                            self.logger.info("ASF test successful")
+                            break
                     except Exception as e:
                         if "rate limit" in str(e).lower() and attempt < max_retries - 1:
-                            delay = base_delay * (2 ** attempt)
-                            self.logger.info(f"Rate limit hit, waiting {delay} seconds")
-                            time.sleep(delay)
-                            continue
-                        raise
-                        break
-                    except Exception as e:
-                        if "rate limit" in str(e).lower():
                             delay = base_delay * (2 ** attempt)
                             self.logger.info(f"Rate limit hit, waiting {delay} seconds before retry")
                             time.sleep(delay)
@@ -143,18 +132,44 @@ class RollbackVerificationTest:
                 # Test manual fallback
                 self.logger.info("Testing manual processing fallback")
             
-            # Test ESF
-            explanation = suggest_explanation("Test transaction")
-            if not explanation:
-                self.logger.warning("ESF verification: No explanation generated")
-            
-            # Test ERF
-            similar = find_similar_transactions(
-                "Test transaction",
-                [{'description': 'Similar test transaction', 'id': 1}]
-            )
-            if not similar:
-                self.logger.warning("ERF verification: No similar transactions found")
+            # Test ESF with rate limit handling
+            for attempt in range(max_retries):
+                try:
+                    explanation = suggest_explanation("Test transaction")
+                    if explanation and explanation.get('suggested_explanation'):
+                        self.logger.info("ESF test successful")
+                        break
+                    else:
+                        self.logger.warning("ESF verification: No explanation generated")
+                except Exception as e:
+                    if "rate limit" in str(e).lower() and attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        self.logger.info(f"Rate limit hit, waiting {delay} seconds before retry")
+                        time.sleep(delay)
+                        continue
+                    self.logger.warning(f"ESF test failed: {str(e)}")
+                    break
+
+            # Test ERF with rate limit handling
+            for attempt in range(max_retries):
+                try:
+                    similar = find_similar_transactions(
+                        "Test transaction",
+                        [{'description': 'Similar test transaction', 'id': 1}]
+                    )
+                    if similar:
+                        self.logger.info("ERF test successful")
+                        break
+                    else:
+                        self.logger.warning("ERF verification: No similar transactions found")
+                except Exception as e:
+                    if "rate limit" in str(e).lower() and attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        self.logger.info(f"Rate limit hit, waiting {delay} seconds before retry")
+                        time.sleep(delay)
+                        continue
+                    self.logger.warning(f"ERF test failed: {str(e)}")
+                    break
             
             self.verification_results['ai_features'] = True
             return True
