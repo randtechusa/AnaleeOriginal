@@ -105,7 +105,7 @@ class UploadedFile(db.Model):
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     
     # Relationships
-    transactions = relationship('Transaction', backref='file', lazy=True, cascade='all, delete-orphan')
+    transactions = relationship('Transaction', back_populates='uploaded_file')
 
 class Transaction(db.Model):
     __tablename__ = 'transaction'
@@ -117,6 +117,7 @@ class Transaction(db.Model):
     category = Column(String(50))
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     account_id = Column(Integer, ForeignKey('account.id'))
+    file_id = Column(Integer, ForeignKey('uploaded_file.id'))
     ai_category = Column(String(50))
     ai_confidence = Column(Float)
     ai_explanation = Column(String(200))
@@ -125,7 +126,7 @@ class Transaction(db.Model):
     
     # Relationships
     account = relationship('Account', backref='transactions')
-    file = relationship('UploadedFile', backref='transactions')
+    uploaded_file = relationship('UploadedFile', back_populates='transactions')
 
 class Account(db.Model):
     __tablename__ = 'account'
