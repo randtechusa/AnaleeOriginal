@@ -541,13 +541,34 @@ def dashboard():
 @login_required
 def upload():
     try:
+        # Get uploaded files
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-        bank_accounts = Account.query.filter(
-            Account.user_id == current_user.id,
-            Account.link.like('ca.810%'),
-            Account.is_active == True
-        ).order_by(Account.link).all()
-        logger.info(f"Retrieved {len(files)} existing files and {len(bank_accounts)} bank accounts for user {current_user.id}")
+        logger.info(f"Retrieved {len(files)} existing files for user {current_user.id}")
+        
+        # Get bank accounts with detailed logging
+        try:
+            bank_accounts = Account.query.filter(
+                Account.user_id == current_user.id,
+                Account.link.ilike('ca.810%'),  # Case-insensitive LIKE
+                Account.is_active == True
+            ).order_by(Account.link).all()
+            
+            logger.info(f"Found {len(bank_accounts)} bank accounts for user {current_user.id}")
+            if bank_accounts:
+                for account in bank_accounts:
+                    logger.info(f"Bank account found: ID={account.id}, Link={account.link}, Name={account.name}")
+            else:
+                logger.warning(f"No bank accounts found for user {current_user.id} with link pattern 'ca.810%'")
+                
+            # Query all accounts to verify filter
+            all_accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
+            logger.info(f"Total active accounts: {len(all_accounts)}")
+            logger.info(f"Account links: {[acc.link for acc in all_accounts]}")
+            
+        except Exception as e:
+            logger.error(f"Error fetching bank accounts: {str(e)}")
+            db.session.rollback()
+            bank_accounts = []
         
         if request.method == 'POST':
             logger.debug("Processing file upload request")

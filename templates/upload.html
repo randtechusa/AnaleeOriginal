@@ -11,13 +11,22 @@
                         <label for="bank_account" class="form-label">Select Bank Account</label>
                         <select class="form-select" id="bank_account" name="bank_account" required>
                             <option value="">Choose a bank account...</option>
-                            {% for account in bank_accounts %}
-                            <option value="{{ account.id }}">{{ account.link }} - {{ account.name }}</option>
-                            {% endfor %}
+                            {% if bank_accounts %}
+                                {% for account in bank_accounts %}
+                                <option value="{{ account.id }}">{{ account.link }} - {{ account.name }}</option>
+                                {% endfor %}
+                            {% else %}
+                                <option value="" disabled>No bank accounts found (ca.810.xxx)</option>
+                            {% endif %}
                         </select>
                         <div class="form-text">
-                            Select the bank account this statement belongs to
+                            Select the bank account this statement belongs to (Accounts starting with ca.810)
                         </div>
+                        {% if not bank_accounts %}
+                        <div class="alert alert-warning mt-2">
+                            <small>No bank accounts found. Please create a bank account (starting with ca.810) in the <a href="{{ url_for('main.settings') }}">settings</a> first.</small>
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
                         <label for="file" class="form-label">Bank Statement File</label>
