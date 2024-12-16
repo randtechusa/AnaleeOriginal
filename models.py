@@ -105,7 +105,7 @@ class UploadedFile(db.Model):
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     
     # Relationships
-    transactions = relationship('Transaction', backref='file', lazy=True, cascade='all, delete-orphan')
+    transactions = relationship('Transaction', backref='file', lazy=True)
 
 class Transaction(db.Model):
     __tablename__ = 'transaction'
