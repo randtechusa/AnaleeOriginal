@@ -84,6 +84,9 @@ def index():
 @main.route('/login', methods=['GET', 'POST'])
 def login():
     try:
+        # Clear any existing session
+        session.clear()
+        
         if current_user.is_authenticated:
             logger.info(f"Already authenticated user {current_user.id} accessing login page")
             return redirect(url_for('main.dashboard'))
@@ -100,6 +103,10 @@ def login():
                 return render_template('login.html')
             
             try:
+                # Verify database connection first
+                db.session.execute(text('SELECT 1'))
+                logger.debug("Database connection verified before user query")
+                
                 user = User.query.filter_by(email=email).first()
                 
                 if user is None:
@@ -107,30 +114,42 @@ def login():
                     flash('Invalid email or password')
                     return render_template('login.html')
                 
+                logger.debug(f"Found user {user.username} with ID {user.id}")
+                
                 if not user.check_password(password):
                     logger.warning(f"Failed password check for user: {email}")
                     flash('Invalid email or password')
                     return render_template('login.html')
                 
+                # Clear session and login user
+                session.clear()
                 login_user(user, remember=True)
                 logger.info(f"User {email} logged in successfully")
+                
+                # Verify login was successful
+                if not current_user.is_authenticated:
+                    logger.error(f"Login failed for user {email} - user not authenticated after login_user")
+                    flash('Authentication failed. Please try again.')
+                    return render_template('login.html')
                 
                 # Get the next parameter or default to dashboard
                 next_page = request.args.get('next')
                 if not next_page or not next_page.startswith('/'):
                     next_page = url_for('main.dashboard')
-                    
+                
                 logger.info(f"Redirecting authenticated user to: {next_page}")
                 return redirect(next_page)
                 
             except Exception as e:
                 logger.error(f"Database error during login: {str(e)}")
+                logger.exception("Full login error stacktrace:")
                 db.session.rollback()
                 flash('An error occurred during login. Please try again.')
                 return render_template('login.html')
     
     except Exception as e:
         logger.error(f"Unexpected error in login route: {str(e)}")
+        logger.exception("Full login route error stacktrace:")
         flash('An unexpected error occurred. Please try again.')
         return render_template('login.html')
         
@@ -139,24 +158,38 @@ def login():
 @main.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        if User.query.count() > 0:
-            flash('Registration is closed - single user system')
-            return redirect(url_for('main.login'))
-
-        user = User(
-            username=request.form['username'],
-            email=request.form['email'],
-            password=request.form['password']
-        )
         try:
+            username = request.form.get('username', '').strip()
+            email = request.form.get('email', '').strip()
+            password = request.form.get('password', '')
+            
+            if not username or not email or not password:
+                flash('All fields are required')
+                return render_template('register.html')
+            
+            if User.query.filter((User.username == username) | (User.email == email)).first():
+                flash('Username or email already exists')
+                return render_template('register.html')
+            
+            user = User(
+                username=username,
+                email=email
+            )
+            user.set_password(password)
+            
             db.session.add(user)
             db.session.commit()
+            
+            # Log the user in after registration
+            login_user(user)
             flash('Registration successful')
-            return redirect(url_for('main.login'))
+            return redirect(url_for('main.dashboard'))
+            
         except Exception as e:
             logger.error(f'Error during registration: {str(e)}')
             db.session.rollback()
             flash('Registration failed. Please try again.')
+            
     return render_template('register.html')
 
 @main.route('/settings', methods=['GET', 'POST'])

@@ -52,11 +52,16 @@ class User(UserMixin, db.Model):
             logger.warning(f"No password hash found for user {self.username}")
             return False
         try:
+            logger.debug(f"Attempting password verification for user {self.username}")
             result = check_password_hash(self.password_hash, password)
-            logger.info(f"Password verification {'successful' if result else 'failed'} for user {self.username}")
+            if result:
+                logger.info(f"Password verification successful for user {self.username}")
+            else:
+                logger.warning(f"Password verification failed for user {self.username}")
             return result
         except Exception as e:
             logger.error(f"Error verifying password for user {self.username}: {str(e)}")
+            logger.exception("Full password verification error stacktrace:")
             return False
 
     def get_id(self):
