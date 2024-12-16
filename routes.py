@@ -83,44 +83,57 @@ def index():
 
 @main.route('/login', methods=['GET', 'POST'])
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('main.dashboard'))
-        
-    if request.method == 'POST':
-        try:
-            email = request.form.get('email')
-            password = request.form.get('password')
+    try:
+        if current_user.is_authenticated:
+            logger.info(f"Already authenticated user {current_user.id} accessing login page")
+            return redirect(url_for('main.dashboard'))
+
+        if request.method == 'POST':
+            email = request.form.get('email', '').strip()
+            password = request.form.get('password', '')
+            
+            logger.info(f"Login attempt for email: {email}")
             
             if not email or not password:
+                logger.warning("Login attempt with missing credentials")
                 flash('Please provide both email and password')
                 return render_template('login.html')
-                
-            user = User.query.filter_by(email=email).first()
             
-            if user is None:
-                flash('Invalid email address')
+            try:
+                user = User.query.filter_by(email=email).first()
+                
+                if user is None:
+                    logger.warning(f"Login attempt for non-existent user: {email}")
+                    flash('Invalid email or password')
+                    return render_template('login.html')
+                
+                if not user.check_password(password):
+                    logger.warning(f"Failed password check for user: {email}")
+                    flash('Invalid email or password')
+                    return render_template('login.html')
+                
+                login_user(user, remember=True)
+                logger.info(f"User {email} logged in successfully")
+                
+                # Get the next parameter or default to dashboard
+                next_page = request.args.get('next')
+                if not next_page or not next_page.startswith('/'):
+                    next_page = url_for('main.dashboard')
+                    
+                logger.info(f"Redirecting authenticated user to: {next_page}")
+                return redirect(next_page)
+                
+            except Exception as e:
+                logger.error(f"Database error during login: {str(e)}")
+                db.session.rollback()
+                flash('An error occurred during login. Please try again.')
                 return render_template('login.html')
-                
-            if not user.check_password(password):
-                flash('Invalid password')
-                return render_template('login.html')
-                
-            login_user(user, remember=True)
-            logger.info(f'User {user.email} logged in successfully')
-            
-            # Get the next parameter or default to dashboard
-            next_page = request.args.get('next')
-            if not next_page or not next_page.startswith('/'):
-                next_page = url_for('main.dashboard')
-                
-            return redirect(next_page)
-            
-        except Exception as e:
-            logger.error(f'Login error: {str(e)}')
-            db.session.rollback()
-            flash('An error occurred during login')
-            return render_template('login.html')
-            
+    
+    except Exception as e:
+        logger.error(f"Unexpected error in login route: {str(e)}")
+        flash('An unexpected error occurred. Please try again.')
+        return render_template('login.html')
+        
     return render_template('login.html')
 
 @main.route('/register', methods=['GET', 'POST'])

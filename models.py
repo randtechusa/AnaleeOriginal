@@ -36,16 +36,27 @@ class User(UserMixin, db.Model):
         """Set hashed password."""
         if not password:
             raise ValueError('Password cannot be empty')
-        self.password_hash = generate_password_hash(password)
+        try:
+            self.password_hash = generate_password_hash(password, method='pbkdf2:sha256')
+            logger.info(f"Password hash generated successfully for user {self.username}")
+        except Exception as e:
+            logger.error(f"Error setting password for user {self.username}: {str(e)}")
+            raise
 
     def check_password(self, password):
         """Check if provided password matches hash."""
-        if not password or not self.password_hash:
+        if not password:
+            logger.warning("Empty password provided for verification")
+            return False
+        if not self.password_hash:
+            logger.warning(f"No password hash found for user {self.username}")
             return False
         try:
-            return check_password_hash(self.password_hash, password)
+            result = check_password_hash(self.password_hash, password)
+            logger.info(f"Password verification {'successful' if result else 'failed'} for user {self.username}")
+            return result
         except Exception as e:
-            logger.error(f"Error checking password: {str(e)}")
+            logger.error(f"Error verifying password for user {self.username}: {str(e)}")
             return False
 
     def get_id(self):
