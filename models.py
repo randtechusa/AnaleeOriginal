@@ -1,18 +1,23 @@
 import logging
-from datetime import datetime
-from flask_login import UserMixin, LoginManager
+import os
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+
+from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, Text, DateTime
 from sqlalchemy.orm import relationship
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask import current_app
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize extensions
+# Initialize database
 db = SQLAlchemy()
+
+# Initialize login manager
+from flask_login import LoginManager
 login_manager = LoginManager()
 
 logger = logging.getLogger(__name__)
@@ -96,50 +101,66 @@ class User(UserMixin, db.Model):
     @staticmethod
     def create_default_accounts(user_id):
         """Create default Chart of Accounts for a new user."""
-        try:
-            default_accounts = [
-                # Assets (1000-1999)
-                {'link': '1000', 'name': 'Assets', 'category': 'Assets', 'sub_category': 'Current Assets'},
-                {'link': '1100', 'name': 'Bank Accounts', 'category': 'Assets', 'sub_category': 'Current Assets'},
-                {'link': '1200', 'name': 'Accounts Receivable', 'category': 'Assets', 'sub_category': 'Current Assets'},
-                {'link': '1300', 'name': 'Inventory', 'category': 'Assets', 'sub_category': 'Current Assets'},
-                
-                # Liabilities (2000-2999)
-                {'link': '2000', 'name': 'Liabilities', 'category': 'Liabilities', 'sub_category': 'Current Liabilities'},
-                {'link': '2100', 'name': 'Accounts Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities'},
-                {'link': '2200', 'name': 'Sales Tax Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities'},
-                
-                # Equity (3000-3999)
-                {'link': '3000', 'name': 'Equity', 'category': 'Equity', 'sub_category': None},
-                {'link': '3100', 'name': 'Common Stock', 'category': 'Equity', 'sub_category': None},
-                {'link': '3200', 'name': 'Retained Earnings', 'category': 'Equity', 'sub_category': None},
-                
-                # Income (4000-4999)
-                {'link': '4000', 'name': 'Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue'},
-                {'link': '4100', 'name': 'Sales Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue'},
-                {'link': '4200', 'name': 'Service Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue'},
-                
-                # Expenses (5000-5999)
-                {'link': '5000', 'name': 'Expenses', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
-                {'link': '5100', 'name': 'Cost of Goods Sold', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
-                {'link': '5200', 'name': 'Salaries Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
-                {'link': '5300', 'name': 'Rent Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
-                {'link': '5400', 'name': 'Utilities Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses'}
-            ]
+        if not user_id:
+            logger.error("Cannot create default accounts: Invalid user_id")
+            raise ValueError("Invalid user_id")
+
+        # Check if user already has accounts
+        existing_accounts = Account.query.filter_by(user_id=user_id).first()
+        if existing_accounts:
+            logger.info(f"User {user_id} already has accounts set up")
+            return
+
+        default_accounts = [
+            # Assets (1000-1999)
+            {'link': '1000', 'name': 'Assets', 'category': 'Assets', 'sub_category': 'Current Assets'},
+            {'link': '1100', 'name': 'Bank Accounts', 'category': 'Assets', 'sub_category': 'Current Assets'},
+            {'link': '1200', 'name': 'Accounts Receivable', 'category': 'Assets', 'sub_category': 'Current Assets'},
+            {'link': '1300', 'name': 'Inventory', 'category': 'Assets', 'sub_category': 'Current Assets'},
             
+            # Liabilities (2000-2999)
+            {'link': '2000', 'name': 'Liabilities', 'category': 'Liabilities', 'sub_category': 'Current Liabilities'},
+            {'link': '2100', 'name': 'Accounts Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities'},
+            {'link': '2200', 'name': 'Sales Tax Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities'},
+            
+            # Equity (3000-3999)
+            {'link': '3000', 'name': 'Equity', 'category': 'Equity', 'sub_category': None},
+            {'link': '3100', 'name': 'Common Stock', 'category': 'Equity', 'sub_category': None},
+            {'link': '3200', 'name': 'Retained Earnings', 'category': 'Equity', 'sub_category': None},
+            
+            # Income (4000-4999)
+            {'link': '4000', 'name': 'Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue'},
+            {'link': '4100', 'name': 'Sales Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue'},
+            {'link': '4200', 'name': 'Service Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue'},
+            
+            # Expenses (5000-5999)
+            {'link': '5000', 'name': 'Expenses', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
+            {'link': '5100', 'name': 'Cost of Goods Sold', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
+            {'link': '5200', 'name': 'Salaries Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
+            {'link': '5300', 'name': 'Rent Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
+            {'link': '5400', 'name': 'Utilities Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses'}
+        ]
+        
+        try:
+            # Start a new transaction
             for account_data in default_accounts:
-                account = Account(
-                    user_id=user_id,
-                    link=account_data['link'],
-                    name=account_data['name'],
-                    category=account_data['category'],
-                    sub_category=account_data['sub_category'],
-                    is_active=True
-                )
-                db.session.add(account)
+                try:
+                    account = Account(
+                        user_id=user_id,
+                        link=account_data['link'],
+                        name=account_data['name'],
+                        category=account_data['category'],
+                        sub_category=account_data['sub_category'],
+                        is_active=True
+                    )
+                    db.session.add(account)
+                except Exception as account_error:
+                    logger.error(f"Error creating account {account_data['name']}: {str(account_error)}")
+                    raise
             
             db.session.commit()
-            logger.info(f"Created default Chart of Accounts for user {user_id}")
+            logger.info(f"Successfully created default Chart of Accounts for user {user_id}")
+            
         except Exception as e:
             logger.error(f"Error creating default accounts for user {user_id}: {str(e)}")
             db.session.rollback()
