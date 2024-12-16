@@ -1,170 +1,178 @@
-import os
 import logging
-import json
-from datetime import datetime
-from pathlib import Path
+import os
 import subprocess
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional, Any
 from flask_apscheduler import APScheduler
 from sqlalchemy import create_engine, text
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DatabaseBackupManager:
-    def __init__(self, db_url, backup_dir="backups"):
-        self.db_url = db_url
-        self.backup_dir = Path(backup_dir)
+    """Manages database backups and restorations"""
+    
+    def __init__(self, database_url: str):
+        """Initialize the backup manager with database configuration"""
+        self.database_url = database_url
+        self.backup_dir = Path('backups')
         self.backup_dir.mkdir(exist_ok=True)
-        self.engine = create_engine(db_url)
         
-    def create_backup(self):
-        """Create a backup of the current database state"""
+        # Parse database URL for pg_dump/pg_restore
+        try:
+            self.db_info = self._parse_database_url(database_url)
+            logger.info(f"Initialized backup manager for database: {self.db_info['database']}")
+        except Exception as e:
+            logger.error(f"Failed to parse database URL: {str(e)}")
+            raise
+    
+    def _parse_database_url(self, url: str) -> Dict[str, str]:
+        """Parse database URL into components"""
+        try:
+            engine = create_engine(url)
+            return {
+                'host': engine.url.host,
+                'port': engine.url.port or 5432,
+                'user': engine.url.username,
+                'password': engine.url.password,
+                'database': engine.url.database
+            }
+        except Exception as e:
+            logger.error(f"Database URL parsing failed: {str(e)}")
+            raise
+    
+    def create_backup(self) -> Optional[Dict[str, Any]]:
+        """Create a new database backup"""
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             backup_file = self.backup_dir / f"backup_{timestamp}.sql"
             
-            # Get database connection details from URL
-            db_info = {
-                'host': os.environ.get('PGHOST'),
-                'port': os.environ.get('PGPORT'),
-                'user': os.environ.get('PGUSER'),
-                'password': os.environ.get('PGPASSWORD'),
-                'database': os.environ.get('PGDATABASE')
-            }
-            
-            # Create backup using pg_dump
+            # Prepare pg_dump command
             cmd = [
                 'pg_dump',
-                f"--host={db_info['host']}",
-                f"--port={db_info['port']}",
-                f"--username={db_info['user']}",
-                f"--dbname={db_info['database']}",
+                '--clean',
+                '--if-exists',
+                f"--host={self.db_info['host']}",
+                f"--port={self.db_info['port']}",
+                f"--username={self.db_info['user']}",
+                f"--dbname={self.db_info['database']}",
                 '--format=c',
-                f"--file={backup_file}"
+                '--file', str(backup_file)
+            ]
+            
+            # Set environment for authentication
+            env = os.environ.copy()
+            env['PGPASSWORD'] = self.db_info['password']
+            
+            # Execute backup
+            result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                # Create metadata file
+                metadata = {
+                    'timestamp': timestamp,
+                    'database': self.db_info['database'],
+                    'size': os.path.getsize(backup_file)
+                }
+                
+                metadata_file = self.backup_dir / f"backup_{timestamp}_metadata.json"
+                with open(metadata_file, 'w') as f:
+                    json.dump(metadata, f)
+                
+                logger.info(f"Backup created successfully: {backup_file}")
+                return {
+                    'file': str(backup_file),
+                    'metadata': metadata
+                }
+            else:
+                logger.error(f"Backup failed: {result.stderr}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error creating backup: {str(e)}")
+            return None
+    
+    def restore_to_timestamp(self, target_timestamp: datetime) -> bool:
+        """
+        Restore database to the closest backup before the target timestamp
+        
+        Args:
+            target_timestamp: Target datetime to restore to
+            
+        Returns:
+            bool: True if restoration was successful
+        """
+        try:
+            # Find closest backup before target timestamp
+            backup = self._find_closest_backup(target_timestamp)
+            if not backup:
+                logger.error("No suitable backup found for restoration")
+                return False
+            
+            backup_file = Path(backup['file'])
+            if not backup_file.exists():
+                logger.error(f"Backup file not found: {backup_file}")
+                return False
+            
+            # Prepare pg_restore command
+            cmd = [
+                'pg_restore',
+                '--clean',
+                '--if-exists',
+                f"--host={self.db_info['host']}",
+                f"--port={self.db_info['port']}",
+                f"--username={self.db_info['user']}",
+                f"--dbname={self.db_info['database']}",
+                str(backup_file)
             ]
             
             env = os.environ.copy()
-            env['PGPASSWORD'] = db_info['password']
+            env['PGPASSWORD'] = self.db_info['password']
             
             result = subprocess.run(cmd, env=env, capture_output=True, text=True)
             
             if result.returncode == 0:
-                logger.info(f"Successfully created backup: {backup_file}")
-                # Create metadata file
-                metadata = {
-                    'timestamp': timestamp,
-                    'database': db_info['database'],
-                    'size': os.path.getsize(backup_file),
-                    'type': 'automated'
-                }
-                metadata_file = self.backup_dir / f"backup_{timestamp}_metadata.json"
-                with open(metadata_file, 'w') as f:
-                    json.dump(metadata, f, indent=2)
-                return str(backup_file)
+                logger.info(f"Successfully restored to backup from {backup['metadata']['timestamp']}")
+                return True
             else:
-                logger.error(f"Backup failed: {result.stderr}")
-                raise Exception(f"Backup failed: {result.stderr}")
+                logger.error(f"Restore failed: {result.stderr}")
+                return False
                 
         except Exception as e:
-            logger.error(f"Error creating backup: {str(e)}")
-            raise
-            
-    def list_backups(self):
-        """List all available backups with their metadata"""
-        backups = []
-        for metadata_file in self.backup_dir.glob('*_metadata.json'):
-            try:
-                with open(metadata_file, 'r') as f:
-                    metadata = json.load(f)
-                backup_file = self.backup_dir / f"backup_{metadata['timestamp']}.sql"
-                if backup_file.exists():
-                    backups.append({
-                        'file': str(backup_file),
-                        'metadata': metadata
-                    })
-            except Exception as e:
-                logger.error(f"Error reading backup metadata {metadata_file}: {str(e)}")
-                
-        return sorted(backups, key=lambda x: x['metadata']['timestamp'], reverse=True)
-        
-    def verify_backup(self, backup_file):
-        """Verify the integrity of a backup file"""
-        try:
-            cmd = [
-                'pg_restore',
-                '--list',
-                str(backup_file)
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            return result.returncode == 0
-            
-        except Exception as e:
-            logger.error(f"Error verifying backup {backup_file}: {str(e)}")
+            logger.error(f"Error during restoration: {str(e)}")
             return False
-            
-    def find_closest_backup(self, target_timestamp: datetime) -> Optional[dict]:
-        """Find the backup closest to the target timestamp"""
+    
+    def _find_closest_backup(self, target_timestamp: datetime) -> Optional[Dict[str, Any]]:
+        """Find the closest backup before the target timestamp"""
         try:
             backups = self.list_backups()
             if not backups:
-                logger.error("No backups available")
                 return None
-                
-            closest_backup = min(
-                backups,
-                key=lambda x: abs(
-                    datetime.strptime(x['metadata']['timestamp'], '%Y%m%d_%H%M%S') - target_timestamp
-                )
-            )
             
-            backup_time = datetime.strptime(closest_backup['metadata']['timestamp'], '%Y%m%d_%H%M%S')
-            logger.info(f"Found closest backup from {backup_time}")
+            closest_backup = None
+            smallest_diff = timedelta.max
+            
+            for backup in backups:
+                backup_time = datetime.strptime(
+                    backup['metadata']['timestamp'],
+                    '%Y%m%d_%H%M%S'
+                )
+                
+                if backup_time <= target_timestamp:
+                    diff = target_timestamp - backup_time
+                    if diff < smallest_diff:
+                        smallest_diff = diff
+                        closest_backup = backup
+            
             return closest_backup
             
         except Exception as e:
             logger.error(f"Error finding closest backup: {str(e)}")
             return None
-            
-    def restore_to_timestamp(self, target_timestamp: datetime) -> bool:
-        """Restore database to the state closest to the target timestamp"""
-        try:
-            backup = self.find_closest_backup(target_timestamp)
-            if not backup:
-                logger.error("No suitable backup found for restoration")
-                return False
-                
-            backup_file = Path(backup['file'])
-            if not backup_file.exists():
-                logger.error(f"Backup file {backup_file} not found")
-                return False
-                
-            # Get database connection details
-            db_info = {
-                'host': os.environ.get('PGHOST'),
-                'port': os.environ.get('PGPORT'),
-                'user': os.environ.get('PGUSER'),
-                'password': os.environ.get('PGPASSWORD'),
-                'database': os.environ.get('PGDATABASE')
-            }
-            
-            # Drop existing connections
-            with self.engine.connect() as conn:
-                conn.execute(text(
-                    """
-                    SELECT pg_terminate_backend(pid) 
-                    FROM pg_stat_activity 
-                    WHERE datname = :database 
-                    AND pid <> pg_backend_pid()
-                    """
-                ), {'database': db_info['database']})
-                
-            # Restore using pg_restore
-            cmd = [
-                'pg_restore',
-                '--clean',
-
+    
     def restore_to_days_ago(self, days: int, target_minute: int = 59, target_hour: int = 23) -> bool:
         """
         Restore to a specific minute of a day N days ago
@@ -190,30 +198,27 @@ class DatabaseBackupManager:
         except Exception as e:
             logger.error(f"Error during days-ago restoration: {str(e)}")
             return False
-
-                '--if-exists',
-                f"--host={db_info['host']}",
-                f"--port={db_info['port']}",
-                f"--username={db_info['user']}",
-                f"--dbname={db_info['database']}",
-                str(backup_file)
-            ]
-            
-            env = os.environ.copy()
-            env['PGPASSWORD'] = db_info['password']
-            
-            result = subprocess.run(cmd, env=env, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                logger.info(f"Successfully restored to backup from {backup['metadata']['timestamp']}")
-                return True
-            else:
-                logger.error(f"Restore failed: {result.stderr}")
-                return False
+    
+    def list_backups(self) -> List[Dict[str, Any]]:
+        """List all available backups with their metadata"""
+        try:
+            backups = []
+            for metadata_file in self.backup_dir.glob('*_metadata.json'):
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
                 
+                backup_file = self.backup_dir / f"backup_{metadata['timestamp']}.sql"
+                if backup_file.exists():
+                    backups.append({
+                        'file': str(backup_file),
+                        'metadata': metadata
+                    })
+            
+            return sorted(backups, key=lambda x: x['metadata']['timestamp'])
+            
         except Exception as e:
-            logger.error(f"Error during restoration: {str(e)}")
-            return False
+            logger.error(f"Error listing backups: {str(e)}")
+            return []
 
     def cleanup_old_backups(self, keep_days=7):
         """Remove backups older than specified days"""
