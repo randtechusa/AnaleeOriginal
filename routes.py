@@ -151,34 +151,71 @@ def login():
 def register():
     if request.method == 'POST':
         try:
+            # Verify database connection first
+            try:
+                db.session.execute(text('SELECT 1'))
+                logger.info("Database connection verified for registration")
+            except Exception as db_error:
+                logger.error(f"Database connection failed during registration: {str(db_error)}")
+                flash('Unable to connect to database. Please try again.')
+                return render_template('register.html')
+
+            # Get and validate form data
             username = request.form.get('username', '').strip()
             email = request.form.get('email', '').strip()
             password = request.form.get('password', '')
             
+            # Validate required fields
             if not username or not email or not password:
+                logger.warning("Registration attempt with missing fields")
                 flash('All fields are required')
                 return render_template('register.html')
             
-            if User.query.filter((User.username == username) | (User.email == email)).first():
+            # Validate email format
+            from email_validator import validate_email, EmailNotValidError
+            try:
+                validate_email(email)
+            except EmailNotValidError as e:
+                logger.warning(f"Invalid email format during registration: {email}")
+                flash('Please enter a valid email address')
+                return render_template('register.html')
+            
+            # Check for existing user
+            existing_user = User.query.filter(
+                (User.username == username) | (User.email == email)
+            ).first()
+            if existing_user:
+                logger.warning(f"Registration attempt with existing username/email: {username}/{email}")
                 flash('Username or email already exists')
                 return render_template('register.html')
             
-            user = User(
-                username=username,
-                email=email
-            )
-            user.set_password(password)
-            
-            db.session.add(user)
-            db.session.commit()
-            
-            # Log the user in after registration
-            login_user(user)
-            flash('Registration successful')
-            return redirect(url_for('main.dashboard'))
+            # Create new user with enhanced error handling
+            try:
+                user = User(
+                    username=username,
+                    email=email
+                )
+                user.set_password(password)
+                logger.info(f"Created new user object for {username}")
+                
+                db.session.add(user)
+                db.session.commit()
+                logger.info(f"Successfully registered new user: {username}")
+                
+                # Log the user in after registration
+                login_user(user)
+                flash('Registration successful')
+                return redirect(url_for('main.dashboard'))
+                
+            except Exception as user_error:
+                logger.error(f"Error creating user: {str(user_error)}")
+                db.session.rollback()
+                flash('Error creating user account. Please try again.')
+                return render_template('register.html')
             
         except Exception as e:
-            logger.error(f'Error during registration: {str(e)}')
+            logger.error(f'Unexpected error during registration: {str(e)}')
+            logger.exception("Full registration error stacktrace:")
             db.session.rollback()
             flash('Registration failed. Please try again.')
             
