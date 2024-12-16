@@ -113,32 +113,45 @@ class User(UserMixin, db.Model):
 
         default_accounts = [
             # Assets (1000-1999)
-            {'link': '1000', 'name': 'Assets', 'category': 'Assets', 'sub_category': 'Current Assets'},
-            {'link': '1100', 'name': 'Bank Accounts', 'category': 'Assets', 'sub_category': 'Current Assets'},
-            {'link': '1200', 'name': 'Accounts Receivable', 'category': 'Assets', 'sub_category': 'Current Assets'},
-            {'link': '1300', 'name': 'Inventory', 'category': 'Assets', 'sub_category': 'Current Assets'},
+            {'link': '1000', 'name': 'Assets', 'category': 'Assets', 'sub_category': 'Current Assets', 'account_code': '1000'},
+            {'link': '1100', 'name': 'Cash and Cash Equivalents', 'category': 'Assets', 'sub_category': 'Current Assets', 'account_code': '1100'},
+            {'link': '1200', 'name': 'Accounts Receivable', 'category': 'Assets', 'sub_category': 'Current Assets', 'account_code': '1200'},
+            {'link': '1300', 'name': 'Inventory', 'category': 'Assets', 'sub_category': 'Current Assets', 'account_code': '1300'},
+            {'link': '1400', 'name': 'Prepaid Expenses', 'category': 'Assets', 'sub_category': 'Current Assets', 'account_code': '1400'},
+            {'link': '1500', 'name': 'Fixed Assets', 'category': 'Assets', 'sub_category': 'Non-Current Assets', 'account_code': '1500'},
+            {'link': '1600', 'name': 'Accumulated Depreciation', 'category': 'Assets', 'sub_category': 'Non-Current Assets', 'account_code': '1600'},
             
             # Liabilities (2000-2999)
-            {'link': '2000', 'name': 'Liabilities', 'category': 'Liabilities', 'sub_category': 'Current Liabilities'},
-            {'link': '2100', 'name': 'Accounts Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities'},
-            {'link': '2200', 'name': 'Sales Tax Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities'},
+            {'link': '2000', 'name': 'Liabilities', 'category': 'Liabilities', 'sub_category': 'Current Liabilities', 'account_code': '2000'},
+            {'link': '2100', 'name': 'Accounts Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities', 'account_code': '2100'},
+            {'link': '2200', 'name': 'Accrued Expenses', 'category': 'Liabilities', 'sub_category': 'Current Liabilities', 'account_code': '2200'},
+            {'link': '2300', 'name': 'Income Tax Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities', 'account_code': '2300'},
+            {'link': '2400', 'name': 'Sales Tax Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities', 'account_code': '2400'},
+            {'link': '2500', 'name': 'Long-term Debt', 'category': 'Liabilities', 'sub_category': 'Non-Current Liabilities', 'account_code': '2500'},
             
             # Equity (3000-3999)
-            {'link': '3000', 'name': 'Equity', 'category': 'Equity', 'sub_category': None},
-            {'link': '3100', 'name': 'Common Stock', 'category': 'Equity', 'sub_category': None},
-            {'link': '3200', 'name': 'Retained Earnings', 'category': 'Equity', 'sub_category': None},
+            {'link': '3000', 'name': 'Equity', 'category': 'Equity', 'sub_category': 'Owner Equity', 'account_code': '3000'},
+            {'link': '3100', 'name': 'Common Stock', 'category': 'Equity', 'sub_category': 'Owner Equity', 'account_code': '3100'},
+            {'link': '3200', 'name': 'Retained Earnings', 'category': 'Equity', 'sub_category': 'Owner Equity', 'account_code': '3200'},
+            {'link': '3300', 'name': 'Dividends', 'category': 'Equity', 'sub_category': 'Owner Equity', 'account_code': '3300'},
             
             # Income (4000-4999)
-            {'link': '4000', 'name': 'Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue'},
-            {'link': '4100', 'name': 'Sales Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue'},
-            {'link': '4200', 'name': 'Service Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue'},
+            {'link': '4000', 'name': 'Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue', 'account_code': '4000'},
+            {'link': '4100', 'name': 'Sales Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue', 'account_code': '4100'},
+            {'link': '4200', 'name': 'Service Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue', 'account_code': '4200'},
+            {'link': '4300', 'name': 'Interest Income', 'category': 'Income', 'sub_category': 'Non-Operating Revenue', 'account_code': '4300'},
+            {'link': '4400', 'name': 'Other Income', 'category': 'Income', 'sub_category': 'Non-Operating Revenue', 'account_code': '4400'},
             
             # Expenses (5000-5999)
-            {'link': '5000', 'name': 'Expenses', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
-            {'link': '5100', 'name': 'Cost of Goods Sold', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
-            {'link': '5200', 'name': 'Salaries Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
-            {'link': '5300', 'name': 'Rent Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses'},
-            {'link': '5400', 'name': 'Utilities Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses'}
+            {'link': '5000', 'name': 'Expenses', 'category': 'Expenses', 'sub_category': 'Operating Expenses', 'account_code': '5000'},
+            {'link': '5100', 'name': 'Cost of Goods Sold', 'category': 'Expenses', 'sub_category': 'Operating Expenses', 'account_code': '5100'},
+            {'link': '5200', 'name': 'Salaries and Wages', 'category': 'Expenses', 'sub_category': 'Operating Expenses', 'account_code': '5200'},
+            {'link': '5300', 'name': 'Rent Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses', 'account_code': '5300'},
+            {'link': '5400', 'name': 'Utilities Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses', 'account_code': '5400'},
+            {'link': '5500', 'name': 'Insurance Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses', 'account_code': '5500'},
+            {'link': '5600', 'name': 'Depreciation Expense', 'category': 'Expenses', 'sub_category': 'Operating Expenses', 'account_code': '5600'},
+            {'link': '5700', 'name': 'Interest Expense', 'category': 'Expenses', 'sub_category': 'Non-Operating Expenses', 'account_code': '5700'},
+            {'link': '5800', 'name': 'Other Expenses', 'category': 'Expenses', 'sub_category': 'Non-Operating Expenses', 'account_code': '5800'}
         ]
         
         try:
