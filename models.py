@@ -80,12 +80,12 @@ class User(UserMixin, db.Model):
         return f'<User {self.username}>'
 
 class UploadedFile(db.Model):
-    __tablename__ = 'uploaded_files'
+    __tablename__ = 'uploaded_file'
     
     id = Column(Integer, primary_key=True)
     filename = Column(String(255), nullable=False)
     upload_date = Column(DateTime, default=datetime.utcnow)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     
     # Relationships
     transactions = relationship('Transaction', backref='file', lazy=True, cascade='all, delete-orphan')
@@ -107,8 +107,8 @@ class Transaction(db.Model):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    account = relationship('Account', foreign_keys=[account_id], backref='transactions')
-    bank_account = relationship('Account', foreign_keys=[bank_account_id], backref='bank_transactions')
+    account = relationship('Account', backref='transactions')
+    file = relationship('UploadedFile', backref='transactions')
 
 class Account(db.Model):
     __tablename__ = 'account'
@@ -119,7 +119,7 @@ class Account(db.Model):
     sub_category = Column(String(100))
     account_code = Column(String(20))
     name = Column(String(100), nullable=False)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -131,7 +131,7 @@ class CompanySettings(db.Model):
     __tablename__ = 'company_settings'
     
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     company_name = Column(String(200), nullable=False)
     registration_number = Column(String(50))
     tax_number = Column(String(50))

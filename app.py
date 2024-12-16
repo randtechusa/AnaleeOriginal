@@ -9,22 +9,9 @@ from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from models import db, login_manager
 
-# Configure root logger
+# Configure logging with more detailed error reporting
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-# Create module logger
-logger = logging.getLogger(__name__)
-
-# Load environment variables
-load_dotenv()
-
-# Configure root logger
-logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -32,12 +19,18 @@ logging.basicConfig(
     ]
 )
 
-# Create module logger with DEBUG level for detailed diagnostics
+# Enable SQLAlchemy detailed logging
+logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+logging.getLogger('sqlalchemy.pool').setLevel(logging.DEBUG)
+
+# Create module logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-# Configure SQLAlchemy logger
-logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+
+# Load environment variables
+load_dotenv()
+
 
 # Initialize Flask extensions
 migrate = Migrate()
@@ -63,21 +56,37 @@ def verify_database():
             conn.execute(text('SELECT 1'))
             logger.info("Basic database connection successful")
             
+            # List existing tables
+            tables_query = text("""
+                SELECT tablename 
+                FROM pg_catalog.pg_tables 
+                WHERE schemaname != 'pg_catalog' 
+                AND schemaname != 'information_schema';
+            """)
+            existing_tables = [row[0] for row in conn.execute(tables_query)]
+            logger.info(f"Existing tables: {existing_tables}")
+            
             # Create tables if they don't exist
             try:
                 db.create_all()
                 logger.info("Database tables created/verified successfully")
+                
+                # Verify each model's table exists
+                for table in db.metadata.tables:
+                    if table not in existing_tables:
+                        logger.warning(f"Table {table} may not have been created properly")
+                    else:
+                        logger.info(f"Table {table} verified")
                 return True
+                
             except Exception as table_error:
                 logger.error(f"Error creating tables: {str(table_error)}")
-                if current_app.debug:
-                    logger.exception("Full table creation error:")
+                logger.exception("Full table creation error stacktrace:")
                 return False
             
     except Exception as db_error:
         logger.error(f"Database connection failed: {str(db_error)}")
-        if current_app and current_app.debug:
-            logger.exception("Full database connection error:")
+        logger.exception("Full database connection error stacktrace:")
         return False
 
 def create_app(env='production'):
@@ -87,22 +96,16 @@ def create_app(env='production'):
         app = Flask(__name__)
         logger.info(f"Starting Flask application initialization in {env} environment...")
         
-        # Get database URL with enhanced error handling
+        # Get database URL from environment
         database_url = os.environ.get("DATABASE_URL")
         if not database_url:
-            # Construct from individual components if available
-            db_user = os.environ.get("PGUSER")
-            db_pass = os.environ.get("PGPASSWORD")
-            db_host = os.environ.get("PGHOST")
-            db_port = os.environ.get("PGPORT")
-            db_name = os.environ.get("PGDATABASE")
+            logger.error("DATABASE_URL is not set")
+            return None
             
-            if all([db_user, db_pass, db_host, db_port, db_name]):
-                database_url = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-                logger.info("Constructed database URL from environment variables")
-            else:
-                logger.error("Neither DATABASE_URL nor individual database credentials are set")
-                return None
+        # Handle legacy database URL format
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+            logger.info("Converted legacy postgres:// URL format to postgresql://")
 
         # Handle legacy database URL format
         if database_url.startswith("postgres://"):
@@ -128,20 +131,12 @@ def create_app(env='production'):
             logger.error("Flask app configuration missing")
             return None
             
-        # Configure Flask app with enhanced error handling
+        # Configure Flask app with essential settings
         config = {
-            'ENV': env,
             'SECRET_KEY': os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
-            'SQLALCHEMY_TRACK_MODIFICATIONS': False,
             'SQLALCHEMY_DATABASE_URI': database_url,
-            'SQLALCHEMY_ECHO': True,  # Enable SQL query logging
-            'TEMPLATES_AUTO_RELOAD': True,
-            'RATELIMIT_DEFAULT': "100 per minute",
-            'RATELIMIT_STRATEGY': 'fixed-window',
-            'RATELIMIT_KEY_PREFIX': 'global_',
-            'RATELIMIT_HEADERS_ENABLED': True,
-            'SCHEDULER_EXECUTORS': {'default': {'type': 'threadpool', 'max_workers': 20}},
-            'SCHEDULER_JOB_DEFAULTS': {'coalesce': False, 'max_instances': 3}
+            'SQLALCHEMY_TRACK_MODIFICATIONS': False,
+            'TEMPLATES_AUTO_RELOAD': True
         }
     
     # Environment-specific configuration
