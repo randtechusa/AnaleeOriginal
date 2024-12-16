@@ -1,0 +1,20 @@
+The question I want to ask is, do predictive features always work with AI only? Is it not possible to also have different predictive capabilities that use our own algorithm, past patterns and our own database? Explanation Recognition can look through the bank statement and suggest applying the same explanation to the same or similar set description. Predictive can rely on what has been done before. Predictive can also take instructions that once you see a word, apply this explanation and suggest these accounts. Predictive can be expansive to include many things and not limited to AI capability alone. 
+Let me outline a comprehensive approach that combines both AI and traditional pattern-matching techniques:
+1.	Pattern-Based Recognition:
+•	Direct matches: When exact same transaction descriptions appear multiple times
+•	Fuzzy matching: Using similarity algorithms (like Levenshtein distance) for similar descriptions
+•	Keyword-based rules: Identifying specific words or patterns in descriptions
+•	Historical patterns: Learning from user's past categorizations
+2.	Database-Driven Suggestions:
+•	Frequency analysis of past explanations
+•	Statistical analysis of account usage patterns
+•	User-defined rules and mappings
+•	Transaction amount patterns
+3.	Hybrid Approach:
+•	Use traditional pattern matching first (faster and cheaper)
+•	Fall back to AI when patterns aren't clear
+•	Learn from user corrections to improve both pattern matching and AI suggestions
+I Would like me to modify the current implementation to incorporate these non-AI predictive features alongside the AI capabilities
+
+Please as you do your work and perform your tasks, always adhere to these standing instructions: Complete all tasks without altering or damaging any feature, core functionality, user data, or the critical ERF (Explanation Recognition Feature), ASF (Account Suggestion Feature), and ESF (Explanation Suggestion Feature). Maintain a strict separation between production and development environments. These features are central to the application's purpose, and their loss would compromise its value. Enhancements must strengthen the existing fundamentals and core implementation, including the Chart of Accounts and the ASF, ERF and ESF, without introducing changes. Always preserve the application’s integrity.
+
