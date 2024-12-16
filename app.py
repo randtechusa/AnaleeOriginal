@@ -89,12 +89,21 @@ def verify_database():
         logger.exception("Full database connection error stacktrace:")
         return False
 
-def create_app(env='production'):
+def create_app(env=os.environ.get('FLASK_ENV', 'production')):
     """Create and configure the Flask application"""
     try:
         # Initialize Flask application
         app = Flask(__name__)
+        
+        # Force production mode if not explicitly set to development
+        if env != 'development':
+            env = 'production'
+            logger.warning("No environment specified, defaulting to production for safety")
+        
         logger.info(f"Starting Flask application initialization in {env} environment...")
+        
+        # Load the appropriate configuration
+        app.config.from_object(f'config.{env.capitalize()}Config')
         
         # Get database URL from environment
         database_url = os.environ.get("DATABASE_URL")
