@@ -39,21 +39,20 @@ class DevelopmentConfig(Config):
     DEBUG = True
     TESTING = False
     ENV = 'development'
-    # Use a separate database for development
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL')
-    if not SQLALCHEMY_DATABASE_URI:
-        raise ValueError(
-            "DEV_DATABASE_URL must be set for development. "
-            "Do not use production database for development!"
-        )
-    if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
+    # Use DATABASE_URL for development in Replit environment
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
     
     # Development-specific settings
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 2,
         'echo': True,
-        'echo_pool': True
+        'echo_pool': True,
+        'pool_pre_ping': True,
+        'connect_args': {
+            'connect_timeout': 10
+        }
     }
 
 class TestingConfig(Config):

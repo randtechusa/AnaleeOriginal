@@ -326,36 +326,75 @@ class PredictiveEngine:
             # Apply user-defined rules
             rule_matches = self.apply_user_rules(description, amount, user_id)
             
-            # Only if we don't have high-confidence matches, use AI
-            best_confidence = max(
-                ([p['confidence'] for p in pattern_matches] +
-                 [r['confidence'] for r in rule_matches] +
-                 [0.0]),
-                default=0.0
-            )
+            # Get all transactions for this user to use with ERF
+            try:
+                historical_transactions = Transaction.query.filter_by(
+                    user_id=user_id
+                ).order_by(Transaction.date.desc()).limit(100).all()
+            except Exception as e:
+                self.logger.error(f"Error fetching historical transactions: {str(e)}")
+                historical_transactions = []
+
+            # Apply ERF to find similar transactions
+            similar_trans = find_similar_transactions(description, historical_transactions)
             
+            # Get account data for ASF
+            account_data = [
+                {
+                    'id': acc.id,
+                    'name': acc.name,
+                    'category': acc.category,
+                    'link': getattr(acc, 'link', None)
+                }
+                for acc in accounts
+            ]
+
             results = {
                 'pattern_matches': pattern_matches,
                 'keyword_matches': keyword_matches,
                 'rule_matches': rule_matches,
                 'ai_suggestions': []
             }
-            
-            # Preserve existing AI features
-            if best_confidence < 0.8:
-                similar_trans = find_similar_transactions(description, [])
-                account_data = [
-                    {'name': acc.name, 'category': acc.category, 'link': acc.link}
-                    for acc in accounts
-                ]
-                ai_account = predict_account(description, '', account_data)
-                ai_explanation = suggest_explanation(description, similar_trans)
-                
+
+            # Use AI features if enabled and confidence thresholds aren't met
+            best_confidence = max(
+                ([p['confidence'] for p in pattern_matches] +
+                 [r['confidence'] for r in rule_matches] +
+                 [0.0]),
+                default=0.0
+            )
+
+            if best_confidence < AI_FEATURES_CONFIG['ERF']['text_threshold']:
+                # ERF: Get explanation from similar transactions
+                erf_explanation = None
+                if AI_FEATURES_CONFIG['ERF']['enabled'] and similar_trans:
+                    best_match = max(similar_trans, key=lambda x: x['similarity'])
+                    if best_match['similarity'] >= AI_FEATURES_CONFIG['ERF']['text_threshold']:
+                        erf_explanation = best_match['transaction'].explanation
+
+                # ASF: Get account suggestions
+                asf_account = None
+                if AI_FEATURES_CONFIG['ASF']['enabled']:
+                    asf_account = predict_account(description, erf_explanation or '', account_data)
+
+                # ESF: Get explanation suggestions
+                esf_explanation = None
+                if AI_FEATURES_CONFIG['ESF']['enabled']:
+                    esf_explanation = suggest_explanation(description, similar_trans) or erf_explanation
+
+                # Combine AI suggestions
                 results['ai_suggestions'] = [{
-                    'account_suggestion': ai_account,
-                    'explanation_suggestion': ai_explanation,
-                    'confidence': 0.7,
-                    'source': 'ai'
+                    'account_suggestion': asf_account,
+                    'explanation_suggestion': esf_explanation or erf_explanation,
+                    'confidence': max(
+                        [x['similarity'] for x in similar_trans] + [AI_FEATURES_CONFIG['ASF']['confidence_threshold']]
+                    ),
+                    'source': 'ai',
+                    'features_used': {
+                        'ERF': bool(erf_explanation),
+                        'ASF': bool(asf_account),
+                        'ESF': bool(esf_explanation)
+                    }
                 }]
             
             return results
@@ -461,6 +500,26 @@ class PredictiveEngine:
             self.logger.error(f"Error combining suggestions: {str(e)}")
             return None, None
 
+# AI Feature Configuration
+AI_FEATURES_CONFIG = {
+    'ERF': {
+        'enabled': True,
+        'text_threshold': 0.8,
+        'semantic_threshold': 0.7,
+        'max_matches': 5
+    },
+    'ASF': {
+        'enabled': True,
+        'confidence_threshold': 0.7,
+        'max_suggestions': 3
+    },
+    'ESF': {
+        'enabled': True,
+        'suggestion_limit': 5,
+        'context_window': 10
+    }
+}
+
 # Constants for similarity thresholds
-TEXT_THRESHOLD = 0.8
-SEMANTIC_THRESHOLD = 0.7
+TEXT_THRESHOLD = AI_FEATURES_CONFIG['ERF']['text_threshold']
+SEMANTIC_THRESHOLD = AI_FEATURES_CONFIG['ERF']['semantic_threshold']
