@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_login import login_required, current_user, login_user, logout_user
 from models import User, Account, Transaction, UploadedFile, CompanySettings
 from app import db
@@ -99,22 +100,24 @@ def login():
             if user is None:
                 flash('Invalid email address')
                 return render_template('login.html')
-            
-            if not hasattr(user, 'check_password'):
-                logger.error('User model missing check_password method')
-                flash('Authentication error')
-                return render_template('login.html')
                 
             if not user.check_password(password):
                 flash('Invalid password')
                 return render_template('login.html')
                 
-            login_user(user)
+            login_user(user, remember=True)
             logger.info(f'User {user.email} logged in successfully')
-            return redirect(url_for('main.dashboard'))
+            
+            # Get the next parameter or default to dashboard
+            next_page = request.args.get('next')
+            if not next_page or not next_page.startswith('/'):
+                next_page = url_for('main.dashboard')
+                
+            return redirect(next_page)
             
         except Exception as e:
             logger.error(f'Login error: {str(e)}')
+            db.session.rollback()
             flash('An error occurred during login')
             return render_template('login.html')
             
