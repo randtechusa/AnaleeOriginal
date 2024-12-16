@@ -8,24 +8,55 @@ from models import Transaction, Account, db
 logger = logging.getLogger(__name__)
 
 def find_similar_transactions(description: str, transactions: List[Transaction]) -> List[Dict]:
-    """Find similar transactions based on description matching"""
+    """Find similar transactions using pattern matching and frequency analysis"""
     try:
         matches = []
-        description_lower = description.lower()
+        description_lower = description.lower().strip()
+        frequency_map = {}
         
+        # First pass: Build frequency map and find direct matches
         for transaction in transactions:
             if not transaction.description:
                 continue
                 
-            similarity = calculate_similarity(description_lower, transaction.description.lower())
+            # Update frequency map
+            trans_desc = transaction.description.lower().strip()
+            frequency_map[trans_desc] = frequency_map.get(trans_desc, 0) + 1
+            
+            # Calculate similarity
+            similarity = calculate_similarity(description_lower, trans_desc)
+            
             if similarity >= TEXT_THRESHOLD:
+                # Boost score based on frequency
+                frequency_boost = min(0.1, frequency_map[trans_desc] / 10)
+                adjusted_similarity = min(0.99, similarity + frequency_boost)
+                
                 matches.append({
                     'transaction': transaction,
-                    'similarity': similarity,
-                    'match_type': 'text'
+                    'similarity': adjusted_similarity,
+                    'match_type': 'pattern',
+                    'frequency': frequency_map[trans_desc]
                 })
         
-        return sorted(matches, key=lambda x: x['similarity'], reverse=True)[:5]
+        # Second pass: Look for pattern matches in explanations
+        for transaction in transactions:
+            if not transaction.explanation or transaction in [m['transaction'] for m in matches]:
+                continue
+                
+            explanation_similarity = calculate_similarity(description_lower, 
+                                                       transaction.explanation.lower().strip())
+            
+            if explanation_similarity >= SEMANTIC_THRESHOLD:
+                matches.append({
+                    'transaction': transaction,
+                    'similarity': explanation_similarity * 0.9,  # Slightly lower confidence for explanation matches
+                    'match_type': 'semantic',
+                    'frequency': frequency_map.get(transaction.description.lower().strip(), 0)
+                })
+        
+        # Sort by similarity and frequency
+        matches.sort(key=lambda x: (x['similarity'], x['frequency']), reverse=True)
+        return matches[:5]  # Return top 5 matches
         
     except Exception as e:
         logger.error(f"Error finding similar transactions: {str(e)}")
@@ -86,20 +117,44 @@ def suggest_explanation(description: str, similar_transactions: List[Dict]) -> O
 def calculate_similarity(str1: str, str2: str) -> float:
     """Calculate string similarity using multiple methods"""
     try:
+        str1 = str1.lower().strip()
+        str2 = str2.lower().strip()
+        
+        # Exact match
+        if str1 == str2:
+            return 1.0
+            
         # Simple contains check
         if str1 in str2 or str2 in str1:
             return 0.9
             
-        # Word overlap
-        words1 = set(str1.split())
-        words2 = set(str2.split())
-        common_words = words1.intersection(words2)
+        # Word overlap with position weighting
+        words1 = str1.split()
+        words2 = str2.split()
         
         if not words1 or not words2:
             return 0.0
             
-        overlap = len(common_words) / max(len(words1), len(words2))
-        return overlap
+        # Calculate word overlap
+        common_words = set(words1).intersection(set(words2))
+        if not common_words:
+            return 0.0
+            
+        # Position-weighted similarity
+        weighted_score = 0
+        for word in common_words:
+            pos1 = words1.index(word) / len(words1)
+            pos2 = words2.index(word) / len(words2)
+            position_similarity = 1 - abs(pos1 - pos2)
+            weighted_score += position_similarity
+            
+        position_score = weighted_score / len(common_words)
+        
+        # Combine word overlap and position scores
+        overlap_score = len(common_words) / max(len(words1), len(words2))
+        final_score = (overlap_score * 0.7) + (position_score * 0.3)
+        
+        return min(0.95, final_score)  # Cap at 0.95 to differentiate from exact matches
         
     except Exception as e:
         logger.error(f"Error calculating similarity: {str(e)}")

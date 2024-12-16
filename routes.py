@@ -341,15 +341,45 @@ def analyze(file_id):
             flash('Error loading transactions from database')
             return redirect(url_for('main.upload'))
             
-        # Simple transaction insights without AI
+        # Generate transaction insights using pattern matching
         transaction_insights = {}
+        predictive_engine = PredictiveEngine()
+        
         for transaction in transactions:
+            # Find patterns and similar transactions
+            similar_transactions = find_similar_transactions(
+                transaction.description,
+                Transaction.query.filter(
+                    Transaction.user_id == current_user.id,
+                    Transaction.explanation.isnot(None),
+                    Transaction.id != transaction.id
+                ).all()
+            )
+            
+            # Get hybrid suggestions using both pattern matching and AI
+            suggestions = predictive_engine.get_hybrid_suggestions(
+                transaction.description,
+                transaction.amount,
+                current_user.id,
+                accounts
+            )
+            
             transaction_insights[transaction.id] = {
-                'similar_transactions': [],
-                'account_suggestions': [],
+                'similar_transactions': similar_transactions,
+                'pattern_matches': suggestions.get('pattern_matches', []),
+                'keyword_matches': suggestions.get('keyword_matches', []),
+                'rule_matches': suggestions.get('rule_matches', []),
                 'explanation_suggestion': None,
+                'confidence': max([m['similarity'] for m in similar_transactions], default=0),
                 'ai_processed': False
             }
+            
+            # Get best explanation suggestion from similar transactions
+            if similar_transactions:
+                best_match = max(similar_transactions, key=lambda x: x['similarity'])
+                if best_match['similarity'] >= TEXT_THRESHOLD:
+                    transaction_insights[transaction.id]['explanation_suggestion'] = \
+                        best_match['transaction'].explanation
             
         if request.method == 'POST':
             try:
