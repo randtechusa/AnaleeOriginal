@@ -131,12 +131,31 @@ def create_app(env='production'):
             logger.error("Flask app configuration missing")
             return None
             
-        # Configure Flask app with essential settings
+        # Configure Flask app with essential settings and enhanced database configuration
         config = {
             'SECRET_KEY': os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
             'SQLALCHEMY_DATABASE_URI': database_url,
             'SQLALCHEMY_TRACK_MODIFICATIONS': False,
-            'TEMPLATES_AUTO_RELOAD': True
+            'TEMPLATES_AUTO_RELOAD': True,
+            'SQLALCHEMY_ENGINE_OPTIONS': {
+                'pool_pre_ping': True,
+                'pool_size': 5,  # Reduced pool size for better stability
+                'pool_timeout': 30,  # Reduced timeout
+                'pool_recycle': 300,  # 5 minutes recycle
+                'max_overflow': 2,  # Reduced max overflow
+                'echo': True if env == 'testing' else False,
+                'echo_pool': 'debug' if env == 'testing' else False,
+                'connect_args': {
+                    'connect_timeout': 5,  # Reduced connect timeout
+                    'application_name': 'flask_app',
+                    'keepalives': 1,
+                    'keepalives_idle': 30,
+                    'keepalives_interval': 10,
+                    'keepalives_count': 5,
+                    'client_encoding': 'utf8',
+                    'options': '-c timezone=utc'
+                }
+            }
         }
     
     # Environment-specific configuration

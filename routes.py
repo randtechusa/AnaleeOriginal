@@ -84,84 +84,66 @@ def index():
 @main.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login with enhanced error handling and session management."""
-    try:
-        # Always start with a clean session
-        session.clear()
-        logger.info("Starting login process with cleared session")
-        
-        # Redirect if already logged in
-        if current_user.is_authenticated:
-            logger.info(f"Already authenticated user {current_user.id} redirected to dashboard")
-            return redirect(url_for('main.dashboard'))
+    if current_user.is_authenticated:
+        logger.info(f"Already authenticated user {current_user.id} redirected to dashboard")
+        return redirect(url_for('main.dashboard'))
 
-        if request.method == 'POST':
-            # Get and validate credentials
+    # Clear any existing session data
+    session.clear()
+    logger.info("Starting login process with cleared session")
+
+    if request.method == 'POST':
+        try:
             email = request.form.get('email', '').strip()
             password = request.form.get('password', '')
             
-            logger.info(f"Processing login attempt for email: {email}")
-            
-            # Validate input presence
             if not email or not password:
                 logger.warning("Login attempt with missing credentials")
                 flash('Please provide both email and password')
                 return render_template('login.html')
-            
+
+            # Verify database connection before proceeding
             try:
-                # Verify database connection
                 db.session.execute(text('SELECT 1'))
-                logger.info("Database connection verified")
-                
-                # Find user and verify password
-                user = User.query.filter_by(email=email).first()
-                
-                if not user:
-                    logger.warning(f"Login attempt for non-existent user: {email}")
-                    flash('Invalid email or password')
-                    return render_template('login.html')
-                
-                logger.info(f"Found user {user.username} with ID {user.id}")
-                
-                # Verify password with detailed logging
-                if not user.check_password(password):
-                    logger.warning(f"Password verification failed for user: {email}")
-                    flash('Invalid email or password')
-                    return render_template('login.html')
-                
-                # Login user with session management
-                login_user(user, remember=True)
-                logger.info(f"User {email} logged in successfully")
-                
-                # Double-check authentication success
-                if not current_user.is_authenticated:
-                    logger.error(f"Authentication verification failed for {email}")
-                    flash('Authentication failed. Please try again.')
-                    return render_template('login.html')
-                
-                # Handle redirect
-                next_page = request.args.get('next')
-                if not next_page or not next_page.startswith('/'):
-                    next_page = url_for('main.dashboard')
-                
-                # Commit any pending database changes
-                db.session.commit()
-                logger.info(f"Login successful, redirecting to: {next_page}")
-                return redirect(next_page)
-                
             except Exception as db_error:
-                logger.error(f"Database error during login: {str(db_error)}")
-                logger.exception("Full database error stacktrace:")
+                logger.error(f"Database connection error: {str(db_error)}")
                 db.session.rollback()
-                flash('A database error occurred. Please try again.')
+                flash('Unable to connect to database. Please try again.')
                 return render_template('login.html')
-                
-    except Exception as e:
-        logger.error(f"Unexpected error in login route: {str(e)}")
-        logger.exception("Full login route error stacktrace:")
-        db.session.rollback()
-        flash('An unexpected error occurred. Please try again.')
-        return render_template('login.html')
-        
+
+            # Find and verify user
+            user = User.query.filter_by(email=email).first()
+            if not user:
+                logger.warning(f"Login attempt for non-existent user: {email}")
+                flash('Invalid email or password')
+                return render_template('login.html')
+
+            logger.info(f"Found user {user.username} with ID {user.id}")
+            
+            if not user.check_password(password):
+                logger.warning(f"Password verification failed for user: {email}")
+                flash('Invalid email or password')
+                return render_template('login.html')
+
+            # Login successful - set up session
+            login_user(user, remember=True)
+            logger.info(f"User {email} logged in successfully")
+            
+            # Handle redirect
+            next_page = request.args.get('next')
+            if not next_page or not next_page.startswith('/'):
+                next_page = url_for('main.dashboard')
+            
+            logger.info(f"Login successful, redirecting to: {next_page}")
+            return redirect(next_page)
+
+        except Exception as e:
+            logger.error(f"Error during login process: {str(e)}")
+            logger.exception("Full login error stacktrace:")
+            db.session.rollback()
+            flash('An error occurred during login. Please try again.')
+            return render_template('login.html')
+
     # GET request - show login form
     return render_template('login.html')
 
