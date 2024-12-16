@@ -9,12 +9,7 @@ from models import User, Account, Transaction, UploadedFile, CompanySettings
 from app import db
 import pandas as pd
 import time
-from ai_utils import (
-    find_similar_transactions,
-    predict_account,
-    suggest_explanation,
-    handle_rate_limit
-)
+# Basic imports only - AI functionality temporarily disabled
 
 logger = logging.getLogger(__name__)
 main = Blueprint('main', __name__)
@@ -259,12 +254,18 @@ def analyze(file_id):
             flash('Error loading transactions from database')
             return redirect(url_for('main.upload'))
             
-        # Initialize insights dictionary for AI features
+        # Simple transaction insights without AI
         transaction_insights = {}
+        for transaction in transactions:
+            transaction_insights[transaction.id] = {
+                'similar_transactions': [],
+                'account_suggestions': [],
+                'explanation_suggestion': None,
+                'ai_processed': False
+            }
             
-        # Process POST request if any
-        try:
-            if request.method == 'POST':
+        if request.method == 'POST':
+            try:
                 for transaction in transactions:
                     explanation_key = f'explanation_{transaction.id}'
                     account_key = f'account_{transaction.id}'
@@ -276,74 +277,10 @@ def analyze(file_id):
                         
                 db.session.commit()
                 flash('Changes saved successfully', 'success')
-        except Exception as e:
-            logger.error(f"Error saving changes: {str(e)}")
-            db.session.rollback()
-            flash('Error saving changes', 'error')
-
-        # Import PredictiveEngine at the start of processing
-        from predictive_utils import PredictiveEngine
-        engine = PredictiveEngine()
-                
-        # Process each transaction with both AI and pattern-based predictions
-        for transaction in transactions:
-            try:
-                # 1. Core AI Features (ERF) - Find similar transactions
-                similar_trans = find_similar_transactions(
-                    transaction.description,
-                    Transaction.query.filter(
-                        Transaction.user_id == current_user.id,
-                        Transaction.id != transaction.id
-                    ).all()
-                )
-                    
-                # Prepare account data for predictions
-                account_data = [{
-                    'name': acc.name,
-                    'category': acc.category,
-                    'link': acc.link
-                } for acc in accounts]
-                    
-                # 2. Core AI Feature (ASF) - Get AI account suggestions
-                ai_account_suggestions = predict_account(
-                    transaction.description,
-                    transaction.explanation or '',
-                    account_data
-                )
-                    
-                # 3. Core AI Feature (ESF) - Get AI explanation suggestions
-                ai_explanation = suggest_explanation(
-                    transaction.description,
-                    similar_trans
-                )
-                    
-                # 4. Pattern & Rule-based predictions
-                hybrid_suggestions = engine.get_hybrid_suggestions(
-                    transaction.description,
-                    transaction.amount,
-                    current_user.id,
-                    accounts
-                )
-                    
-                # Combine all predictions while preserving core AI features
-                transaction_insights[transaction.id] = {
-                    'similar_transactions': similar_trans,  # ERF results
-                    'account_suggestions': ai_account_suggestions,  # ASF results
-                    'explanation_suggestion': ai_explanation,  # ESF results
-                    'ai_processed': True,
-                    'pattern_matches': hybrid_suggestions.get('pattern_matches', []),
-                    'rule_matches': hybrid_suggestions.get('rule_matches', [])
-                }
-                    
             except Exception as e:
-                logger.error(f"Error processing transaction {transaction.id}: {str(e)}")
-                transaction_insights[transaction.id] = {
-                    'similar_transactions': [],
-                    'account_suggestions': [],
-                    'explanation_suggestion': None,
-                    'ai_processed': False,
-                    'error': str(e)
-                }
+                logger.error(f"Error saving changes: {str(e)}")
+                db.session.rollback()
+                flash('Error saving changes', 'error')
         
         return render_template(
             'analyze.html',
