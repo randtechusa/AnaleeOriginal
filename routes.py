@@ -203,6 +203,15 @@ def register():
                 logger.info(f"Successfully registered new user: {username}")
                 
                 # Log the user in after registration
+                # Create default Chart of Accounts for the new user
+                try:
+                    User.create_default_accounts(user.id)
+                    logger.info(f"Default Chart of Accounts created for user {user.id}")
+                except Exception as e:
+                    logger.error(f"Error creating default accounts: {str(e)}")
+                    flash('Registration successful but error creating default accounts')
+                    return redirect(url_for('main.dashboard'))
+
                 login_user(user)
                 flash('Registration successful')
                 return redirect(url_for('main.dashboard'))
