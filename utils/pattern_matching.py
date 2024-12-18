@@ -76,7 +76,9 @@ class PatternMatcher:
             'amount_patterns': defaultdict(list),
             'account_patterns': defaultdict(list),
             'temporal_patterns': defaultdict(list),
-            'statistical_metrics': {}
+            'statistical_metrics': {},
+            'recurring_patterns': defaultdict(list),
+            'periodicity_analysis': defaultdict(dict)
         }
         
         for transaction in transactions:
@@ -105,6 +107,7 @@ class PatternMatcher:
         for desc, temporal_data in pattern_analysis['temporal_patterns'].items():
             if len(temporal_data) >= 2:
                 amounts = [t['amount'] for t in temporal_data]
+                # Basic statistical metrics
                 pattern_analysis['statistical_metrics'][desc] = {
                     'mean': sum(amounts) / len(amounts),
                     'variance': sum((x - (sum(amounts) / len(amounts))) ** 2 for x in amounts) / len(amounts),
@@ -114,6 +117,16 @@ class PatternMatcher:
                         'last': max(t['date'] for t in temporal_data)
                     }
                 }
+                
+                # Analyze recurring patterns
+                recurring_analysis = self.analyze_recurring_patterns(temporal_data)
+                if recurring_analysis['is_recurring']:
+                    pattern_analysis['recurring_patterns'][desc].append(recurring_analysis)
+                    
+                # Analyze temporal stability
+                dates = [t['date'] for t in temporal_data]
+                stability_analysis = self.analyze_temporal_stability(amounts, dates)
+                pattern_analysis['periodicity_analysis'][desc] = stability_analysis
                 
         return pattern_analysis
         
@@ -259,12 +272,15 @@ class PatternMatcher:
             date = transaction.get('date')
             account = transaction.get('account_name')
             
-            frequency_patterns[desc]['count'] += 1
-            frequency_patterns[desc]['amounts'].append(amount)
-            if date:
-                frequency_patterns[desc]['dates'].append(date)
-            if account:
-                frequency_patterns[desc]['accounts'].add(account)
+            if desc:
+                pattern = frequency_patterns[desc]
+                pattern['count'] += 1
+                if amount is not None:
+                    pattern['amounts'].append(amount)
+                if date:
+                    pattern['dates'].append(date)
+                if account:
+                    pattern['accounts'].add(account)
                 
         # Calculate frequency metrics
         patterns = {}
@@ -273,9 +289,9 @@ class PatternMatcher:
                 patterns[desc] = {
                     'frequency': data['count'],
                     'amount_stats': {
-                        'min': min(data['amounts']),
-                        'max': max(data['amounts']),
-                        'avg': sum(data['amounts']) / len(data['amounts'])
+                        'min': min(data['amounts']) if data['amounts'] else 0,
+                        'max': max(data['amounts']) if data['amounts'] else 0,
+                        'avg': sum(data['amounts']) / len(data['amounts']) if data['amounts'] else 0
                     },
                     'accounts': list(data['accounts']),
                     'confidence': min(data['count'] / 10, 0.9)  # Cap at 0.9
@@ -321,5 +337,102 @@ class PatternMatcher:
                 'std_dev': std_dev,
                 'count': len(amounts),
                 'similar_amounts': sorted(amounts)[:5]  # Show up to 5 similar amounts
+            }
+        }
+        
+    def analyze_recurring_patterns(self, temporal_data: List[Dict]) -> Dict:
+        """Analyze recurring patterns in temporal transaction data"""
+        if not temporal_data or len(temporal_data) < 2:
+            return {'is_recurring': False, 'confidence': 0.0}
+            
+        # Sort transactions by date
+        sorted_data = sorted(temporal_data, key=lambda x: x['date'])
+        
+        # Calculate time intervals between transactions
+        intervals = []
+        for i in range(1, len(sorted_data)):
+            interval = (sorted_data[i]['date'] - sorted_data[i-1]['date']).days
+            intervals.append(interval)
+            
+        if not intervals:
+            return {'is_recurring': False, 'confidence': 0.0}
+            
+        # Analyze interval patterns
+        avg_interval = sum(intervals) / len(intervals)
+        variance = sum((x - avg_interval) ** 2 for x in intervals) / len(intervals)
+        std_dev = variance ** 0.5
+        
+        # Calculate coefficient of variation (CV) to measure regularity
+        cv = std_dev / avg_interval if avg_interval > 0 else float('inf')
+        
+        # Determine if pattern is recurring based on CV
+        is_recurring = cv < 0.5  # Less variation suggests more regular pattern
+        
+        # Calculate confidence based on regularity and sample size
+        base_confidence = max(0, 1 - cv) if cv < 1 else 0
+        sample_size_factor = min(len(intervals) / 6, 1)  # More samples increase confidence
+        confidence = base_confidence * sample_size_factor
+        
+        return {
+            'is_recurring': is_recurring,
+            'confidence': confidence,
+            'metrics': {
+                'average_interval': avg_interval,
+                'variance': variance,
+                'coefficient_variation': cv,
+                'sample_size': len(intervals)
+            },
+            'suggested_frequency': self._suggest_frequency(avg_interval)
+        }
+        
+    def _suggest_frequency(self, avg_interval: float) -> str:
+        """Suggest transaction frequency based on average interval"""
+        if avg_interval < 2:
+            return 'daily'
+        elif avg_interval < 8:
+            return 'weekly'
+        elif avg_interval < 15:
+            return 'biweekly'
+        elif avg_interval < 32:
+            return 'monthly'
+        elif avg_interval < 95:
+            return 'quarterly'
+        else:
+            return 'annually'
+            
+    def analyze_temporal_stability(self, amounts: List[float], dates: List[datetime]) -> Dict:
+        """Analyze the stability of transaction amounts over time"""
+        if not amounts or not dates or len(amounts) != len(dates):
+            return {'stability': 0.0, 'trend': 'unknown'}
+            
+        # Sort by date
+        amount_date_pairs = sorted(zip(dates, amounts), key=lambda x: x[0])
+        sorted_amounts = [pair[1] for pair in amount_date_pairs]
+        
+        # Calculate trend
+        if len(sorted_amounts) >= 2:
+            trend_direction = sorted_amounts[-1] - sorted_amounts[0]
+            if abs(trend_direction) < 0.01 * sorted_amounts[0]:
+                trend = 'stable'
+            else:
+                trend = 'increasing' if trend_direction > 0 else 'decreasing'
+        else:
+            trend = 'unknown'
+            
+        # Calculate stability score
+        if len(sorted_amounts) >= 2:
+            avg = sum(sorted_amounts) / len(sorted_amounts)
+            relative_variations = [abs(x - avg) / avg for x in sorted_amounts]
+            stability_score = 1 - min(1, sum(relative_variations) / len(relative_variations))
+        else:
+            stability_score = 0.0
+            
+        return {
+            'stability': stability_score,
+            'trend': trend,
+            'metrics': {
+                'min_amount': min(sorted_amounts),
+                'max_amount': max(sorted_amounts),
+                'avg_amount': sum(sorted_amounts) / len(sorted_amounts)
             }
         }
