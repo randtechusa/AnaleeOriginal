@@ -723,7 +723,7 @@ class PatternMatcher:
             
         try:
             # Extract relevant data
-            amounts = [t.get('amount', 0) for t in transaction_data]
+            amounts = [float(t.get('amount', 0)) for t in transaction_data]
             dates = [t.get('date') for t in transaction_data if t.get('date')]
             descriptions = [t.get('description', '') for t in transaction_data]
             
@@ -733,7 +733,9 @@ class PatternMatcher:
                 'date_range': None,
                 'amount_stability': 0.0,
                 'frequency_score': 0.0,
-                'pattern_confidence': 0.0
+                'pattern_confidence': 0.0,
+                'interval_analysis': None,
+                'amount_pattern': None
             }
             
             if dates:
@@ -754,16 +756,44 @@ class PatternMatcher:
                 }
             
             if amounts:
-                # Calculate amount stability
+                # Calculate amount stability and patterns
                 mean_amount = sum(amounts) / len(amounts)
-                relative_std = statistics.stdev(amounts) / mean_amount if len(amounts) > 1 else float('inf')
-                metrics['amount_stability'] = max(0.0, min(1.0, 1 - relative_std))
+                if len(amounts) > 1:
+                    relative_std = statistics.stdev(amounts) / mean_amount
+                    metrics['amount_stability'] = max(0.0, min(1.0, 1 - relative_std))
+                    
+                    # Group similar amounts
+                    amount_groups = defaultdict(list)
+                    for amount in amounts:
+                        # Group amounts within 1% of each other
+                        normalized_amount = round(amount / (mean_amount * 0.01)) * (mean_amount * 0.01)
+                        amount_groups[normalized_amount].append(amount)
+                    
+                    # Analyze amount patterns
+                    if amount_groups:
+                        largest_group = max(amount_groups.values(), key=len)
+                        amount_consistency = len(largest_group) / len(amounts)
+                        metrics['amount_pattern'] = {
+                            'consistency': amount_consistency,
+                            'common_amount': round(sum(largest_group) / len(largest_group), 2),
+                            'variation_count': len(amount_groups)
+                        }
+                
+            # Calculate interval patterns
+            if dates and len(dates) > 1:
+                intervals = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
+                metrics['interval_analysis'] = self._detect_seasonality(intervals, amounts[1:])
+                
+                # Update frequency score based on interval analysis
+                if metrics['interval_analysis']['interval_type']:
+                    metrics['frequency_score'] = metrics['interval_analysis']['score']
             
-            # Calculate overall pattern confidence
+            # Calculate overall pattern confidence with enhanced metrics
             metrics['pattern_confidence'] = (
-                metrics['frequency_score'] * 0.4 +
-                metrics['amount_stability'] * 0.4 +
-                min(1.0, len(transaction_data) / 10) * 0.2  # Sample size factor
+                metrics['frequency_score'] * 0.35 +
+                metrics['amount_stability'] * 0.35 +
+                min(1.0, len(transaction_data) / 10) * 0.2 +  # Sample size factor
+                (metrics['amount_pattern']['consistency'] if metrics.get('amount_pattern') else 0.0) * 0.1
             )
             
             return {
@@ -776,30 +806,63 @@ class PatternMatcher:
             return {'confidence': 0.0, 'metrics': {}}
 
             if not intervals:
-                return 0.0
+                return {'score': 0.0, 'interval_type': None}
                 
             # Calculate average interval
             avg_interval = sum(intervals) / len(intervals)
             
+            # Detect common interval patterns
+            interval_types = {
+                'daily': 1,
+                'weekly': 7,
+                'biweekly': 14,
+                'monthly': 30,
+                'quarterly': 90,
+                'yearly': 365
+            }
+            
             # Group transactions by similar intervals
             interval_groups = defaultdict(list)
+            interval_type_scores = defaultdict(float)
+            
             for i, interval in enumerate(intervals):
                 normalized_interval = round(interval / avg_interval) * avg_interval
                 interval_groups[normalized_interval].append(amounts[i])
                 
-            # Calculate seasonality score based on pattern regularity
+                # Score against known interval types
+                for interval_name, days in interval_types.items():
+                    similarity = 1 - min(abs(interval - days) / max(days, interval), 1)
+                    interval_type_scores[interval_name] = max(
+                        interval_type_scores[interval_name],
+                        similarity
+                    )
+            
+            # Find the most likely interval type
+            best_interval_type = max(
+                interval_type_scores.items(),
+                key=lambda x: x[1]
+            ) if interval_type_scores else (None, 0)
+            
+            # Calculate regularity score
             if len(interval_groups) > 1:
                 group_sizes = [len(group) for group in interval_groups.values()]
                 max_group_size = max(group_sizes)
                 total_points = sum(group_sizes)
-                
-                # More regular grouping indicates stronger seasonality
-                seasonality_score = max_group_size / total_points
+                regularity_score = max_group_size / total_points
             else:
-                seasonality_score = 0.0
-                
-            return seasonality_score
+                regularity_score = 0.0
+            
+            return {
+                'score': regularity_score,
+                'interval_type': best_interval_type[0],
+                'confidence': best_interval_type[1],
+                'avg_interval_days': round(avg_interval, 1),
+                'pattern_metrics': {
+                    name: round(score, 2)
+                    for name, score in interval_type_scores.items()
+                }
+            }
             
         except Exception as e:
             logger.error(f"Error detecting seasonality: {str(e)}")
-            return 0.0
+            return {'score': 0.0, 'interval_type': None, 'error': str(e)}
