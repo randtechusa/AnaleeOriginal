@@ -10,7 +10,16 @@ logger = logging.getLogger(__name__)
 def main():
     """Execute restoration to last minute of six days ago"""
     try:
-        logger.info("Starting restoration process...")
+        logger.info("Starting restoration process in development environment...")
+        
+        # Force development environment for safety
+        if not current_app.config['ENV'] == 'development':
+            logger.error("Restoration can only be performed in development environment")
+            return {
+                'status': 'error',
+                'message': 'Restoration blocked: Not in development environment',
+                'timestamp': datetime.now()
+            }
         
         # Execute restoration with verification
         result = execute_verified_restore(
@@ -20,16 +29,17 @@ def main():
             target_hour=23     # Last hour
         )
         
-        # Log results
+        # Log detailed results
         if result['status'] == 'success':
             logger.info(f"Restoration successful to {result['target_timestamp']}")
+            logger.info("Development environment restoration completed successfully")
             for check, details in result['verification_results'].items():
                 status = 'Passed' if details['success'] else 'Failed'
-                logger.info(f"{check}: {status}")
+                logger.info(f"Verification {check}: {status}")
                 if not details['success']:
-                    logger.error(f"Error in {check}: {details['error']}")
+                    logger.error(f"Verification error in {check}: {details['error']}")
         else:
-            logger.error(f"Restoration failed: {result['message']}")
+            logger.error(f"Development environment restoration failed: {result['message']}")
             
         return result
         
