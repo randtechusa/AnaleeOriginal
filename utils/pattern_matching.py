@@ -610,13 +610,14 @@ class PatternMatcher:
             }
         }
     def calculate_advanced_metrics(self, amounts: List[float], dates: List[datetime]) -> Dict:
-        """Calculate advanced statistical metrics for transaction patterns"""
+        """Calculate advanced statistical metrics for transaction patterns with enhanced historical analysis"""
         if not amounts or not dates or len(amounts) != len(dates):
             return {
                 'seasonality_score': 0.0,
                 'trend_strength': 0.0,
                 'pattern_strength': 0.0,
-                'reliability_score': 0.0
+                'reliability_score': 0.0,
+                'historical_metrics': {}
             }
             
         try:
@@ -625,11 +626,27 @@ class PatternMatcher:
             sorted_amounts = [pair[1] for pair in amount_date_pairs]
             sorted_dates = [pair[0] for pair in amount_date_pairs]
             
-            # Calculate basic stats
+            # Calculate enhanced historical statistics
             mean_amount = sum(sorted_amounts) / len(sorted_amounts)
             deviations = [x - mean_amount for x in sorted_amounts]
             variance = sum(d * d for d in deviations) / len(deviations)
             std_dev = variance ** 0.5 if variance > 0 else 0
+            
+            # Calculate rolling statistics for trend detection
+            window_size = min(3, len(sorted_amounts))
+            rolling_means = []
+            for i in range(len(sorted_amounts) - window_size + 1):
+                window = sorted_amounts[i:i + window_size]
+                rolling_means.append(sum(window) / len(window))
+                
+            # Calculate month-over-month changes
+            monthly_changes = []
+            if len(sorted_dates) >= 2:
+                for i in range(1, len(sorted_dates)):
+                    days_diff = (sorted_dates[i] - sorted_dates[i-1]).days
+                    if 25 <= days_diff <= 35:  # Approximately monthly
+                        change = (sorted_amounts[i] - sorted_amounts[i-1]) / sorted_amounts[i-1]
+                        monthly_changes.append(change)
             
             # Calculate trend strength using linear regression approximation
             n = len(sorted_amounts)
@@ -699,6 +716,65 @@ class PatternMatcher:
             # Calculate intervals between transactions
             intervals = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
             
+    def calculate_historical_confidence(self, transaction_data: List[Dict]) -> Dict:
+        """Calculate confidence scores based on historical pattern analysis"""
+        if not transaction_data:
+            return {'confidence': 0.0, 'metrics': {}}
+            
+        try:
+            # Extract relevant data
+            amounts = [t.get('amount', 0) for t in transaction_data]
+            dates = [t.get('date') for t in transaction_data if t.get('date')]
+            descriptions = [t.get('description', '') for t in transaction_data]
+            
+            # Initialize metrics
+            metrics = {
+                'transaction_count': len(transaction_data),
+                'date_range': None,
+                'amount_stability': 0.0,
+                'frequency_score': 0.0,
+                'pattern_confidence': 0.0
+            }
+            
+            if dates:
+                # Calculate date range and frequency
+                first_date = min(dates)
+                last_date = max(dates)
+                date_range_days = (last_date - first_date).days
+                
+                if date_range_days > 0:
+                    # Calculate transaction frequency score
+                    avg_days_between = date_range_days / (len(dates) - 1) if len(dates) > 1 else float('inf')
+                    metrics['frequency_score'] = min(1.0, 30 / avg_days_between) if avg_days_between > 0 else 0.0
+                    
+                metrics['date_range'] = {
+                    'first': first_date.isoformat(),
+                    'last': last_date.isoformat(),
+                    'days': date_range_days
+                }
+            
+            if amounts:
+                # Calculate amount stability
+                mean_amount = sum(amounts) / len(amounts)
+                relative_std = statistics.stdev(amounts) / mean_amount if len(amounts) > 1 else float('inf')
+                metrics['amount_stability'] = max(0.0, min(1.0, 1 - relative_std))
+            
+            # Calculate overall pattern confidence
+            metrics['pattern_confidence'] = (
+                metrics['frequency_score'] * 0.4 +
+                metrics['amount_stability'] * 0.4 +
+                min(1.0, len(transaction_data) / 10) * 0.2  # Sample size factor
+            )
+            
+            return {
+                'confidence': metrics['pattern_confidence'],
+                'metrics': metrics
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating historical confidence: {str(e)}")
+            return {'confidence': 0.0, 'metrics': {}}
+
             if not intervals:
                 return 0.0
                 
