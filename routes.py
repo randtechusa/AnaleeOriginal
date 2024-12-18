@@ -1,16 +1,5 @@
 import re
 import logging
-from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
-from flask_login import login_required, current_user
-from models import db, Transaction, Account, KeywordRule
-from predictive_utils import find_similar_transactions, suggest_explanation
-
-# Configure logging
-logger = logging.getLogger(__name__)
-
-main = Blueprint('main', __name__)
-import logging
 import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
@@ -18,11 +7,16 @@ from typing import Dict, List, Optional
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from sqlalchemy import text
-from models import User, Account, Transaction, UploadedFile, CompanySettings
-from app import db
+from models import db, User, Account, Transaction, UploadedFile, CompanySettings, KeywordRule
 import pandas as pd
 import time
-from predictive_utils import PredictiveEngine, find_similar_transactions, TEXT_THRESHOLD
+from predictive_utils import PredictiveEngine, find_similar_transactions, suggest_explanation, TEXT_THRESHOLD
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Initialize blueprint
+main = Blueprint('main', __name__)
 # Enable AI functionality for analysis
 
 logger = logging.getLogger(__name__)
@@ -805,14 +799,6 @@ def expense_forecast():
             return redirect(url_for('main.company_settings'))
         
         fy_dates = company_settings.get_financial_year()
-        start_date = fy_dates['start_date']
-        end_date = fy_dates['end_date']
-        
-        transactions = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.date.between(start_date, end_date)
-        ).order_by(Transaction.date.desc()).all()
-        
 @main.route('/rules', methods=['GET'])
 @login_required
 def rules_management():
@@ -867,7 +853,8 @@ def create_rule():
             category=category,
             priority=priority,
             is_regex=is_regex,
-            user_id=current_user.id
+            user_id=current_user.id,
+            created_at=datetime.utcnow()
         )
         
         db.session.add(rule)
@@ -929,6 +916,130 @@ def update_rule_priority(rule_id):
         logger.error(f"Error updating rule priority: {str(e)}")
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+@main.route('/rules', methods=['GET'])
+@login_required
+def rules_management():
+    """Display and manage keyword-based rules."""
+    try:
+        rules = KeywordRule.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).order_by(KeywordRule.priority.desc()).all()
+        
+        stats = {
+            'total_rules': KeywordRule.query.filter_by(user_id=current_user.id).count(),
+            'active_rules': len(rules),
+            'regex_rules': KeywordRule.query.filter_by(
+                user_id=current_user.id,
+                is_active=True,
+                is_regex=True
+            ).count()
+        }
+        
+        return render_template('rules_management.html', rules=rules, stats=stats)
+        
+    except Exception as e:
+        logger.error(f"Error loading rules: {str(e)}")
+        flash('Error loading rules')
+        return redirect(url_for('main.dashboard'))
+
+@main.route('/rules/create', methods=['POST'])
+@login_required
+def create_rule():
+    """Create a new keyword rule."""
+    try:
+        keyword = request.form.get('keyword', '').strip()
+        category = request.form.get('category', '').strip()
+        priority = request.form.get('priority', 1, type=int)
+        is_regex = bool(request.form.get('is_regex'))
+        
+        if not keyword or not category:
+            flash('Keyword and category are required')
+            return redirect(url_for('main.rules_management'))
+            
+        # Validate regex pattern if is_regex is True
+        if is_regex:
+            try:
+                re.compile(keyword)
+            except re.error:
+                flash('Invalid regex pattern')
+                return redirect(url_for('main.rules_management'))
+        
+        rule = KeywordRule(
+            keyword=keyword,
+            category=category,
+            priority=priority,
+            is_regex=is_regex,
+            user_id=current_user.id,
+            created_at=datetime.utcnow()
+        )
+        
+        db.session.add(rule)
+        db.session.commit()
+        flash('Rule created successfully')
+        
+    except Exception as e:
+        logger.error(f"Error creating rule: {str(e)}")
+        db.session.rollback()
+        flash('Error creating rule')
+        
+    return redirect(url_for('main.rules_management'))
+
+@main.route('/rules/<int:rule_id>/deactivate', methods=['POST'])
+@login_required
+def deactivate_rule(rule_id):
+    """Deactivate a keyword rule."""
+    try:
+        rule = KeywordRule.query.filter_by(
+            id=rule_id,
+            user_id=current_user.id
+        ).first_or_404()
+        
+        rule.is_active = False
+        db.session.commit()
+        flash('Rule deactivated successfully')
+        
+    except Exception as e:
+        logger.error(f"Error deactivating rule: {str(e)}")
+        db.session.rollback()
+        flash('Error deactivating rule')
+        
+    return redirect(url_for('main.rules_management'))
+
+@main.route('/rules/<int:rule_id>/priority', methods=['POST'])
+@login_required
+def update_rule_priority(rule_id):
+    """Update a rule's priority."""
+    try:
+        data = request.get_json()
+        if not data or 'priority' not in data:
+            return jsonify({'error': 'Priority is required'}), 400
+            
+        priority = int(data['priority'])
+        if priority < 1 or priority > 100:
+            return jsonify({'error': 'Priority must be between 1 and 100'}), 400
+            
+        rule = KeywordRule.query.filter_by(
+            id=rule_id,
+            user_id=current_user.id
+        ).first_or_404()
+        
+        rule.priority = priority
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Priority updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating rule priority: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+        start_date = fy_dates['start_date']
+        end_date = fy_dates['end_date']
+        
+        transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.date.between(start_date, end_date)
+        ).order_by(Transaction.date.desc()).all()
 
 @main.route('/api/suggest-explanation', methods=['POST'])
 @login_required
