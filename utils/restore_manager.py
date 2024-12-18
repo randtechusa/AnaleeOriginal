@@ -16,8 +16,18 @@ def execute_verified_restore(app, days: int = 6, target_minute: int = 59, target
         Dictionary containing restoration results and verification status
     """
     try:
-        # Initialize backup manager
-        backup_manager = DatabaseBackupManager(app.config['SQLALCHEMY_DATABASE_URI'])
+        # Check environment to protect production
+        if app.config.get('ENV') == 'production' and app.config.get('PROTECT_PRODUCTION', True):
+            logger.error("Cannot perform restoration in production environment when protection is enabled")
+            return {
+                'status': 'error',
+                'message': 'Restoration blocked in protected production environment',
+                'timestamp': datetime.now()
+            }
+            
+        # Initialize backup manager with development database if available
+        database_url = app.config.get('DEV_DATABASE_URL') or app.config['SQLALCHEMY_DATABASE_URI']
+        backup_manager = DatabaseBackupManager(database_url)
         
         # Calculate target timestamp
         target_date = datetime.now() - timedelta(days=days)

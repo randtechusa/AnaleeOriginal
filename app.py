@@ -105,10 +105,15 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         # Load the appropriate configuration
         app.config.from_object(f'config.{env.capitalize()}Config')
         
-        # Get database URL from environment
-        database_url = os.environ.get("DATABASE_URL")
+        # Get appropriate database URL based on environment
+        if env == 'development':
+            database_url = os.environ.get("DEV_DATABASE_URL", os.environ.get("DATABASE_URL"))
+            logger.info("Using development database configuration")
+        else:
+            database_url = os.environ.get("DATABASE_URL")
+            
         if not database_url:
-            logger.error("DATABASE_URL is not set")
+            logger.error("Database URL is not set for the current environment")
             return None
             
         # Handle legacy database URL format
