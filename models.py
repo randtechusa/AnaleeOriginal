@@ -282,6 +282,21 @@ class CompanySettings(db.Model):
             'end_year': end_year
         }
 
+class KeywordRule(db.Model):
+    """Model for storing keyword-based categorization rules"""
+    __tablename__ = 'keyword_rule'
+    
+    id = Column(Integer, primary_key=True)
+    keyword = Column(String(200), nullable=False)
+    category = Column(String(100), nullable=False)
+    priority = Column(Integer, default=1)
+    is_regex = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<KeywordRule {self.keyword}: {self.category}>'
     def __repr__(self):
         return f'<CompanySettings {self.company_name}>'
 

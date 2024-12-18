@@ -7,14 +7,31 @@ logger = logging.getLogger(__name__)
 
 class KeywordMatcher:
     def __init__(self):
-        self.keyword_rules = defaultdict(list)
+        self.rule_manager = RuleManager()
         self.category_keywords = defaultdict(set)
         self.custom_rules = []
+        self._load_rules()
+    def _load_rules(self):
+        """Load rules from database"""
+        try:
+            active_rules = self.rule_manager.get_active_rules()
+            for rule in active_rules:
+                if rule['is_regex']:
+                    self.add_custom_rule(rule['keyword'], rule['category'], rule['priority'])
+                else:
+                    self.category_keywords[rule['category']].add(rule['keyword'])
+            logger.info(f"Loaded {len(active_rules)} rules from database")
+        except Exception as e:
+            logger.error(f"Error loading rules: {str(e)}")
         
-    def add_keyword_rule(self, keyword: str, account_category: str):
-        """Add a keyword-based rule for account categorization"""
+    def add_keyword_rule(self, keyword: str, account_category: str, priority: int = 1):
+        """Add a keyword-based rule for account categorization and persist it"""
         keyword = keyword.lower().strip()
-        self.category_keywords[account_category].add(keyword)
+        if self.rule_manager.add_rule(keyword, account_category, priority=priority):
+            self.category_keywords[account_category].add(keyword)
+            logger.info(f"Added keyword rule: {keyword} -> {account_category}")
+            return True
+        return False
         
     def add_custom_rule(self, pattern: str, account_category: str, priority: int = 1):
         """Add a custom regex pattern rule"""
