@@ -73,23 +73,40 @@ class HybridPredictor:
                     'source': 'keyword'
                 })
             
-            # Check if we need AI suggestions
-            best_confidence = max((s.get('confidence', 0) for s in combined), default=0)
+            # Enhanced decision making for AI routing
+            pattern_confidence = max((s.get('confidence', 0) for s in combined), default=0)
+            pattern_reliability = max(
+                (s.get('pattern_confidence', {}).get('reliability_score', 0) 
+                 for s in combined), default=0
+            )
             
-            if best_confidence < self.use_ai_threshold:
-                # Get AI suggestions
+            # Smart routing logic
+            should_use_ai = (
+                pattern_confidence < self.use_ai_threshold or
+                (pattern_reliability < 0.7 and pattern_confidence < 0.9)
+            )
+            
+            if should_use_ai:
                 try:
                     ai_suggestions = await predict_account(description, "", available_accounts)
                     for ai_suggestion in ai_suggestions:
+                        confidence_boost = 0.1 if pattern_confidence > 0.5 else 0
                         combined.append({
-                            'confidence': ai_suggestion['confidence'],
+                            'confidence': ai_suggestion['confidence'] + confidence_boost,
                             'account_name': ai_suggestion['account_name'],
                             'account': ai_suggestion['account'],
                             'reasoning': ai_suggestion['reasoning'],
-                            'source': 'ai'
+                            'source': 'ai',
+                            'hybrid_score': {
+                                'pattern_confidence': pattern_confidence,
+                                'ai_confidence': ai_suggestion['confidence'],
+                                'reliability': pattern_reliability
+                            }
                         })
                 except Exception as ai_error:
                     logger.error(f"Error getting AI suggestions: {str(ai_error)}")
+                    logger.debug(f"Pattern confidence: {pattern_confidence}, "
+                               f"Reliability: {pattern_reliability}")
             
             # Sort by confidence and return top suggestions
             combined.sort(key=lambda x: x.get('confidence', 0), reverse=True)
