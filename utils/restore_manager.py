@@ -46,16 +46,27 @@ def execute_verified_restore(app, days: int = 6, target_minute: int = 59, target
         # Execute restoration  - Modified to handle duplicate links
         with backup_manager.get_connection() as conn:
             try:
-                # First backup existing Chart of Accounts
+                # Backup existing data
                 conn.execute("""
+                    -- Backup Chart of Accounts
                     CREATE TABLE IF NOT EXISTS chart_of_accounts_backup AS
                     SELECT DISTINCT ON (link) *
                     FROM account 
                     WHERE category IN ('Assets', 'Liabilities', 'Equity', 'Income', 'Expenses')
                     ORDER BY link, updated_at DESC;
+
+                    -- Backup Transactions
+                    CREATE TABLE IF NOT EXISTS transactions_backup AS
+                    SELECT t.*, 
+                           a.link as account_link,
+                           a.category as account_category,
+                           a.name as account_name
+                    FROM transaction t
+                    LEFT JOIN account a ON t.account_id = a.id
+                    WHERE t.created_at >= NOW() - INTERVAL '6 days';
                 """)
 
-                # Handle duplicate links by adding a suffix
+                # Handle duplicate links
                 conn.execute("""
                     CREATE OR REPLACE FUNCTION generate_unique_link(base_link text) 
                     RETURNS text AS $$
@@ -71,6 +82,26 @@ def execute_verified_restore(app, days: int = 6, target_minute: int = 59, target
                         RETURN new_link;
                     END;
                     $$ LANGUAGE plpgsql;
+
+                    -- Function to ensure transaction integrity
+                    CREATE OR REPLACE FUNCTION ensure_transaction_integrity() 
+                    RETURNS trigger AS $$
+                    BEGIN
+                        -- Ensure account exists
+                        IF NEW.account_id IS NOT NULL AND 
+                           NOT EXISTS (SELECT 1 FROM account WHERE id = NEW.account_id) THEN
+                            RAISE EXCEPTION 'Invalid account_id: %', NEW.account_id;
+                        END IF;
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql;
+
+                    -- Create trigger for transaction integrity
+                    DROP TRIGGER IF EXISTS check_transaction_integrity ON transaction;
+                    CREATE TRIGGER check_transaction_integrity
+                    BEFORE INSERT OR UPDATE ON transaction
+                    FOR EACH ROW
+                    EXECUTE FUNCTION ensure_transaction_integrity();
                 """)
 
                 # Restore accounts with unique links
@@ -84,7 +115,31 @@ def execute_verified_restore(app, days: int = 6, target_minute: int = 59, target
                         sub_category, user_id, is_active, 
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     FROM chart_of_accounts_backup
-                    ON CONFLICT (link) DO NOTHING;
+                    ON CONFLICT (link) DO UPDATE 
+                    SET 
+                        name = EXCLUDED.name,
+                        category = EXCLUDED.category,
+                        sub_category = EXCLUDED.sub_category,
+                        is_active = EXCLUDED.is_active,
+                        updated_at = CURRENT_TIMESTAMP;
+
+                    -- Restore transactions with proper account linkage
+                    INSERT INTO transaction (
+                        date, description, amount, category,
+                        user_id, account_id, file_id,
+                        ai_category, ai_confidence, ai_explanation,
+                        created_at, updated_at
+                    )
+                    SELECT 
+                        tb.date, tb.description, tb.amount, tb.category,
+                        tb.user_id,
+                        a.id as account_id,
+                        tb.file_id,
+                        tb.ai_category, tb.ai_confidence, tb.ai_explanation,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    FROM transactions_backup tb
+                    LEFT JOIN account a ON a.link = tb.account_link
+                    ON CONFLICT DO NOTHING;
                 """)
 
                 logger.info("Database tables and Chart of Accounts restored with unique links")
