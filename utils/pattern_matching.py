@@ -97,24 +97,46 @@ class PatternMatcher:
                             description: str, 
                             amount: float, 
                             historical_data: List[Dict]) -> List[Dict]:
-        """Generate suggestions based on pattern analysis"""
+        """Generate suggestions based on comprehensive pattern analysis"""
         suggestions = []
+        processed_desc = self.preprocess_description(description)
+        
+        # Get frequency patterns
+        frequency_patterns = self.analyze_frequency_patterns(historical_data)
+        freq_match = frequency_patterns.get(processed_desc, {})
+        
+        # Get amount patterns
+        amount_patterns = self.detect_amount_patterns(
+            {'description': description, 'amount': amount},
+            historical_data
+        )
         
         # Look for exact matches first
         exact_matches = self.find_exact_matches(description, historical_data)
         if exact_matches:
+            for match in exact_matches:
+                match['pattern_confidence'] = {
+                    'exact_match': 1.0,
+                    'frequency': freq_match.get('confidence', 0),
+                    'amount': amount_patterns['confidence']
+                }
             suggestions.extend(exact_matches)
             
         # If no exact matches, try fuzzy matching
         if not exact_matches:
             fuzzy_matches = self.find_fuzzy_matches(description, historical_data)
+            for match in fuzzy_matches:
+                match['pattern_confidence'] = {
+                    'fuzzy_match': match['confidence'],
+                    'frequency': freq_match.get('confidence', 0),
+                    'amount': amount_patterns['confidence']
+                }
             suggestions.extend(fuzzy_matches)
             
-        # Analyze patterns in the matches
+        # Enhance suggestions with pattern analysis
         if suggestions:
             pattern_analysis = self.analyze_patterns([m['transaction'] for m in suggestions])
             
-            # Enhance suggestions with pattern analysis
             for suggestion in suggestions:
                 transaction = suggestion['transaction']
                 desc_key = self.preprocess_description(transaction.get('description', ''))
@@ -134,7 +156,15 @@ class PatternMatcher:
                         'avg': sum(amount_patterns) / len(amount_patterns)
                     }
                 
-        return suggestions
+                # Calculate weighted confidence score
+                pattern_conf = suggestion['pattern_confidence']
+                suggestion['confidence'] = (
+                    pattern_conf.get('exact_match', pattern_conf.get('fuzzy_match', 0)) * 0.4 +
+                    pattern_conf.get('frequency', 0) * 0.3 +
+                    pattern_conf.get('amount', 0) * 0.3
+                )
+                
+        return sorted(suggestions, key=lambda x: x['confidence'], reverse=True)
 
     def get_suggestion_confidence(self, suggestion: Dict) -> float:
         """Calculate overall confidence score for a suggestion"""
@@ -162,3 +192,83 @@ class PatternMatcher:
         )
         
         return min(final_confidence, 1.0)
+        
+    def analyze_frequency_patterns(self, transactions: List[Dict]) -> Dict:
+        """Analyze transaction frequency patterns"""
+        frequency_patterns = defaultdict(lambda: {
+            'count': 0,
+            'amounts': [],
+            'dates': [],
+            'accounts': set()
+        })
+        
+        for transaction in transactions:
+            desc = self.preprocess_description(transaction.get('description', ''))
+            amount = transaction.get('amount', 0)
+            date = transaction.get('date')
+            account = transaction.get('account_name')
+            
+            frequency_patterns[desc]['count'] += 1
+            frequency_patterns[desc]['amounts'].append(amount)
+            if date:
+                frequency_patterns[desc]['dates'].append(date)
+            if account:
+                frequency_patterns[desc]['accounts'].add(account)
+                
+        # Calculate frequency metrics
+        patterns = {}
+        for desc, data in frequency_patterns.items():
+            if data['count'] >= 2:  # Only consider repeated transactions
+                patterns[desc] = {
+                    'frequency': data['count'],
+                    'amount_stats': {
+                        'min': min(data['amounts']),
+                        'max': max(data['amounts']),
+                        'avg': sum(data['amounts']) / len(data['amounts'])
+                    },
+                    'accounts': list(data['accounts']),
+                    'confidence': min(data['count'] / 10, 0.9)  # Cap at 0.9
+                }
+                
+        return patterns
+        
+    def detect_amount_patterns(self, transaction: Dict, historical_data: List[Dict]) -> Dict:
+        """Detect patterns in transaction amounts"""
+        amount = transaction.get('amount', 0)
+        description = self.preprocess_description(transaction.get('description', ''))
+        
+        # Group similar transactions
+        similar_transactions = [
+            t for t in historical_data
+            if self.calculate_similarity(
+                description,
+                self.preprocess_description(t.get('description', ''))
+            ) >= self.min_similarity_score
+        ]
+        
+        if not similar_transactions:
+            return {'confidence': 0, 'patterns': {}}
+            
+        amounts = [t.get('amount', 0) for t in similar_transactions]
+        if not amounts:
+            return {'confidence': 0, 'patterns': {}}
+            
+        # Calculate amount statistics
+        avg_amount = sum(amounts) / len(amounts)
+        std_dev = (sum((x - avg_amount) ** 2 for x in amounts) / len(amounts)) ** 0.5
+        
+        # Check if current amount fits the pattern
+        amount_confidence = 0
+        if std_dev > 0:
+            z_score = abs(amount - avg_amount) / std_dev
+            amount_confidence = max(0, 1 - (z_score / 3))  # Scale confidence based on z-score
+            
+        return {
+            'confidence': amount_confidence,
+            'patterns': {
+                'average': avg_amount,
+                'std_dev': std_dev,
+                'count': len(amounts),
+                'similar_amounts': sorted(amounts)[:5]  # Show up to 5 similar amounts
+            }
+        }
