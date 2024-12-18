@@ -36,14 +36,35 @@ class PatternMatcher:
             return description.lower().strip()
         
     def calculate_similarity(self, str1: str, str2: str) -> float:
-        """Calculate similarity score between two strings"""
+        """
+        Calculate similarity score between two strings using enhanced Levenshtein distance
+        with length normalization and preprocessing
+        """
         if not str1 or not str2:
             return 0.0
-        # Use Levenshtein distance for similarity
-        max_len = max(len(str1), len(str2))
-        if max_len == 0:
+            
+        # Handle exact matches efficiently
+        if str1 == str2:
             return 1.0
-        return 1 - (distance(str1, str2) / max_len)
+            
+        # Length-based early filtering
+        len1, len2 = len(str1), len(str2)
+        max_len = max(len1, len2)
+        min_len = min(len1, len2)
+        
+        # If length difference is too large, strings are likely very different
+        if max_len == 0 or min_len / max_len < 0.5:
+            return 0.0
+            
+        # Calculate normalized Levenshtein distance
+        leven_dist = distance(str1, str2)
+        similarity = 1 - (leven_dist / max_len)
+        
+        # Apply length difference penalty
+        length_similarity = min_len / max_len
+        final_similarity = similarity * (0.8 + 0.2 * length_similarity)
+        
+        return max(0.0, min(1.0, final_similarity))
         
     def find_exact_matches(self, description: str, historical_data: List[Dict]) -> List[Dict]:
         """Find exact matches in historical transactions"""
@@ -88,23 +109,62 @@ class PatternMatcher:
             return []
         
     def find_fuzzy_matches(self, description: str, historical_data: List[Dict]) -> List[Dict]:
-        """Find similar transactions using fuzzy matching"""
+        """
+        Find similar transactions using enhanced fuzzy matching with detailed metadata
+        """
         processed_desc = self.preprocess_description(description)
-        
+        if not processed_desc:
+            return []
+            
         matches = []
         for transaction in historical_data:
-            processed_hist = self.preprocess_description(transaction['description'])
+            processed_hist = self.preprocess_description(transaction.get('description', ''))
             similarity = self.calculate_similarity(processed_desc, processed_hist)
             
             if similarity >= self.min_similarity_score:
+                # Calculate additional confidence factors
+                amount_similarity = 1.0
+                if 'amount' in transaction:
+                    amount_similarity = self._calculate_amount_similarity(
+                        transaction.get('amount', 0),
+                        [t.get('amount', 0) for t in historical_data if t.get('description') == transaction.get('description')]
+                    )
+                
                 matches.append({
                     'confidence': similarity,
                     'match_type': 'fuzzy',
-                    'transaction': transaction
+                    'transaction': transaction,
+                    'match_metadata': {
+                        'similarity_score': similarity,
+                        'processed_description': processed_desc,
+                        'matched_description': processed_hist,
+                        'amount_similarity': amount_similarity,
+                        'combined_score': (similarity * 0.7 + amount_similarity * 0.3)
+                    }
                 })
                 
-        return sorted(matches, key=lambda x: x['confidence'], reverse=True)[:5]
+        # Sort by combined score and confidence
+        matches.sort(key=lambda x: (
+            x['match_metadata']['combined_score'],
+            x['confidence']
+        ), reverse=True)
         
+        return matches[:5]
+        
+    def _calculate_amount_similarity(self, amount: float, historical_amounts: List[float]) -> float:
+        """Calculate similarity score based on transaction amounts"""
+        if not historical_amounts or amount == 0:
+            return 0.5  # Neutral score when no historical data
+            
+        mean_amount = sum(historical_amounts) / len(historical_amounts)
+        if mean_amount == 0:
+            return 0.5
+            
+        # Calculate normalized difference
+        diff_ratio = abs(amount - mean_amount) / max(abs(mean_amount), abs(amount))
+        similarity = 1 - min(diff_ratio, 1.0)
+        
+        return similarity
     def analyze_patterns(self, transactions: List[Dict]) -> Dict:
         """Enhanced analysis of transaction patterns including temporal and statistical patterns"""
         pattern_analysis = {
@@ -369,12 +429,8 @@ class PatternMatcher:
         
     def analyze_frequency_patterns(self, transactions: List[Dict]) -> Dict:
         """Analyze transaction frequency patterns"""
-        frequency_patterns = defaultdict(lambda: {
-            'count': 0,
-            'amounts': [],
-            'dates': [],
-            'accounts': set()
-        })
+        # Initialize with proper typing for collections
+        frequency_patterns: Dict[str, Dict] = {}
         
         for transaction in transactions:
             desc = self.preprocess_description(transaction.get('description', ''))
@@ -383,8 +439,15 @@ class PatternMatcher:
             account = transaction.get('account_name')
             
             if desc:
+                if desc not in frequency_patterns:
+                    frequency_patterns[desc] = {
+                        'count': 0,
+                        'amounts': [],
+                        'dates': [],
+                        'accounts': set()
+                    }
                 pattern = frequency_patterns[desc]
-                pattern['count'] += 1
+                pattern['count'] = pattern['count'] + 1
                 if amount is not None:
                     pattern['amounts'].append(amount)
                 if date:
