@@ -188,73 +188,130 @@ class PatternMatcher:
                             amount: float, 
                             historical_data: List[Dict]) -> List[Dict]:
         """Generate suggestions based on comprehensive pattern analysis"""
-        suggestions = []
-        processed_desc = self.preprocess_description(description)
-        
-        # Get frequency patterns
-        frequency_patterns = self.analyze_frequency_patterns(historical_data)
-        freq_match = frequency_patterns.get(processed_desc, {})
-        
-        # Get amount patterns
-        amount_patterns = self.detect_amount_patterns(
-            {'description': description, 'amount': amount},
-            historical_data
-        )
-        
-        # Look for exact matches first
-        exact_matches = self.find_exact_matches(description, historical_data)
-        if exact_matches:
-            for match in exact_matches:
-                match['pattern_confidence'] = {
-                    'exact_match': 1.0,
-                    'frequency': freq_match.get('confidence', 0),
-                    'amount': amount_patterns['confidence']
-                }
-            suggestions.extend(exact_matches)
+        try:
+            suggestions = []
+            processed_desc = self.preprocess_description(description)
             
-        # If no exact matches, try fuzzy matching
-        if not exact_matches:
-            fuzzy_matches = self.find_fuzzy_matches(description, historical_data)
-            for match in fuzzy_matches:
-                match['pattern_confidence'] = {
-                    'fuzzy_match': match['confidence'],
-                    'frequency': freq_match.get('confidence', 0),
-                    'amount': amount_patterns['confidence']
-                }
-            suggestions.extend(fuzzy_matches)
+            if not processed_desc:
+                logger.warning("Empty description, cannot generate suggestions")
+                return []
             
-        # Enhance suggestions with pattern analysis
-        if suggestions:
-            pattern_analysis = self.analyze_patterns([m['transaction'] for m in suggestions])
+            # Get frequency patterns first for efficiency
+            frequency_patterns = self.analyze_frequency_patterns(historical_data)
+            freq_match = frequency_patterns.get(processed_desc, {})
             
-            for suggestion in suggestions:
-                transaction = suggestion['transaction']
-                desc_key = self.preprocess_description(transaction.get('description', ''))
-                account_key = f"{desc_key}_{transaction.get('account_name', '')}"
-                
-                # Add frequency information
-                suggestion['frequency'] = pattern_analysis['frequent_explanations'].get(
-                    transaction.get('explanation', ''), 0
-                )
-                
-                # Add amount pattern information
-                amount_patterns = pattern_analysis['amount_patterns'].get(account_key, [])
-                if amount_patterns:
-                    suggestion['amount_pattern'] = {
-                        'min': min(amount_patterns),
-                        'max': max(amount_patterns),
-                        'avg': sum(amount_patterns) / len(amount_patterns)
+            # Get amount patterns
+            amount_patterns = self.detect_amount_patterns(
+                {'description': description, 'amount': amount},
+                historical_data
+            )
+            
+            # Look for exact matches first - highest confidence
+            exact_matches = self.find_exact_matches(description, historical_data)
+            if exact_matches:
+                for match in exact_matches:
+                    # Enhanced confidence scoring for exact matches
+                    frequency_boost = min(0.1, freq_match.get('confidence', 0) * 0.2)
+                    amount_confidence = amount_patterns['confidence']
+                    
+                    match['pattern_confidence'] = {
+                        'exact_match': 1.0,
+                        'frequency': freq_match.get('confidence', 0),
+                        'amount': amount_confidence,
+                        'reliability_score': 0.95 + frequency_boost  # High base reliability for exact matches
                     }
+                    
+                    # Add match metadata
+                    match['match_metadata'] = {
+                        'match_type': 'exact',
+                        'frequency_data': freq_match,
+                        'amount_pattern': amount_patterns.get('patterns', {}),
+                        'processed_description': processed_desc
+                    }
+                suggestions.extend(exact_matches)
+                logger.info(f"Found {len(exact_matches)} exact matches with high confidence")
                 
-                # Calculate weighted confidence score
-                pattern_conf = suggestion['pattern_confidence']
-                suggestion['confidence'] = (
-                    pattern_conf.get('exact_match', pattern_conf.get('fuzzy_match', 0)) * 0.4 +
-                    pattern_conf.get('frequency', 0) * 0.3 +
-                    pattern_conf.get('amount', 0) * 0.3
-                )
+            # If no exact matches, try fuzzy matching
+            if not exact_matches:
+                fuzzy_matches = self.find_fuzzy_matches(description, historical_data)
+                for match in fuzzy_matches:
+                    # Calculate fuzzy match confidence
+                    base_confidence = match['confidence']
+                    frequency_factor = freq_match.get('confidence', 0) * 0.3
+                    amount_factor = amount_patterns['confidence'] * 0.3
+                    
+                    match['pattern_confidence'] = {
+                        'fuzzy_match': base_confidence,
+                        'frequency': frequency_factor,
+                        'amount': amount_factor,
+                        'reliability_score': (base_confidence * 0.6 + 
+                                           frequency_factor * 0.25 + 
+                                           amount_factor * 0.15)
+                    }
+                    
+                    # Add match metadata
+                    match['match_metadata'] = {
+                        'match_type': 'fuzzy',
+                        'similarity_score': base_confidence,
+                        'frequency_data': freq_match,
+                        'amount_pattern': amount_patterns.get('patterns', {}),
+                        'processed_description': processed_desc
+                    }
+                suggestions.extend(fuzzy_matches)
                 
-        return sorted(suggestions, key=lambda x: x['confidence'], reverse=True)
+            # Enhance suggestions with pattern analysis
+            if suggestions:
+                pattern_analysis = self.analyze_patterns([m['transaction'] for m in suggestions])
+                
+                for suggestion in suggestions:
+                    transaction = suggestion['transaction']
+                    desc_key = self.preprocess_description(transaction.get('description', ''))
+                    account_key = f"{desc_key}_{transaction.get('account_name', '')}"
+                    
+                    # Add enhanced frequency information
+                    freq_info = pattern_analysis['frequent_explanations'].get(
+                        transaction.get('explanation', ''), 0
+                    )
+                    suggestion['frequency_analysis'] = {
+                        'count': freq_info,
+                        'confidence_boost': min(0.15, freq_info / 10)  # Cap at 0.15
+                    }
+                    
+                    # Enhanced amount pattern analysis
+                    amount_patterns = pattern_analysis['amount_patterns'].get(account_key, [])
+                    if amount_patterns:
+                        avg_amount = sum(amount_patterns) / len(amount_patterns)
+                        suggestion['amount_analysis'] = {
+                            'min': min(amount_patterns),
+                            'max': max(amount_patterns),
+                            'avg': avg_amount,
+                            'variance': sum((x - avg_amount) ** 2 for x in amount_patterns) / len(amount_patterns)
+                        }
+                    
+                    # Calculate final weighted confidence score
+                    pattern_conf = suggestion['pattern_confidence']
+                    base_score = pattern_conf.get('exact_match', pattern_conf.get('fuzzy_match', 0))
+                    freq_score = suggestion['frequency_analysis']['confidence_boost']
+                    amount_score = pattern_conf.get('amount', 0)
+                    reliability = pattern_conf.get('reliability_score', 0)
+                    
+                    suggestion['confidence'] = min(1.0, (
+                        base_score * 0.4 +
+                        freq_score * 0.3 +
+                        amount_score * 0.2 +
+                        reliability * 0.1
+                    ))
+                    
+                # Sort by confidence and limit results
+                suggestions.sort(key=lambda x: x['confidence'], reverse=True)
+                logger.info(f"Generated {len(suggestions)} total suggestions, sorted by confidence")
+                return suggestions[:5]  # Return top 5 suggestions
+                
+        except Exception as e:
+            logger.error(f"Error generating pattern suggestions: {str(e)}")
+            return []
+            
+        return []  # Fallback empty return
 
     def get_suggestion_confidence(self, suggestion: Dict) -> float:
         """Calculate enhanced confidence score incorporating statistical and temporal patterns"""
