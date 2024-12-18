@@ -23,4 +23,5 @@ dependencies = [
     "flask-apscheduler>=1.13.1",
     "tenacity>=9.0.0",
     "alembic",
+    "flask-wtf>=1.2.2",
 ]

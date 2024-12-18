@@ -10,7 +10,8 @@ from models import User, Account, Transaction, UploadedFile, CompanySettings
 from app import db
 import pandas as pd
 import time
-# Basic imports only - AI functionality temporarily disabled
+from predictive_utils import PredictiveEngine, find_similar_transactions, TEXT_THRESHOLD
+# Enable AI functionality for analysis
 
 logger = logging.getLogger(__name__)
 main = Blueprint('main', __name__)
@@ -307,7 +308,16 @@ def analyze(file_id):
     logger.debug("Loading file and verifying ownership")
     
     try:
-        logger.info("Attempting to establish database connection")
+        # Verify database connection first
+        try:
+            db.session.execute(text('SELECT 1'))
+            logger.info("Database connection verified")
+        except Exception as db_error:
+            logger.error(f"Database connection error: {str(db_error)}")
+            db.session.rollback()
+            flash('Unable to connect to database. Please try again.')
+            return redirect(url_for('main.upload'))
+            
         # Load file and verify ownership with detailed logging
         file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first()
         logger.info(f"Database query completed. File found: {file is not None}")
