@@ -29,6 +29,39 @@ def execute_verified_restore(app, days: int = 6, target_minute: int = 59, target
         database_url = app.config.get('DEV_DATABASE_URL') or app.config['SQLALCHEMY_DATABASE_URI']
         backup_manager = DatabaseBackupManager(database_url)
         
+        # Ensure Chart of Accounts is preserved during restoration
+        logger.info("Preserving Chart of Accounts during restoration...")
+        try:
+            with backup_manager.get_connection() as conn:
+                # Create backup of Chart of Accounts if not exists
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS chart_of_accounts_backup AS
+                    SELECT *, current_timestamp as backup_timestamp
+                    FROM account
+                    WHERE category IN (
+                        'Assets', 'Liabilities', 'Equity', 'Income', 'Expenses'
+                    );
+                """)
+                
+                # Verify Chart of Accounts exists in backup
+                account_count = conn.execute("""
+                    SELECT COUNT(*) FROM chart_of_accounts_backup
+                """).scalar()
+                
+                if account_count == 0:
+                    logger.warning("No Chart of Accounts found in backup, copying from production...")
+                    conn.execute("""
+                        INSERT INTO chart_of_accounts_backup
+                        SELECT *, current_timestamp as backup_timestamp
+                        FROM account
+                        WHERE category IN (
+                            'Assets', 'Liabilities', 'Equity', 'Income', 'Expenses'
+                        );
+                    """)
+        except Exception as e:
+            logger.error(f"Error preserving Chart of Accounts: {str(e)}")
+            raise
+        
         # Calculate target timestamp
         target_date = datetime.now() - timedelta(days=days)
         target_timestamp = target_date.replace(
