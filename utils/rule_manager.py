@@ -15,7 +15,7 @@ class RuleManager:
         self._cache_timestamp = None
         self.cache_lifetime = 300  # 5 minutes cache lifetime
         
-    def add_rule(self, keyword: str, category: str, priority: int = 1,
+    def add_rule(self, user_id: int, keyword: str, category: str, priority: int = 1,
                  is_regex: bool = False, is_active: bool = True) -> bool:
         """
         Add a new keyword rule to the database
@@ -32,6 +32,7 @@ class RuleManager:
             
             # Create new rule
             rule = KeywordRule(
+                user_id=user_id,
                 keyword=keyword.lower().strip(),
                 category=category.strip(),
                 priority=priority,
@@ -52,15 +53,15 @@ class RuleManager:
             db.session.rollback()
             return False
             
-    def get_active_rules(self) -> List[Dict]:
-        """Get all active rules with caching"""
+    def get_active_rules(self, user_id: int) -> List[Dict]:
+        """Get all active rules for a specific user with caching"""
         if (self._cached_rules is not None and 
             self._cache_timestamp is not None and
             (datetime.utcnow() - self._cache_timestamp).total_seconds() < self.cache_lifetime):
             return self._cached_rules
             
         try:
-            rules = KeywordRule.query.filter_by(is_active=True).order_by(
+            rules = KeywordRule.query.filter_by(user_id=user_id, is_active=True).order_by(
                 KeywordRule.priority.desc()
             ).all()
             

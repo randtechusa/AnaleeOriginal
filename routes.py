@@ -21,6 +21,8 @@ main = Blueprint('main', __name__)
 
 logger = logging.getLogger(__name__)
 main = Blueprint('main', __name__)
+# Initialize rule manager
+rule_manager = RuleManager()
 
 def process_uploaded_file(file, status):
     """Process the uploaded file and return dataframe and total rows."""
@@ -799,240 +801,101 @@ def expense_forecast():
             return redirect(url_for('main.company_settings'))
         
         fy_dates = company_settings.get_financial_year()
-@main.route('/rules', methods=['GET'])
-@login_required
-def rules_management():
-    """Display and manage keyword-based rules."""
-    try:
-        rules = KeywordRule.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).order_by(KeywordRule.priority.desc()).all()
-        
-        stats = {
-            'total_rules': KeywordRule.query.filter_by(user_id=current_user.id).count(),
-            'active_rules': len(rules),
-            'regex_rules': KeywordRule.query.filter_by(
-                user_id=current_user.id,
-                is_active=True,
-                is_regex=True
-            ).count()
-        }
-        
-        return render_template('rules_management.html', rules=rules, stats=stats)
-        
-    except Exception as e:
-        logger.error(f"Error loading rules: {str(e)}")
-        flash('Error loading rules')
-        return redirect(url_for('main.dashboard'))
-
-@main.route('/rules/create', methods=['POST'])
-@login_required
-def create_rule():
-    """Create a new keyword rule."""
-    try:
-        keyword = request.form.get('keyword', '').strip()
-        category = request.form.get('category', '').strip()
-        priority = request.form.get('priority', 1, type=int)
-        is_regex = bool(request.form.get('is_regex'))
-        
-        if not keyword or not category:
-            flash('Keyword and category are required')
-            return redirect(url_for('main.rules_management'))
+    rule_manager = RuleManager()
+    
+    @main.route('/rules', methods=['GET'])
+    @login_required
+    def rules_management():
+        """Display rules management interface."""
+        try:
+            # Get active rules for the current user
+            active_rules = rule_manager.get_active_rules(current_user.id)
+            # Get statistics about rules
+            stats = rule_manager.get_rule_statistics()
             
-        # Validate regex pattern if is_regex is True
-        if is_regex:
-            try:
-                re.compile(keyword)
-            except re.error:
-                flash('Invalid regex pattern')
+            return render_template('rules_management.html',
+                                rules=active_rules,
+                                stats=stats)
+        except Exception as e:
+            logger.error(f"Error in rules management: {str(e)}")
+            flash('Error loading rules')
+            return redirect(url_for('main.dashboard'))
+    
+    @main.route('/rules/create', methods=['POST'])
+    @login_required
+    def create_rule():
+        """Create a new keyword rule."""
+        try:
+            # Get form data
+            keyword = request.form.get('keyword', '').strip()
+            category = request.form.get('category', '').strip()
+            priority = int(request.form.get('priority', 1))
+            is_regex = bool(request.form.get('is_regex', False))
+            
+            # Validate input
+            if not keyword or not category:
+                flash('Keyword and category are required')
                 return redirect(url_for('main.rules_management'))
-        
-        rule = KeywordRule(
-            keyword=keyword,
-            category=category,
-            priority=priority,
-            is_regex=is_regex,
-            user_id=current_user.id,
-            created_at=datetime.utcnow()
-        )
-        
-        db.session.add(rule)
-        db.session.commit()
-        flash('Rule created successfully')
-        
-    except Exception as e:
-        logger.error(f"Error creating rule: {str(e)}")
-        db.session.rollback()
-        flash('Error creating rule')
-        
-    return redirect(url_for('main.rules_management'))
-
-@main.route('/rules/<int:rule_id>/deactivate', methods=['POST'])
-@login_required
-def deactivate_rule(rule_id):
-    """Deactivate a keyword rule."""
-    try:
-        rule = KeywordRule.query.filter_by(
-            id=rule_id,
-            user_id=current_user.id
-        ).first_or_404()
-        
-        rule.is_active = False
-        db.session.commit()
-        flash('Rule deactivated successfully')
-        
-    except Exception as e:
-        logger.error(f"Error deactivating rule: {str(e)}")
-        db.session.rollback()
-        flash('Error deactivating rule')
-        
-    return redirect(url_for('main.rules_management'))
-
-@main.route('/rules/<int:rule_id>/priority', methods=['POST'])
-@login_required
-def update_rule_priority(rule_id):
-    """Update a rule's priority."""
-    try:
-        data = request.get_json()
-        if not data or 'priority' not in data:
-            return jsonify({'error': 'Priority is required'}), 400
-            
-        priority = int(data['priority'])
-        if priority < 1 or priority > 100:
-            return jsonify({'error': 'Priority must be between 1 and 100'}), 400
-            
-        rule = KeywordRule.query.filter_by(
-            id=rule_id,
-            user_id=current_user.id
-        ).first_or_404()
-        
-        rule.priority = priority
-        db.session.commit()
-        
-        return jsonify({'success': True, 'message': 'Priority updated successfully'})
-        
-    except Exception as e:
-        logger.error(f"Error updating rule priority: {str(e)}")
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-@main.route('/rules', methods=['GET'])
-@login_required
-def rules_management():
-    """Display and manage keyword-based rules."""
-    try:
-        rules = KeywordRule.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).order_by(KeywordRule.priority.desc()).all()
-        
-        stats = {
-            'total_rules': KeywordRule.query.filter_by(user_id=current_user.id).count(),
-            'active_rules': len(rules),
-            'regex_rules': KeywordRule.query.filter_by(
+                
+            # Add rule using service layer
+            success = rule_manager.add_rule(
                 user_id=current_user.id,
-                is_active=True,
-                is_regex=True
-            ).count()
-        }
-        
-        return render_template('rules_management.html', rules=rules, stats=stats)
-        
-    except Exception as e:
-        logger.error(f"Error loading rules: {str(e)}")
-        flash('Error loading rules')
-        return redirect(url_for('main.dashboard'))
-
-@main.route('/rules/create', methods=['POST'])
-@login_required
-def create_rule():
-    """Create a new keyword rule."""
-    try:
-        keyword = request.form.get('keyword', '').strip()
-        category = request.form.get('category', '').strip()
-        priority = request.form.get('priority', 1, type=int)
-        is_regex = bool(request.form.get('is_regex'))
-        
-        if not keyword or not category:
-            flash('Keyword and category are required')
-            return redirect(url_for('main.rules_management'))
+                keyword=keyword,
+                category=category,
+                priority=priority,
+                is_regex=is_regex
+            )
             
-        # Validate regex pattern if is_regex is True
-        if is_regex:
-            try:
-                re.compile(keyword)
-            except re.error:
-                flash('Invalid regex pattern')
-                return redirect(url_for('main.rules_management'))
-        
-        rule = KeywordRule(
-            keyword=keyword,
-            category=category,
-            priority=priority,
-            is_regex=is_regex,
-            user_id=current_user.id,
-            created_at=datetime.utcnow()
-        )
-        
-        db.session.add(rule)
-        db.session.commit()
-        flash('Rule created successfully')
-        
-    except Exception as e:
-        logger.error(f"Error creating rule: {str(e)}")
-        db.session.rollback()
-        flash('Error creating rule')
-        
-    return redirect(url_for('main.rules_management'))
-
-@main.route('/rules/<int:rule_id>/deactivate', methods=['POST'])
-@login_required
-def deactivate_rule(rule_id):
-    """Deactivate a keyword rule."""
-    try:
-        rule = KeywordRule.query.filter_by(
-            id=rule_id,
-            user_id=current_user.id
-        ).first_or_404()
-        
-        rule.is_active = False
-        db.session.commit()
-        flash('Rule deactivated successfully')
-        
-    except Exception as e:
-        logger.error(f"Error deactivating rule: {str(e)}")
-        db.session.rollback()
-        flash('Error deactivating rule')
-        
-    return redirect(url_for('main.rules_management'))
-
-@main.route('/rules/<int:rule_id>/priority', methods=['POST'])
-@login_required
-def update_rule_priority(rule_id):
-    """Update a rule's priority."""
-    try:
-        data = request.get_json()
-        if not data or 'priority' not in data:
-            return jsonify({'error': 'Priority is required'}), 400
+            if success:
+                flash('Rule created successfully')
+            else:
+                flash('Error creating rule')
+                
+        except Exception as e:
+            logger.error(f"Error creating rule: {str(e)}")
+            flash('Error creating rule')
             
-        priority = int(data['priority'])
-        if priority < 1 or priority > 100:
-            return jsonify({'error': 'Priority must be between 1 and 100'}), 400
+        return redirect(url_for('main.rules_management'))
+        
+    @main.route('/rules/<int:rule_id>/deactivate', methods=['POST'])
+    @login_required
+    def deactivate_rule(rule_id):
+        """Deactivate a rule."""
+        try:
+            success = rule_manager.deactivate_rule(rule_id)
+            if success:
+                flash('Rule deactivated successfully')
+            else:
+                flash('Error deactivating rule')
+        except Exception as e:
+            logger.error(f"Error deactivating rule: {str(e)}")
+            flash('Error deactivating rule')
             
-        rule = KeywordRule.query.filter_by(
-            id=rule_id,
-            user_id=current_user.id
-        ).first_or_404()
+        return redirect(url_for('main.rules_management'))
         
-        rule.priority = priority
-        db.session.commit()
+    @main.route('/rules/<int:rule_id>/priority', methods=['POST'])
+    @login_required
+    def update_rule_priority(rule_id):
+        """Update a rule's priority."""
+        try:
+            data = request.get_json()
+            new_priority = int(data.get('priority', 1))
+            
+            success = rule_manager.update_rule_priority(rule_id, new_priority)
+            if success:
+                return jsonify({'status': 'success'})
+            return jsonify({'status': 'error', 'message': 'Failed to update priority'}), 400
+            
+        except Exception as e:
+            logger.error(f"Error updating rule priority: {str(e)}")
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+start_date = fy_dates['start_date']
+        end_date = fy_dates['end_date']
         
-        return jsonify({'success': True, 'message': 'Priority updated successfully'})
-        
-    except Exception as e:
-        logger.error(f"Error updating rule priority: {str(e)}")
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.date.between(start_date, end_date)
+        ).order_by(Transaction.date.desc()).all()
         start_date = fy_dates['start_date']
         end_date = fy_dates['end_date']
         
