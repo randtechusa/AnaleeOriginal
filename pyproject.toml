@@ -24,4 +24,5 @@ dependencies = [
     "tenacity>=9.0.0",
     "alembic",
     "flask-wtf>=1.2.2",
+    "python-levenshtein>=0.26.1",
 ]
