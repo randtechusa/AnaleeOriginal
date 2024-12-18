@@ -39,10 +39,13 @@ class DevelopmentConfig(Config):
     DEBUG = True
     TESTING = False
     ENV = 'development'
-    # Use DATABASE_URL for development in Replit environment
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    # Use separate database URL for development
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL', os.environ.get('DATABASE_URL'))
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+    
+    # Protect production data in development
+    PROTECT_PRODUCTION_DATA = True
     
     # Development-specific settings
     SQLALCHEMY_ENGINE_OPTIONS = {
