@@ -1,12 +1,11 @@
 import logging
-import os
+import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-
+from typing import Dict, List, Optional, Tuple
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, Text, DateTime
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy.orm import relationship, backref
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Configure logging
@@ -287,6 +286,7 @@ class KeywordRule(db.Model):
     __tablename__ = 'keyword_rule'
     
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     keyword = Column(String(200), nullable=False)
     category = Column(String(100), nullable=False)
     priority = Column(Integer, default=1)
@@ -295,10 +295,11 @@ class KeywordRule(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # Relationships
+    user = relationship('User', backref=backref('keyword_rules', lazy=True))
+    
     def __repr__(self):
         return f'<KeywordRule {self.keyword}: {self.category}>'
-    def __repr__(self):
-        return f'<CompanySettings {self.company_name}>'
 
 @login_manager.user_loader
 def load_user(user_id):

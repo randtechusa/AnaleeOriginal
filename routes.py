@@ -1,3 +1,15 @@
+import re
+import logging
+from datetime import datetime
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
+from flask_login import login_required, current_user
+from models import db, Transaction, Account, KeywordRule
+from predictive_utils import find_similar_transactions, suggest_explanation
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+main = Blueprint('main', __name__)
 import logging
 import os
 from datetime import datetime, timedelta
@@ -801,27 +813,151 @@ def expense_forecast():
             Transaction.date.between(start_date, end_date)
         ).order_by(Transaction.date.desc()).all()
         
-        transaction_data = [{
-            'amount': t.amount,
-            'description': t.description,
-            'date': t.date.strftime('%Y-%m-%d'),
-            'account_name': t.account.name if t.account else 'Uncategorized'
-        } for t in transactions]
+@main.route('/rules', methods=['GET'])
+@login_required
+def rules_management():
+    """Display and manage keyword-based rules."""
+    try:
+        rules = KeywordRule.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).order_by(KeywordRule.priority.desc()).all()
         
-        return render_template('expense_forecast.html', 
-                             transactions=transaction_data,
-                             start_date=start_date.strftime('%Y-%m-%d'),
-                             end_date=end_date.strftime('%Y-%m-%d'))
+        stats = {
+            'total_rules': KeywordRule.query.filter_by(user_id=current_user.id).count(),
+            'active_rules': len(rules),
+            'regex_rules': KeywordRule.query.filter_by(
+                user_id=current_user.id,
+                is_active=True,
+                is_regex=True
+            ).count()
+        }
+        
+        return render_template('rules_management.html', rules=rules, stats=stats)
         
     except Exception as e:
-        logger.error(f"Error in expense forecast: {str(e)}")
-        flash('Error generating expense forecast')
+        logger.error(f"Error loading rules: {str(e)}")
+        flash('Error loading rules')
         return redirect(url_for('main.dashboard'))
+
+@main.route('/rules/create', methods=['POST'])
+@login_required
+def create_rule():
+    """Create a new keyword rule."""
+    try:
+        keyword = request.form.get('keyword', '').strip()
+        category = request.form.get('category', '').strip()
+        priority = request.form.get('priority', 1, type=int)
+        is_regex = bool(request.form.get('is_regex'))
+        
+        if not keyword or not category:
+            flash('Keyword and category are required')
+            return redirect(url_for('main.rules_management'))
+            
+        # Validate regex pattern if is_regex is True
+        if is_regex:
+            try:
+                re.compile(keyword)
+            except re.error:
+                flash('Invalid regex pattern')
+                return redirect(url_for('main.rules_management'))
+        
+        rule = KeywordRule(
+            keyword=keyword,
+            category=category,
+            priority=priority,
+            is_regex=is_regex,
+            user_id=current_user.id
+        )
+        
+        db.session.add(rule)
+        db.session.commit()
+        flash('Rule created successfully')
+        
+    except Exception as e:
+        logger.error(f"Error creating rule: {str(e)}")
+        db.session.rollback()
+        flash('Error creating rule')
+        
+    return redirect(url_for('main.rules_management'))
+
+@main.route('/rules/<int:rule_id>/deactivate', methods=['POST'])
+@login_required
+def deactivate_rule(rule_id):
+    """Deactivate a keyword rule."""
+    try:
+        rule = KeywordRule.query.filter_by(
+            id=rule_id,
+            user_id=current_user.id
+        ).first_or_404()
+        
+        rule.is_active = False
+        db.session.commit()
+        flash('Rule deactivated successfully')
+        
+    except Exception as e:
+        logger.error(f"Error deactivating rule: {str(e)}")
+        db.session.rollback()
+        flash('Error deactivating rule')
+        
+    return redirect(url_for('main.rules_management'))
+
+@main.route('/rules/<int:rule_id>/priority', methods=['POST'])
+@login_required
+def update_rule_priority(rule_id):
+    """Update a rule's priority."""
+    try:
+        data = request.get_json()
+        if not data or 'priority' not in data:
+            return jsonify({'error': 'Priority is required'}), 400
+            
+        priority = int(data['priority'])
+        if priority < 1 or priority > 100:
+            return jsonify({'error': 'Priority must be between 1 and 100'}), 400
+            
+        rule = KeywordRule.query.filter_by(
+            id=rule_id,
+            user_id=current_user.id
+        ).first_or_404()
+        
+        rule.priority = priority
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Priority updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating rule priority: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/api/suggest-explanation', methods=['POST'])
 @login_required
 def suggest_explanation_api():
     """API endpoint for ESF (Explanation Suggestion Feature)"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+        
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+            
+        similar_transactions = find_similar_transactions(
+            description,
+            Transaction.query.filter(
+                Transaction.user_id == current_user.id,
+                Transaction.explanation.isnot(None)
+            ).all()
+        )
+        
+        suggestion = suggest_explanation(description, similar_transactions)
+        return jsonify({
+            'success': True,
+            'suggestion': suggestion
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in ESF: {str(e)}")
+        return jsonify({'error': str(e)}), 500
     try:
         data = request.get_json()
         description = data.get('description', '').strip()
