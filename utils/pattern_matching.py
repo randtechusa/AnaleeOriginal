@@ -78,7 +78,10 @@ class PatternMatcher:
             'temporal_patterns': defaultdict(list),
             'statistical_metrics': {},
             'recurring_patterns': defaultdict(list),
-            'periodicity_analysis': defaultdict(dict)
+            'periodicity_analysis': defaultdict(dict),
+            'advanced_metrics': defaultdict(dict),
+            'pattern_confidence': defaultdict(float),
+            'seasonality_analysis': defaultdict(list)
         }
         
         for transaction in transactions:
@@ -127,6 +130,20 @@ class PatternMatcher:
                 dates = [t['date'] for t in temporal_data]
                 stability_analysis = self.analyze_temporal_stability(amounts, dates)
                 pattern_analysis['periodicity_analysis'][desc] = stability_analysis
+                
+                # Calculate advanced metrics
+                advanced_metrics = self.calculate_advanced_metrics(amounts, dates)
+                pattern_analysis['advanced_metrics'][desc] = advanced_metrics
+                pattern_analysis['pattern_confidence'][desc] = advanced_metrics['reliability_score']
+                
+                # Analyze seasonality if enough data points
+                if len(temporal_data) >= 4:
+                    seasonality_score = self._detect_seasonality(amounts, dates)
+                    pattern_analysis['seasonality_analysis'][desc] = {
+                        'score': seasonality_score,
+                        'dates': dates,
+                        'amounts': amounts
+                    }
                 
         return pattern_analysis
         
@@ -434,5 +451,124 @@ class PatternMatcher:
                 'min_amount': min(sorted_amounts),
                 'max_amount': max(sorted_amounts),
                 'avg_amount': sum(sorted_amounts) / len(sorted_amounts)
+            }
+    def calculate_advanced_metrics(self, amounts: List[float], dates: List[datetime]) -> Dict:
+        """Calculate advanced statistical metrics for transaction patterns"""
+        if not amounts or not dates or len(amounts) != len(dates):
+            return {
+                'seasonality_score': 0.0,
+                'trend_strength': 0.0,
+                'pattern_strength': 0.0,
+                'reliability_score': 0.0
+            }
+            
+        try:
+            # Sort by date for time-series analysis
+            amount_date_pairs = sorted(zip(dates, amounts), key=lambda x: x[0])
+            sorted_amounts = [pair[1] for pair in amount_date_pairs]
+            sorted_dates = [pair[0] for pair in amount_date_pairs]
+            
+            # Calculate basic stats
+            mean_amount = sum(sorted_amounts) / len(sorted_amounts)
+            deviations = [x - mean_amount for x in sorted_amounts]
+            variance = sum(d * d for d in deviations) / len(deviations)
+            std_dev = variance ** 0.5 if variance > 0 else 0
+            
+            # Calculate trend strength using linear regression approximation
+            n = len(sorted_amounts)
+            if n >= 2:
+                x = list(range(n))
+                x_mean = sum(x) / n
+                y_mean = mean_amount
+                
+                # Calculate slope using least squares
+                numerator = sum((x[i] - x_mean) * (sorted_amounts[i] - y_mean) for i in range(n))
+                denominator = sum((x[i] - x_mean) ** 2 for i in range(n))
+                slope = numerator / denominator if denominator != 0 else 0
+                
+                # Normalize trend strength to [0, 1]
+                trend_strength = min(abs(slope) / (mean_amount + 1e-6), 1.0)
+            else:
+                trend_strength = 0.0
+                
+            # Calculate pattern strength based on regularity
+            if std_dev > 0:
+                pattern_strength = 1.0 - min(std_dev / mean_amount, 1.0)
+            else:
+                pattern_strength = 1.0 if len(sorted_amounts) > 1 else 0.0
+                
+            # Calculate seasonality score
+            seasonality_score = self._detect_seasonality(sorted_amounts, sorted_dates)
+            
+            # Calculate overall reliability score
+            sample_size_factor = min(len(sorted_amounts) / 12, 1.0)  # More samples increase reliability
+            time_span_factor = min((sorted_dates[-1] - sorted_dates[0]).days / 365, 1.0)
+            reliability_score = (sample_size_factor * 0.4 + 
+                              pattern_strength * 0.3 +
+                              (1 - trend_strength) * 0.2 +  # Less trend means more stable pattern
+                              seasonality_score * 0.1)
+            
+            return {
+                'seasonality_score': seasonality_score,
+                'trend_strength': trend_strength,
+                'pattern_strength': pattern_strength,
+                'reliability_score': reliability_score,
+                'metrics': {
+                    'mean': mean_amount,
+                    'std_dev': std_dev,
+                    'sample_size': len(sorted_amounts),
+                    'date_range': {
+                        'start': sorted_dates[0],
+                        'end': sorted_dates[-1]
+                    }
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating advanced metrics: {str(e)}")
+            return {
+                'seasonality_score': 0.0,
+                'trend_strength': 0.0,
+                'pattern_strength': 0.0,
+                'reliability_score': 0.0
+            }
+            
+    def _detect_seasonality(self, amounts: List[float], dates: List[datetime]) -> float:
+        """Detect seasonal patterns in transaction amounts"""
+        if len(amounts) < 4:  # Need at least 4 points to detect seasonality
+            return 0.0
+            
+        try:
+            # Calculate intervals between transactions
+            intervals = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
+            
+            if not intervals:
+                return 0.0
+                
+            # Calculate average interval
+            avg_interval = sum(intervals) / len(intervals)
+            
+            # Group transactions by similar intervals
+            interval_groups = defaultdict(list)
+            for i, interval in enumerate(intervals):
+                normalized_interval = round(interval / avg_interval) * avg_interval
+                interval_groups[normalized_interval].append(amounts[i])
+                
+            # Calculate seasonality score based on pattern regularity
+            if len(interval_groups) > 1:
+                group_sizes = [len(group) for group in interval_groups.values()]
+                max_group_size = max(group_sizes)
+                total_points = sum(group_sizes)
+                
+                # More regular grouping indicates stronger seasonality
+                seasonality_score = max_group_size / total_points
+            else:
+                seasonality_score = 0.0
+                
+            return seasonality_score
+            
+        except Exception as e:
+            logger.error(f"Error detecting seasonality: {str(e)}")
+            return 0.0
             }
         }
