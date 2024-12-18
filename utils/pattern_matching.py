@@ -452,6 +452,7 @@ class PatternMatcher:
                 'max_amount': max(sorted_amounts),
                 'avg_amount': sum(sorted_amounts) / len(sorted_amounts)
             }
+        }
     def calculate_advanced_metrics(self, amounts: List[float], dates: List[datetime]) -> Dict:
         """Calculate advanced statistical metrics for transaction patterns"""
         if not amounts or not dates or len(amounts) != len(dates):
@@ -570,5 +571,3 @@ class PatternMatcher:
         except Exception as e:
             logger.error(f"Error detecting seasonality: {str(e)}")
             return 0.0
-            }
-        }
