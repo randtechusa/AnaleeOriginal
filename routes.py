@@ -305,7 +305,6 @@ def company_settings():
 @login_required
 def analyze(file_id):
     logger.info(f"Starting analysis for file_id: {file_id} for user {current_user.id}")
-    logger.debug("Loading file and verifying ownership")
     
     try:
         # Verify database connection first
@@ -325,6 +324,37 @@ def analyze(file_id):
         if not file:
             logger.error(f"File {file_id} not found or unauthorized access for user {current_user.id}")
             flash('File not found or unauthorized access')
+            return redirect(url_for('main.upload'))
+            
+        # Load transactions with proper error handling
+        try:
+            transactions = Transaction.query.filter_by(
+                file_id=file_id,
+                user_id=current_user.id
+            ).order_by(Transaction.date).all()
+            
+            logger.info(f"Successfully loaded {len(transactions)} transactions for file {file_id}")
+            
+            # Load accounts for the user
+            accounts = Account.query.filter_by(
+                user_id=current_user.id,
+                is_active=True
+            ).all()
+            
+            logger.info(f"Successfully loaded {len(accounts)} active accounts for user {current_user.id}")
+            
+            return render_template(
+                'analyze.html',
+                file=file,
+                transactions=transactions,
+                accounts=accounts,
+                ai_available=True
+            )
+            
+        except Exception as tx_error:
+            logger.error(f"Error loading transactions: {str(tx_error)}")
+            db.session.rollback()
+            flash('Error loading transaction data. Please try again.')
             return redirect(url_for('main.upload'))
             
         logger.info(f"Successfully found file: {file.filename} for user {current_user.id}")
