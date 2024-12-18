@@ -18,13 +18,22 @@ class PatternMatcher:
         """Standardize transaction description for matching"""
         if not description:
             return ""
-        # Convert to lowercase and remove extra spaces
-        processed = description.lower().strip()
-        # Remove special characters but keep spaces
-        processed = re.sub(r'[^\w\s]', '', processed)
-        # Remove multiple spaces
-        processed = re.sub(r'\s+', ' ', processed)
-        return processed
+        try:
+            # Convert to lowercase and remove extra spaces
+            processed = description.lower().strip()
+            # Remove common prefixes/suffixes that don't affect meaning
+            processed = re.sub(r'^(payment to |payment from |trans to |trans from )', '', processed)
+            # Remove special characters but keep spaces
+            processed = re.sub(r'[^\w\s-]', '', processed)
+            # Standardize spaces
+            processed = re.sub(r'\s+', ' ', processed)
+            # Remove trailing numbers (often reference numbers)
+            processed = re.sub(r'\s+\d+$', '', processed)
+            logger.debug(f"Preprocessed description: '{description}' -> '{processed}'")
+            return processed
+        except Exception as e:
+            logger.error(f"Error preprocessing description '{description}': {str(e)}")
+            return description.lower().strip()
         
     def calculate_similarity(self, str1: str, str2: str) -> float:
         """Calculate similarity score between two strings"""
@@ -38,18 +47,45 @@ class PatternMatcher:
         
     def find_exact_matches(self, description: str, historical_data: List[Dict]) -> List[Dict]:
         """Find exact matches in historical transactions"""
-        processed_desc = self.preprocess_description(description)
-        
-        matches = []
-        for transaction in historical_data:
-            if self.preprocess_description(transaction['description']) == processed_desc:
-                matches.append({
-                    'confidence': 1.0,
-                    'match_type': 'exact',
-                    'transaction': transaction
-                })
+        try:
+            processed_desc = self.preprocess_description(description)
+            if not processed_desc:
+                logger.warning("Empty description after preprocessing")
+                return []
+
+            matches = []
+            match_count = 0
+            
+            for transaction in historical_data:
+                hist_desc = self.preprocess_description(transaction.get('description', ''))
+                if hist_desc == processed_desc:
+                    match_count += 1
+                    confidence = 1.0
+                    
+                    # Adjust confidence based on frequency and amount similarity
+                    if 'amount' in transaction:
+                        matches.append({
+                            'confidence': confidence,
+                            'match_type': 'exact',
+                            'transaction': transaction,
+                            'match_details': {
+                                'preprocessed_description': processed_desc,
+                                'original_description': description,
+                                'matched_description': transaction.get('description', ''),
+                                'frequency': match_count
+                            }
+                        })
+                    
+            if matches:
+                logger.info(f"Found {len(matches)} exact matches for description '{description}'")
+            else:
+                logger.debug(f"No exact matches found for description '{description}'")
                 
-        return matches
+            return sorted(matches, key=lambda x: (x['confidence'], x['match_details']['frequency']), reverse=True)
+            
+        except Exception as e:
+            logger.error(f"Error finding exact matches for '{description}': {str(e)}")
+            return []
         
     def find_fuzzy_matches(self, description: str, historical_data: List[Dict]) -> List[Dict]:
         """Find similar transactions using fuzzy matching"""
