@@ -70,11 +70,13 @@ class PatternMatcher:
         return sorted(matches, key=lambda x: x['confidence'], reverse=True)[:5]
         
     def analyze_patterns(self, transactions: List[Dict]) -> Dict:
-        """Analyze transaction patterns for common explanations and accounts"""
+        """Enhanced analysis of transaction patterns including temporal and statistical patterns"""
         pattern_analysis = {
             'frequent_explanations': defaultdict(int),
             'amount_patterns': defaultdict(list),
-            'account_patterns': defaultdict(list)
+            'account_patterns': defaultdict(list),
+            'temporal_patterns': defaultdict(list),
+            'statistical_metrics': {}
         }
         
         for transaction in transactions:
@@ -82,6 +84,7 @@ class PatternMatcher:
             explanation = transaction.get('explanation')
             amount = transaction.get('amount')
             account = transaction.get('account_name')
+            date = transaction.get('date')
             
             if explanation:
                 pattern_analysis['frequent_explanations'][explanation] += 1
@@ -90,6 +93,27 @@ class PatternMatcher:
                 key = f"{desc}_{account}"
                 pattern_analysis['amount_patterns'][key].append(amount)
                 pattern_analysis['account_patterns'][key].append(account)
+                
+            if date and amount:
+                pattern_analysis['temporal_patterns'][desc].append({
+                    'date': date,
+                    'amount': amount,
+                    'account': account
+                })
+        
+        # Calculate statistical metrics for patterns
+        for desc, temporal_data in pattern_analysis['temporal_patterns'].items():
+            if len(temporal_data) >= 2:
+                amounts = [t['amount'] for t in temporal_data]
+                pattern_analysis['statistical_metrics'][desc] = {
+                    'mean': sum(amounts) / len(amounts),
+                    'variance': sum((x - (sum(amounts) / len(amounts))) ** 2 for x in amounts) / len(amounts),
+                    'frequency': len(temporal_data),
+                    'date_range': {
+                        'first': min(t['date'] for t in temporal_data),
+                        'last': max(t['date'] for t in temporal_data)
+                    }
+                }
                 
         return pattern_analysis
         
@@ -167,28 +191,55 @@ class PatternMatcher:
         return sorted(suggestions, key=lambda x: x['confidence'], reverse=True)
 
     def get_suggestion_confidence(self, suggestion: Dict) -> float:
-        """Calculate overall confidence score for a suggestion"""
+        """Calculate enhanced confidence score incorporating statistical and temporal patterns"""
         base_confidence = suggestion.get('confidence', 0.0)
         
-        # Adjust confidence based on frequency
+        # Get pattern confidence factors
+        pattern_conf = suggestion.get('pattern_confidence', {})
+        
+        # Base pattern confidence (exact or fuzzy match)
+        base_pattern = pattern_conf.get('exact_match', pattern_conf.get('fuzzy_match', 0))
+        
+        # Frequency confidence
         frequency_factor = min(suggestion.get('frequency', 0) / 10, 1.0)
         
-        # Adjust confidence based on amount patterns
+        # Amount pattern confidence
         amount_pattern = suggestion.get('amount_pattern', {})
+        amount_factor = 0
         if amount_pattern:
             amount = suggestion['transaction'].get('amount', 0)
             if amount_pattern['min'] <= amount <= amount_pattern['max']:
-                amount_factor = 0.2
-            else:
-                amount_factor = 0
-        else:
-            amount_factor = 0
-            
+                # Calculate z-score based confidence
+                mean = amount_pattern['avg']
+                if 'std_dev' in suggestion:
+                    std_dev = suggestion['std_dev']
+                    if std_dev > 0:
+                        z_score = abs(amount - mean) / std_dev
+                        amount_factor = max(0, 1 - (z_score / 3))
+                else:
+                    # Fallback to range-based confidence
+                    amount_factor = 0.2
+        
+        # Statistical pattern confidence
+        statistical_factor = 0
+        if 'statistical_metrics' in suggestion:
+            stats = suggestion['statistical_metrics']
+            if stats.get('frequency', 0) > 0:
+                # More frequent patterns get higher confidence
+                statistical_factor = min(stats['frequency'] / 5, 0.3)
+                
+                # Add variance-based confidence
+                if stats.get('variance', float('inf')) > 0:
+                    variance_factor = max(0, 1 - (stats['variance'] / 1000))  # Scale variance impact
+                    statistical_factor += variance_factor * 0.2
+        
         # Calculate weighted confidence
         final_confidence = (
-            base_confidence * 0.6 +  # Base similarity
-            frequency_factor * 0.3 +  # Usage frequency
-            amount_factor * 0.1   # Amount pattern match
+            base_pattern * 0.3 +           # Base pattern match
+            frequency_factor * 0.2 +       # Usage frequency
+            amount_factor * 0.2 +          # Amount pattern match
+            statistical_factor * 0.2 +     # Statistical patterns
+            pattern_conf.get('temporal', 0) * 0.1  # Temporal patterns
         )
         
         return min(final_confidence, 1.0)
