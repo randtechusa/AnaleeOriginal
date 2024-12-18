@@ -890,19 +890,12 @@ def expense_forecast():
             logger.error(f"Error updating rule priority: {str(e)}")
             return jsonify({'status': 'error', 'message': str(e)}), 500
 start_date = fy_dates['start_date']
-        end_date = fy_dates['end_date']
-        
-        transactions = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.date.between(start_date, end_date)
-        ).order_by(Transaction.date.desc()).all()
-        start_date = fy_dates['start_date']
-        end_date = fy_dates['end_date']
-        
-        transactions = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.date.between(start_date, end_date)
-        ).order_by(Transaction.date.desc()).all()
+end_date = fy_dates['end_date']
+
+transactions = Transaction.query.filter(
+    Transaction.user_id == current_user.id,
+    Transaction.date.between(start_date, end_date)
+).order_by(Transaction.date.desc()).all()
 
 @main.route('/api/suggest-explanation', methods=['POST'])
 @login_required
