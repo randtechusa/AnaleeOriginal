@@ -58,3 +58,17 @@ def init_routes():
         return False
 
 # Initialize routes with protection - moved to app.py for proper app context
+
+def init_blueprint(blueprint):
+    """Initialize blueprint with proper protection"""
+    try:
+        # Verify environment protection
+        if current_app.config.get('ENV') == 'production':
+            if not current_app.config.get('PROTECT_DATA'):
+                logger.error("Data protection not enabled in production")
+                return False
+            
+        return init_routes()
+    except Exception as e:
+        logger.error(f"Failed to initialize rules blueprint: {str(e)}")
+        return False

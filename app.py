@@ -9,7 +9,7 @@ from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
-
+# Initialize Flask extensions
 db = SQLAlchemy()
 login_manager = LoginManager()
 
@@ -284,8 +284,8 @@ def create_app(env=None):
             logger.error(f"Failed to initialize Flask extensions: {str(e)}")
             raise
         
-        # Import user loader here to avoid circular imports
-        from models import load_user
+        # Import models and user loader after extensions initialization
+        from models import User, Account, Transaction, CompanySettings, UploadedFile, load_user
         login_manager.user_loader(load_user)
         
         # Initialize scheduler
@@ -304,10 +304,19 @@ def create_app(env=None):
                     logger.error(f"Database connection failed: {str(db_error)}")
                     return None
                 
-                # Import models with error handling
+                # Import models with protection verification
                 try:
+                    # Verify protection settings before importing models
+                    if not all([
+                        app.config.get('PROTECT_DATA'),
+                        app.config.get('PROTECT_CHART_OF_ACCOUNTS'),
+                        app.config.get('PROTECT_COMPLETED_FEATURES')
+                    ]):
+                        logger.error("Required protection settings not enabled")
+                        return None
+                        
                     from models import User, Account, Transaction, UploadedFile, CompanySettings
-                    logger.debug("Models imported successfully")
+                    logger.debug("Models imported successfully with protection mechanisms")
                 except ImportError as import_error:
                     logger.error(f"Failed to import models: {str(import_error)}")
                     return None
