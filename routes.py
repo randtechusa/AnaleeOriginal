@@ -230,6 +230,7 @@ def register():
             db.session.rollback()
             flash('Registration failed. Please try again.')
             
+
     return render_template('register.html')
 
 @main.route('/settings', methods=['GET', 'POST'])
@@ -317,7 +318,7 @@ def analyze(file_id):
             db.session.rollback()
             flash('Unable to connect to database. Please try again.')
             return redirect(url_for('main.upload'))
-            
+        
         # Load file and verify ownership with detailed logging
         file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first()
         logger.info(f"Database query completed. File found: {file is not None}")
@@ -326,7 +327,7 @@ def analyze(file_id):
             logger.error(f"File {file_id} not found or unauthorized access for user {current_user.id}")
             flash('File not found or unauthorized access')
             return redirect(url_for('main.upload'))
-            
+        
         # Load transactions with proper error handling
         try:
             transactions = Transaction.query.filter_by(
@@ -357,9 +358,9 @@ def analyze(file_id):
             db.session.rollback()
             flash('Error loading transaction data. Please try again.')
             return redirect(url_for('main.upload'))
-            
+        
         logger.info(f"Successfully found file: {file.filename} for user {current_user.id}")
-            
+        
         # Load active accounts
         accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
         
@@ -381,7 +382,7 @@ def analyze(file_id):
             logger.error(f"Database error loading transactions for file {file_id}: {str(db_error)}")
             flash('Error loading transactions from database')
             return redirect(url_for('main.upload'))
-            
+        
         # Generate transaction insights using pattern matching
         transaction_insights = {}
         predictive_engine = PredictiveEngine()
@@ -1036,3 +1037,94 @@ def calculate_similarity(description1, description2):
 
 TEXT_THRESHOLD = 0.8
 SEMANTIC_THRESHOLD = 0.7
+
+@main.route('/icountant', methods=['GET', 'POST'])
+@login_required
+def icountant_interface():
+    """Interactive AI agent for guided double-entry accounting."""
+    try:
+        # Get transactions that need processing (no account_id assigned)
+        transactions = Transaction.query.filter_by(
+            user_id=current_user.id,
+            account_id=None
+        ).order_by(Transaction.date).all()
+
+        if not transactions:
+            flash('No transactions available for processing')
+            return redirect(url_for('main.dashboard'))
+
+        # Get available accounts for the user
+        accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).all()
+
+        account_list = [
+            {'name': acc.name, 'category': acc.category, 'id': acc.id}
+            for acc in accounts
+        ]
+
+        # Initialize iCountant agent
+        agent = ICountant(account_list)
+
+        if request.method == 'POST':
+            transaction_id = request.form.get('transaction_id', type=int)
+            selected_account = request.form.get('selected_account', type=int)
+
+            if transaction_id and selected_account is not None:
+                # Get the transaction
+                transaction = Transaction.query.get(transaction_id)
+                if transaction and transaction.user_id == current_user.id:
+                    # Complete the transaction with selected account
+                    success, message, completed = agent.complete_transaction(selected_account)
+                    if success:
+                        # Update the transaction in database
+                        transaction.account_id = account_list[selected_account]['id']
+                        db.session.commit()
+                        flash(message, 'success')
+                    else:
+                        flash(message, 'error')
+
+        # Get the next unprocessed transaction
+        current_transaction = transactions[0] if transactions else None
+        # Process it through iCountant
+        message, transaction_info = agent.process_transaction({
+            'date': current_transaction.date if current_transaction else None,
+            'amount': float(current_transaction.amount) if current_transaction else 0.0,
+            'description': current_transaction.description if current_transaction else ''
+        }) if current_transaction else ('No transactions available', {})
+
+        return render_template(
+            'icountant.html',
+            message=message,
+            transaction=current_transaction,
+            accounts=accounts,
+            transaction_info=transaction_info
+        )
+
+    except Exception as e:
+        logger.error(f"Error in iCountant interface: {str(e)}")
+        flash('Error processing transactions')
+        return redirect(url_for('main.dashboard'))
+
+class ICountant:
+    def __init__(self, accounts):
+        self.accounts = accounts
+
+    def process_transaction(self, transaction_data):
+        # Placeholder for actual iCountant logic
+        message = "iCountant is processing this transaction. Please select an account."
+        transaction_info = {}
+        return message, transaction_info
+
+    def complete_transaction(self, selected_account_index):
+        # Placeholder for actual iCountant logic
+        if 0 <= selected_account_index < len(self.accounts):
+            message = "Transaction completed successfully!"
+            success = True
+            completed = True
+        else:
+            message = "Invalid account selection."
+            success = False
+            completed = False
+        return success, message, completed

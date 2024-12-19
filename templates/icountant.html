@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>iCountant - AI Accounting Assistant</h2>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category if category != 'message' else 'info' }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% if transaction and transaction_info %}
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">Transaction Analysis</h5>
+                <pre class="bg-light p-3">{{ message }}</pre>
+                
+                <form method="POST" action="{{ url_for('main.icountant_interface') }}">
+                    <input type="hidden" name="transaction_id" value="{{ transaction.id }}">
+                    
+                    <div class="form-group">
+                        <label for="selected_account">Select Account:</label>
+                        <select class="form-control" id="selected_account" name="selected_account" required>
+                            <option value="">Choose an account...</option>
+                            {% for i in range(accounts|length) %}
+                            <option value="{{ i }}">{{ accounts[i].name }} ({{ accounts[i].category }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary mt-3">Process Transaction</button>
+                </form>
+            </div>
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            No transactions available for processing.
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
