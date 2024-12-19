@@ -257,10 +257,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 # Register blueprints
                 try:
                     from routes import main as main_blueprint
-                    from reports import reports as reports_blueprint
-                    
                     app.register_blueprint(main_blueprint)
-                    app.register_blueprint(reports_blueprint)
+                    
+                    from reports import reports as reports_blueprint
+                    app.register_blueprint(reports_blueprint, url_prefix='/reports')
+                    
                     logger.debug("Blueprints registered successfully")
                 except Exception as blueprint_error:
                     logger.error(f"Error registering blueprints: {str(blueprint_error)}")
