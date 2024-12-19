@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
+from ai_insights import FinancialInsightsGenerator
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from sqlalchemy import text
 from models import User, Account, Transaction, UploadedFile, CompanySettings
@@ -773,15 +774,133 @@ def financial_insights():
             Transaction.date.between(start_date, end_date)
         ).order_by(Transaction.date.desc()).all()
         
+        # Initialize financial insights generator
+        insights_generator = FinancialInsightsGenerator()
+        
+        # Get AI-generated insights if available
+        financial_advice = session.get('financial_advice', {
+            'key_insights': [],
+            'risk_factors': [],
+            'optimization_opportunities': [],
+            'strategic_recommendations': [],
+            'cash_flow_analysis': {
+                'current_status': '',
+                'projected_trend': '',
+                'key_drivers': [],
+                'improvement_suggestions': []
+            }
+        })
+        
         return render_template('financial_insights.html',
                              transactions=transactions,
                              start_date=start_date,
-                             end_date=end_date)
+                             end_date=end_date,
+                             financial_advice=financial_advice)
                              
     except Exception as e:
         logger.error(f"Error in financial insights: {str(e)}")
         flash('Error generating financial insights')
         return redirect(url_for('main.dashboard'))
+
+@main.route('/generate-insights', methods=['POST'])
+@login_required
+def generate_insights():
+    """Generate AI-powered financial insights"""
+    try:
+        # Get transactions for the current financial year
+        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+        if not company_settings:
+            flash('Please configure company settings first.')
+            return redirect(url_for('main.company_settings'))
+            
+        fy_dates = company_settings.get_financial_year()
+        transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.date.between(fy_dates['start_date'], fy_dates['end_date'])
+        ).order_by(Transaction.date.desc()).all()
+        
+        # Convert transactions to dictionary format for AI processing
+        transaction_data = [{
+            'date': t.date.isoformat(),
+            'description': t.description,
+            'amount': float(t.amount),
+            'category': t.account.category if t.account else 'Uncategorized'
+        } for t in transactions]
+        
+        # Generate insights using AI
+        insights_generator = FinancialInsightsGenerator()
+        insights = insights_generator.generate_transaction_insights(transaction_data)
+        
+        if insights.get('success'):
+            # Parse AI response and structure it
+            financial_advice = {
+                'key_insights': _parse_insights(insights['insights']),
+                'risk_factors': _extract_risk_factors(insights['insights']),
+                'optimization_opportunities': _extract_opportunities(insights['insights']),
+                'strategic_recommendations': _extract_recommendations(insights['insights']),
+                'cash_flow_analysis': _analyze_cash_flow(transaction_data)
+            }
+            session['financial_advice'] = financial_advice
+            flash('Financial insights generated successfully', 'success')
+        else:
+            flash('Unable to generate insights at this time', 'error')
+            
+        return redirect(url_for('main.financial_insights'))
+        
+    except Exception as e:
+        logger.error(f"Error generating AI insights: {str(e)}")
+        flash('Error generating financial insights')
+        return redirect(url_for('main.financial_insights'))
+
+def _parse_insights(insights_text):
+    """Parse AI-generated insights into structured format"""
+    try:
+        # For now, return the raw insights text
+        # TODO: Implement more sophisticated parsing
+        return insights_text
+    except Exception as e:
+        logger.error(f"Error parsing insights: {str(e)}")
+        return "Unable to parse insights"
+
+def _extract_risk_factors(insights_text):
+    """Extract risk factors from AI insights"""
+    # TODO: Implement risk factor extraction
+    return ["Risk analysis will be available in the next update"]
+
+def _extract_opportunities(insights_text):
+    """Extract optimization opportunities from AI insights"""
+    # TODO: Implement opportunity extraction
+    return ["Optimization opportunities will be available in the next update"]
+
+def _extract_recommendations(insights_text):
+    """Extract strategic recommendations from AI insights"""
+    # TODO: Implement recommendation extraction
+    return ["Strategic recommendations will be available in the next update"]
+
+def _analyze_cash_flow(transactions):
+    """Analyze cash flow patterns"""
+    try:
+        total_inflow = sum(t['amount'] for t in transactions if t['amount'] > 0)
+        total_outflow = sum(abs(t['amount']) for t in transactions if t['amount'] < 0)
+        net_flow = total_inflow - total_outflow
+        
+        return {
+            'current_status': f"Net cash flow: ${net_flow:,.2f}",
+            'projected_trend': "Trend analysis will be available in the next update",
+            'key_drivers': [
+                f"Total inflow: ${total_inflow:,.2f}",
+                f"Total outflow: ${total_outflow:,.2f}"
+            ],
+            'improvement_suggestions': ["Cash flow optimization suggestions will be available in the next update"]
+        }
+    except Exception as e:
+        logger.error(f"Error analyzing cash flow: {str(e)}")
+        return {
+            'current_status': '',
+            'projected_trend': '',
+            'key_drivers': [],
+            'improvement_suggestions': []
+        }
 
 @main.route('/expense-forecast')
 @login_required
