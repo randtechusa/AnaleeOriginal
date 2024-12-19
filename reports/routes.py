@@ -24,15 +24,40 @@ def cashbook():
             return redirect(url_for('main.company_settings'))
             
         fy_dates = company_settings.get_financial_year()
+        
+        # Get date filter parameters
+        from_date = request.args.get('from_date')
+        to_date = request.args.get('to_date')
+        
+        # Convert string dates to datetime objects if provided
+        if from_date:
+            from_date = datetime.strptime(from_date, '%Y-%m-%d').date()
+        else:
+            from_date = fy_dates['start_date']
+            
+        if to_date:
+            to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
+        else:
+            to_date = fy_dates['end_date']
+            
+        # Ensure dates are within financial year
+        if from_date < fy_dates['start_date']:
+            from_date = fy_dates['start_date']
+        if to_date > fy_dates['end_date']:
+            to_date = fy_dates['end_date']
+            
+        # Get transactions for the specified period
         transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
-            Transaction.date.between(fy_dates['start_date'], fy_dates['end_date'])
+            Transaction.date.between(from_date, to_date)
         ).order_by(Transaction.date).all()
         
         return render_template('reports/cashbook.html',
                              transactions=transactions,
-                             start_date=fy_dates['start_date'],
-                             end_date=fy_dates['end_date'])
+                             start_date=from_date,
+                             end_date=to_date,
+                             fy_start_date=fy_dates['start_date'],
+                             fy_end_date=fy_dates['end_date'])
                              
     except Exception as e:
         logger.error(f"Error generating cashbook report: {str(e)}")
