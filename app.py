@@ -298,19 +298,44 @@ def create_app(env=None):
                 try:
                     # Import and register blueprints only if environment checks pass
                     if verify_database():
-                        from routes import main as main_blueprint
-                        from routes.rules import rules as rules_blueprint
-                        
-                        # Additional protection for production routes
-                        if env == 'production':
-                            if not all(hasattr(bp, 'protected_routes') 
-                                   for bp in [main_blueprint, rules_blueprint]):
-                                logger.error("Production routes protection not configured")
+                        try:
+                            # Import blueprints with proper error handling
+                            from routes import main as main_blueprint
+                            logger.info("Main blueprint imported successfully")
+                            
+                            try:
+                                from routes.rules import rules as rules_blueprint
+                                logger.info("Rules blueprint imported successfully")
+                            except ImportError as rules_error:
+                                logger.error(f"Failed to import rules blueprint: {str(rules_error)}")
+                                if env == 'production':
+                                    return None
+                                rules_blueprint = None
+                            
+                            # Additional protection for production routes
+                            if env == 'production':
+                                required_protections = ['protected_routes']
+                                if not hasattr(main_blueprint, 'protected_routes'):
+                                    logger.error("Main blueprint missing production protection")
+                                    return None
+                                if rules_blueprint and not hasattr(rules_blueprint, 'protected_routes'):
+                                    logger.error("Rules blueprint missing production protection")
+                                    return None
+                            
+                            # Register blueprints with enhanced error handling
+                            app.register_blueprint(main_blueprint)
+                            logger.info("Main blueprint registered successfully")
+                            
+                            if rules_blueprint:
+                                app.register_blueprint(rules_blueprint)
+                                logger.info("Rules blueprint registered successfully")
+                            
+                            logger.info("All blueprints registered successfully with protection")
+                        except Exception as blueprint_error:
+                            logger.error(f"Error registering blueprints: {str(blueprint_error)}")
+                            if env == 'production':
                                 return None
-                                
-                        app.register_blueprint(main_blueprint)
-                        app.register_blueprint(rules_blueprint)
-                        logger.info("Blueprints registered successfully with protection")
+                            raise
                     else:
                         logger.error("Database verification failed, cannot register blueprints")
                         return None

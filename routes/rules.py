@@ -4,11 +4,13 @@ from flask import Blueprint, render_template, request, flash, redirect, url_for,
 from flask_login import login_required, current_user
 from utils.route_protection import RouteProtection
 from models import db, KeywordRule
+from utils.rule_manager import RuleManager
 
 logger = logging.getLogger(__name__)
 
 rules = Blueprint('rules', __name__)
 rules.protected_routes = True  # Enable protection for production
+rule_manager = RuleManager()  # Initialize rule manager with protection
 
 @rules.route('/rules/manage')
 @login_required
@@ -24,29 +26,28 @@ def manage_rules():
             flash('Enhanced protection mode is required in production', 'error')
             return redirect(url_for('main.index'))
 
-        # Only fetch active rules for the current user
-        user_rules = KeywordRule.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).order_by(KeywordRule.priority.desc()).all()
-        
-        # Get protected categories from config
+        # Get protected categories and verify environment permissions
         protected_categories = current_app.config.get('PROTECTED_CATEGORIES', [])
+        allow_production_rules = current_app.config.get('ALLOW_PRODUCTION_RULES', False)
         
-        # Get rule statistics
-        stats = {
-            'total_rules': len(user_rules),
-            'active_rules': len([r for r in user_rules if r.is_active]),
-            'protected_rules': len([r for r in user_rules if r.is_protected]),
-            'regex_rules': len([r for r in user_rules if r.is_regex])
-        }
+        if is_production and not allow_production_rules:
+            logger.warning(f"Attempted to access rule management in protected production environment by user {current_user.id}")
+            flash('Rule management is disabled in production environment', 'warning')
+            return redirect(url_for('main.index'))
+
+        # Get active rules through rule manager (includes protection)
+        user_rules = rule_manager.get_active_rules(current_user.id)
+        
+        # Get rule statistics with protection
+        stats = rule_manager.get_rule_statistics()
         
         logger.info(f"Successfully retrieved rules for user {current_user.id}")
         return render_template('rules/manage.html',
                             rules=user_rules,
                             protected_categories=protected_categories,
                             stats=stats,
-                            is_production=is_production)
+                            is_production=is_production,
+                            config=current_app.config)
     except Exception as e:
         logger.error(f"Error accessing rules for user {current_user.id}: {str(e)}")
         flash('Error accessing rules', 'error')
@@ -57,40 +58,66 @@ def manage_rules():
 @RouteProtection.protect_production
 @RouteProtection.protect_data
 def create_rule():
-    """Create new rule with protection checks"""
+    """Create new rule with enhanced protection checks"""
+    # Check environment protection first
+    is_production = current_app.config.get('ENV') == 'production'
+    allow_production_rules = current_app.config.get('ALLOW_PRODUCTION_RULES', False)
+    
+    if is_production and not allow_production_rules:
+        logger.warning(f"Attempted to create rule in protected production environment by user {current_user.id}")
+        flash('Rule creation is disabled in production environment', 'warning')
+        return redirect(url_for('rules.manage_rules'))
+        
     if request.method == 'POST':
         try:
-            pattern = request.form.get('pattern')
-            description = request.form.get('description')
-            category = request.form.get('category')
+            # Get and validate input
+            pattern = request.form.get('pattern', '').strip()
+            description = request.form.get('description', '').strip()
+            category = request.form.get('category', '').strip()
+            is_regex = request.form.get('is_regex') == 'on'
+            priority = int(request.form.get('priority', 1))
             
+            # Enhanced validation
             if not all([pattern, description, category]):
                 flash('All fields are required', 'error')
                 return redirect(url_for('rules.manage_rules'))
                 
-            # Create rule with protection
-            new_rule = KeywordRule(
-                pattern=pattern,
-                description=description,
-                category=category,
+            # Verify category isn't protected
+            protected_categories = current_app.config.get('PROTECTED_CATEGORIES', [])
+            if category in protected_categories:
+                logger.warning(f"Attempted to create rule for protected category {category} by user {current_user.id}")
+                flash('Cannot create rules for protected categories', 'error')
+                return redirect(url_for('rules.manage_rules'))
+                
+            # Use rule manager to create rule with protection
+            success = rule_manager.add_rule(
                 user_id=current_user.id,
-                is_active=True
+                keyword=pattern,
+                category=category,
+                priority=priority,
+                is_regex=is_regex
             )
             
-            db.session.add(new_rule)
-            db.session.commit()
+            if success:
+                flash('Rule created successfully', 'success')
+                logger.info(f"New rule created by user {current_user.id}: {pattern}")
+            else:
+                flash('Error creating rule', 'error')
+                logger.error(f"Failed to create rule for user {current_user.id}")
             
-            flash('Rule created successfully', 'success')
-            logger.info(f"New rule created by user {current_user.id}: {pattern}")
-            
+        except ValueError as ve:
+            logger.error(f"Validation error creating rule: {str(ve)}")
+            flash(str(ve), 'error')
         except Exception as e:
-            db.session.rollback()
             logger.error(f"Error creating rule: {str(e)}")
-            flash('Error creating rule', 'error')
+            flash('An unexpected error occurred', 'error')
             
         return redirect(url_for('rules.manage_rules'))
         
-    return render_template('rules/create.html')
+    # GET request - display create form
+    return render_template('rules/create.html',
+                         protected_categories=current_app.config.get('PROTECTED_CATEGORIES', []),
+                         is_production=is_production)
 
 @rules.route('/rules/<int:rule_id>/edit', methods=['GET', 'POST'])
 @login_required
