@@ -505,10 +505,20 @@ def dashboard():
         flash('Please configure company settings first.')
         return redirect(url_for('main.company_settings'))
     
-    selected_year = request.args.get('year', type=int)
-    current_date = datetime.utcnow()
+    # Get year from request or use earliest transaction year
+    earliest_transaction = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date).first()
+    latest_transaction = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).first()
     
-    if not selected_year:
+    selected_year = request.args.get('year', type=int)
+    if not selected_year and earliest_transaction:
+        # Default to the year of the earliest transaction
+        if earliest_transaction.date.month > company_settings.financial_year_end:
+            selected_year = earliest_transaction.date.year
+        else:
+            selected_year = earliest_transaction.date.year - 1
+    elif not selected_year:
+        # If no transactions exist, use current year
+        current_date = datetime.utcnow()
         if current_date.month > company_settings.financial_year_end:
             selected_year = current_date.year
         else:

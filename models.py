@@ -245,7 +245,10 @@ class CompanySettings(db.Model):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def get_financial_year(self, date=None, year=None):
-        if date is None:
+        """Get financial year dates based on provided date or year.
+        If neither is provided, uses current date.
+        Handles historical dates by calculating the appropriate financial year."""
+        if date is None and year is None:
             date = datetime.utcnow()
         
         if year is not None:
@@ -258,14 +261,18 @@ class CompanySettings(db.Model):
         
         end_year = start_year + 1
         
+        # Calculate start date
         if self.financial_year_end == 12:
-            start_date = datetime(start_year + 1, 1, 1)
+            start_date = datetime(start_year, 1, 1)  # Start from January 1st
         else:
+            # Start from the month after financial year end
             start_date = datetime(start_year, self.financial_year_end + 1, 1)
         
+        # Calculate end date
         if self.financial_year_end == 12:
-            end_date = datetime(end_year, 12, 31)
+            end_date = datetime(start_year, 12, 31)
         else:
+            # Handle different month lengths for financial year end
             if self.financial_year_end == 2:
                 last_day = 29 if end_year % 4 == 0 and (end_year % 100 != 0 or end_year % 400 == 0) else 28
             elif self.financial_year_end in [4, 6, 9, 11]:
