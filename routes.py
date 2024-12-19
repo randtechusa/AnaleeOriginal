@@ -1,15 +1,4 @@
 import re
-from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
-from flask_login import current_user, login_required
-from sqlalchemy.exc import SQLAlchemyError
-from models import Account, Transaction
-import os
-from utils.rule_manager import RuleManager
-from utils.keyword_matcher import KeywordMatcher
-from utils.rule_manager import RuleManager
-import logging
-
-logger = logging.getLogger(__name__)
 import logging
 import os
 from datetime import datetime, timedelta
@@ -799,289 +788,158 @@ def financial_insights():
                              
     except Exception as e:
         logger.error(f"Error in financial insights: {str(e)}")
-@main.route('/manage-rules', methods=['GET', 'POST'])
-@login_required
-def manage_rules():
-    """Rules management interface with strict protection"""
-    rule_manager = RuleManager()
-    
-    # Check environment protection
-    is_production = os.environ.get('FLASK_ENV') == 'production'
-    
-    try:
-        # Get available categories from user's active accounts only
-        available_categories = {
-            acc.category for acc in Account.query.filter_by(
-                user_id=current_user.id,
-                is_active=True
-            ).all() if acc.category not in rule_manager.protected_categories
-        }
-        
-        # Get active rules for the current user
-        rules = rule_manager.get_active_rules(current_user.id)
-        
-        if request.method == 'POST':
-            if is_production and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-                logger.warning(f"Attempted rule creation in production by user {current_user.id}")
-                flash('Rule creation is disabled in production environment', 'warning')
-                return redirect(url_for('main.manage_rules'))
-            
-            keyword = request.form.get('keyword', '').strip()
-            category = request.form.get('category', '').strip()
-            priority = int(request.form.get('priority', 1))
-            is_regex = bool(request.form.get('is_regex', False))
-            
-            if not keyword or not category:
-                flash('Keyword and category are required', 'error')
-            elif category not in available_categories:
-                logger.warning(f"User {current_user.id} attempted to use unauthorized category: {category}")
-                flash('Invalid category selected', 'error')
-            else:
-                if rule_manager.add_rule(
-                    user_id=current_user.id,
-                    keyword=keyword,
-                    category=category,
-                    priority=priority,
-                    is_regex=is_regex
-                ):
-                    flash('Rule created successfully', 'success')
-                    logger.info(f"Rule created successfully by user {current_user.id}")
-                else:
-                    flash('Error creating rule', 'error')
-            
-            return redirect(url_for('main.manage_rules'))
-        
-        # Get statistics about rules
-        stats = rule_manager.get_rule_statistics()
-        
-        return render_template(
-            'rules_management.html',
-            rules=rules,
-            categories=sorted(list(available_categories)),
-            stats=stats,
-            is_production=is_production,
-            protected_categories=rule_manager.protected_categories
-        )
-        
-    except Exception as e:
-        logger.error(f"Error in rules management: {str(e)}")
-        flash('Error accessing rules management', 'error')
+        flash('Error generating financial insights')
         return redirect(url_for('main.dashboard'))
-
-@main.route('/rule/<int:rule_id>/deactivate', methods=['POST'])
-@login_required
-def deactivate_rule(rule_id):
-    """Deactivate a rule with protection checks"""
-    rule_manager = RuleManager()
-    
-    # Check environment protection
-    if os.environ.get('FLASK_ENV') == 'production' and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-        logger.warning(f"Attempted rule modification in production by user {current_user.id}")
-        flash('Rule modification is disabled in production environment', 'warning')
-        return redirect(url_for('main.manage_rules'))
-    
-    try:
-        if rule_manager.deactivate_rule(rule_id):
-            flash('Rule deactivated successfully', 'success')
-            logger.info(f"Rule {rule_id} deactivated by user {current_user.id}")
-        else:
-            flash('Error deactivating rule', 'error')
-    except Exception as e:
-        logger.error(f"Error deactivating rule: {str(e)}")
-        flash('Error deactivating rule', 'error')
-        
-    return redirect(url_for('main.manage_rules'))
-
-@main.route('/rule/<int:rule_id>/priority', methods=['POST'])
-@login_required
-def update_rule_priority(rule_id):
-    """Update rule priority with protection checks"""
-    if os.environ.get('FLASK_ENV') == 'production' and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-        logger.warning(f"Attempted priority update in production by user {current_user.id}")
-        return jsonify({'error': 'Rule modification is disabled in production'}), 403
-        
-    try:
-        data = request.get_json()
-        new_priority = int(data.get('priority', 1))
-        
-        rule_manager = RuleManager()
-        if rule_manager.update_rule_priority(rule_id, new_priority):
-            logger.info(f"Priority updated for rule {rule_id} by user {current_user.id}")
-            return jsonify({'success': True}), 200
-        return jsonify({'error': 'Rule not found'}), 404
-        
-    except Exception as e:
-        logger.error(f"Error updating rule priority: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/rule/<int:rule_id>/deactivate', methods=['POST'])
-@login_required
-def deactivate_rule(rule_id):
-    """Deactivate a rule with protection checks"""
-    rule_manager = RuleManager()
-    
-    # Check environment protection
-    if os.environ.get('FLASK_ENV') == 'production' and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-        flash('Rule modification is disabled in production environment', 'warning')
-        return redirect(url_for('main.manage_rules'))
-    
-    try:
-        if rule_manager.deactivate_rule(rule_id):
-            flash('Rule deactivated successfully', 'success')
-        else:
-            flash('Error deactivating rule', 'error')
-    except Exception as e:
-        logger.error(f"Error deactivating rule: {str(e)}")
-        flash('Error deactivating rule', 'error')
-        
-    return redirect(url_for('main.manage_rules'))
-
-@main.route('/rule/<int:rule_id>/priority', methods=['POST'])
-@login_required
-def update_rule_priority(rule_id):
-    """Update rule priority with protection checks"""
-    if os.environ.get('FLASK_ENV') == 'production' and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-        return jsonify({'error': 'Rule modification is disabled in production'}), 403
-        
-    try:
-        data = request.get_json()
-        new_priority = int(data.get('priority', 1))
-        
-        rule_manager = RuleManager()
-        if rule_manager.update_rule_priority(rule_id, new_priority):
-            return jsonify({'success': True}), 200
-        return jsonify({'error': 'Rule not found'}), 404
-        
-    except Exception as e:
-        logger.error(f"Error updating rule priority: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-
-@main.route('/manage-rules', methods=['GET', 'POST'])
-@login_required
-def manage_rules():
-    """Rules management interface with strict protection"""
-    rule_manager = RuleManager()
-    
-    # Check environment protection
-    is_production = os.environ.get('FLASK_ENV') == 'production'
-    
-    try:
-        # Get available categories from user's active accounts only
-        available_categories = {
-            acc.category for acc in Account.query.filter_by(
-                user_id=current_user.id,
-                is_active=True
-            ).all() if acc.category not in rule_manager.protected_categories
-        }
-        
-        # Get active rules for the current user
-        rules = rule_manager.get_active_rules(current_user.id)
-        
-        if request.method == 'POST':
-            if is_production and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-                flash('Rule creation is disabled in production environment', 'warning')
-                return redirect(url_for('main.manage_rules'))
-            
-            keyword = request.form.get('keyword', '').strip()
-            category = request.form.get('category', '').strip()
-            priority = int(request.form.get('priority', 1))
-            is_regex = bool(request.form.get('is_regex', False))
-            
-            if not keyword or not category:
-                flash('Keyword and category are required', 'error')
-            elif category not in available_categories:
-                flash('Invalid category selected', 'error')
-            else:
-                if rule_manager.add_rule(
-                    user_id=current_user.id,
-                    keyword=keyword,
-                    category=category,
-                    priority=priority,
-                    is_regex=is_regex
-                ):
-                    flash('Rule created successfully', 'success')
-                else:
-                    flash('Error creating rule', 'error')
-            
-            return redirect(url_for('main.manage_rules'))
-        
-        # Get statistics about rules
-        stats = rule_manager.get_rule_statistics()
-        
-        return render_template(
-            'rules_management.html',
-            rules=rules,
-            categories=sorted(list(available_categories)),
-            stats=stats,
-            is_production=is_production,
-            protected_categories=rule_manager.protected_categories
-        )
-        
-    except Exception as e:
-        logger.error(f"Error in rules management: {str(e)}")
-        flash('Error accessing rules management', 'error')
-        return redirect(url_for('main.dashboard'))
-
-@main.route('/rule/<int:rule_id>/deactivate', methods=['POST'])
-@login_required
-def deactivate_rule(rule_id):
-    """Deactivate a rule with protection checks"""
-    rule_manager = RuleManager()
-    
-    # Check environment protection
-    if os.environ.get('FLASK_ENV') == 'production' and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-        flash('Rule modification is disabled in production environment', 'warning')
-        return redirect(url_for('main.manage_rules'))
-    
-    try:
-        if rule_manager.deactivate_rule(rule_id):
-            flash('Rule deactivated successfully', 'success')
-        else:
-            flash('Error deactivating rule', 'error')
-    except Exception as e:
-        logger.error(f"Error deactivating rule: {str(e)}")
-        flash('Error deactivating rule', 'error')
-        
-    return redirect(url_for('main.manage_rules'))
-
-@main.route('/rule/<int:rule_id>/priority', methods=['POST'])
-@login_required
-def update_rule_priority(rule_id):
-    """Update rule priority with protection checks"""
-    if os.environ.get('FLASK_ENV') == 'production' and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-        return jsonify({'error': 'Rule modification is disabled in production'}), 403
-        
-    try:
-        data = request.get_json()
-        new_priority = int(data.get('priority', 1))
-        
-        rule_manager = RuleManager()
-        if rule_manager.update_rule_priority(rule_id, new_priority):
-            return jsonify({'success': True}), 200
-        return jsonify({'error': 'Rule not found'}), 404
-        
-    except Exception as e:
-        logger.error(f"Error updating rule priority: {str(e)}")
-        return jsonify({'error': str(e)}), 500
 
 @main.route('/expense-forecast')
 @login_required
 def expense_forecast():
-    """Handle expense forecasting with protection"""
     try:
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
         if not company_settings:
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
+        
+
+@main.route('/rules', methods=['GET', 'POST'])
+@login_required
+def manage_rules():
+    """Manage user-defined rules with strict protection"""
+    try:
+        # Initialize rule manager with protection
+        rule_manager = RuleManager()
+        
+        if request.method == 'POST':
+            # Only allow rule creation in development or if explicitly allowed
+            if current_app.config.get('ENV') == 'production' and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
+                flash('Rule creation is disabled in production environment')
+                return redirect(url_for('main.manage_rules'))
             
-        # TODO: Implement expense forecast logic
-        return render_template('expense_forecast.html')
+            # Get form data
+            keyword = request.form.get('keyword', '').strip()
+            category = request.form.get('category', '').strip()
+            is_regex = request.form.get('is_regex', 'false').lower() == 'true'
+            priority = int(request.form.get('priority', 1))
+            
+            # Validate input
+            if not all([keyword, category]):
+                flash('Keyword and category are required')
+                return redirect(url_for('main.manage_rules'))
+            
+            # Add rule with user_id for proper isolation
+            success = rule_manager.add_rule(
+                user_id=current_user.id,
+                keyword=keyword,
+                category=category,
+                priority=priority,
+                is_regex=is_regex
+            )
+            
+            if success:
+                flash('Rule added successfully')
+            else:
+                flash('Error adding rule')
+            
+            return redirect(url_for('main.manage_rules'))
+        
+        # Get active rules for display
+        active_rules = rule_manager.get_active_rules(user_id=current_user.id)
+        
+        # Get available categories from accounts
+        categories = [acc.category for acc in Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).distinct(Account.category)]
+        
+        return render_template('rules_management.html',
+                             rules=active_rules,
+                             categories=categories,
+                             is_production=current_app.config.get('ENV') == 'production')
+                             
     except Exception as e:
-        logger.error(f"Error in expense forecast: {str(e)}")
-        flash('Error accessing expense forecast', 'error')
+        logger.error(f"Error in rules management: {str(e)}")
+        flash('Error accessing rules management')
         return redirect(url_for('main.dashboard'))
+
+@main.route('/rules/<int:rule_id>/deactivate', methods=['POST'])
+@login_required
+def deactivate_rule(rule_id):
+    """Deactivate a rule instead of deleting it"""
+    try:
+        rule_manager = RuleManager()
+        if rule_manager.deactivate_rule(rule_id):
+            flash('Rule deactivated successfully')
+        else:
+            flash('Error deactivating rule')
+    except Exception as e:
+        logger.error(f"Error deactivating rule: {str(e)}")
+        flash('Error deactivating rule')
+    return redirect(url_for('main.manage_rules'))
+
+@main.route('/rules/<int:rule_id>/priority', methods=['POST'])
+@login_required
+def update_rule_priority(rule_id):
+    """Update rule priority"""
+    try:
+        new_priority = request.form.get('priority', type=int)
+        if new_priority is None:
+            flash('Invalid priority value')
+            return redirect(url_for('main.manage_rules'))
+            
+        rule_manager = RuleManager()
+        if rule_manager.update_rule_priority(rule_id, new_priority):
+            flash('Rule priority updated successfully')
+        else:
+            flash('Error updating rule priority')
+    except Exception as e:
+        logger.error(f"Error updating rule priority: {str(e)}")
+        flash('Error updating rule priority')
+    return redirect(url_for('main.manage_rules'))
+
+@main.route('/rules/create', methods=['POST'])
+@login_required
+def create_rule():
+        """Create a new keyword rule."""
+        try:
+            # Get form data
+            keyword = request.form.get('keyword', '').strip()
+            category = request.form.get('category', '').strip()
+            priority = int(request.form.get('priority', 1))
+            is_regex = bool(request.form.get('is_regex', False))
+            
+            # Validate input
+            if not keyword or not category:
+                flash('Keyword and category are required')
+                return redirect(url_for('main.rules_management'))
+                
+            # Add rule using service layer
+            success = rule_manager.add_rule(
+                user_id=current_user.id,
+                keyword=keyword,
+                category=category,
+                priority=priority,
+                is_regex=is_regex
+            )
+            
+            if success:
+                flash('Rule created successfully')
+            else:
+                flash('Error creating rule')
+                
+        except Exception as e:
+            logger.error(f"Error creating rule: {str(e)}")
+            flash('Error creating rule')
+            
+        return redirect(url_for('main.rules_management'))
+        
+    
+start_date = fy_dates['start_date']
+end_date = fy_dates['end_date']
+
+transactions = Transaction.query.filter(
+    Transaction.user_id == current_user.id,
+    Transaction.date.between(start_date, end_date)
+).order_by(Transaction.date.desc()).all()
 
 @main.route('/api/suggest-explanation', methods=['POST'])
 @login_required

@@ -27,11 +27,11 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PYTHONPATH=. FLASK_ENV=development PROTECT_DATA=true PROTECT_CHART_OF_ACCOUNTS=true PROTECT_COMPLETED_FEATURES=true python app.py"
+args = "python app.py"
 waitForPort = 5000
 
 [deployment]
-run = ["sh", "-c", "PYTHONPATH=. FLASK_ENV=development PROTECT_DATA=true PROTECT_CHART_OF_ACCOUNTS=true PROTECT_COMPLETED_FEATURES=true python app.py"]
+run = ["sh", "-c", "python app.py"]
 
 [[ports]]
 localPort = 5000

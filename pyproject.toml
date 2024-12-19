@@ -25,5 +25,4 @@ dependencies = [
     "alembic",
     "flask-wtf>=1.2.2",
     "python-levenshtein>=0.26.1",
-    "wtforms>=3.2.1",
 ]

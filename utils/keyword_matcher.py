@@ -6,28 +6,22 @@ import logging
 logger = logging.getLogger(__name__)
 
 class KeywordMatcher:
-    def __init__(self, rule_manager=None, user_id=None):
+    def __init__(self, rule_manager=None):
         from utils.rule_manager import RuleManager
         self.rule_manager = rule_manager if rule_manager else RuleManager()
         self.category_keywords = defaultdict(set)
         self.custom_rules = []
-        self.user_id = user_id
-        if user_id:
-            self._load_rules(user_id)
-    def _load_rules(self, user_id: int):
+        self._load_rules()
+    def _load_rules(self):
         """Load rules from database"""
         try:
-            if not user_id:
-                logger.error("User ID required for loading rules")
-                return
-                
-            active_rules = self.rule_manager.get_active_rules(user_id)
+            active_rules = self.rule_manager.get_active_rules()
             for rule in active_rules:
                 if rule['is_regex']:
                     self.add_custom_rule(rule['keyword'], rule['category'], rule['priority'])
                 else:
                     self.category_keywords[rule['category']].add(rule['keyword'])
-            logger.info(f"Loaded {len(active_rules)} rules from database for user {user_id}")
+            logger.info(f"Loaded {len(active_rules)} rules from database")
         except Exception as e:
             logger.error(f"Error loading rules: {str(e)}")
         
