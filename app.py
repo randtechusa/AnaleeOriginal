@@ -256,9 +256,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 
                 # Register blueprints
                 try:
+                    # Register main blueprint
                     from routes import main as main_blueprint
                     app.register_blueprint(main_blueprint)
                     
+                    # Register reports blueprint with URL prefix
                     from reports import reports as reports_blueprint
                     app.register_blueprint(reports_blueprint, url_prefix='/reports')
                     
