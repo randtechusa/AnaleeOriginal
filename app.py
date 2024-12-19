@@ -133,14 +133,45 @@ def create_app(env=None):
         # Initialize Flask application with enhanced protection
         app = Flask(__name__)
         
-        # Get environment from environment variable with strict validation
+        # Configure logging for production
+        if not app.debug:
+            file_handler = logging.FileHandler('app.log')
+            file_handler.setLevel(logging.INFO)
+            app.logger.addHandler(file_handler)
+            
+        # Get and validate environment with strict protection
         if env is None:
-            env = os.environ.get('FLASK_ENV', 'development')
+            env = os.environ.get('FLASK_ENV', '').lower()
+            if not env:
+                logger.warning("FLASK_ENV not set, defaulting to development for safety")
+                env = 'development'
             
         # Strict environment validation and protection
         if env not in ['development', 'production', 'testing']:
-            logger.warning("Invalid environment specified, defaulting to development for local work")
+            logger.warning(f"Invalid environment '{env}' specified, defaulting to development")
             env = 'development'
+        
+        logger.info(f"Starting Flask application initialization in {env} environment with protection mechanisms...")
+            
+        # Enhanced environment separation checks for production
+        if env == 'production':
+            # Required protection variables
+            required_vars = [
+                'PROTECT_PRODUCTION',
+                'PROTECT_DATA',
+                'PROTECT_CHART_OF_ACCOUNTS'
+            ]
+            missing_vars = [var for var in required_vars if not os.environ.get(var)]
+            if missing_vars:
+                logger.error(f"Missing required production protection variables: {missing_vars}")
+                return None
+                
+            # Verify development features are disabled
+            if os.environ.get('DEVELOPMENT_FEATURES_ENABLED', '').lower() == 'true':
+                logger.error("Development features must be disabled in production")
+                return None
+            
+            logger.info("Production mode activated with full protection")
         
         # Environment separation protection - Consolidated check
         if env == 'production':
@@ -299,6 +330,11 @@ def create_app(env=None):
                     # Import and register blueprints only if environment checks pass
                     if verify_database():
                         try:
+                            # Set environment protection flags
+                            app.config['PROTECT_DATA'] = os.environ.get('PROTECT_DATA', 'true').lower() == 'true'
+                            app.config['PROTECT_CHART_OF_ACCOUNTS'] = os.environ.get('PROTECT_CHART_OF_ACCOUNTS', 'true').lower() == 'true'
+                            app.config['PROTECT_COMPLETED_FEATURES'] = os.environ.get('PROTECT_COMPLETED_FEATURES', 'true').lower() == 'true'
+                            
                             # Import blueprints with proper error handling
                             try:
                                 # Import main blueprint first
@@ -308,10 +344,27 @@ def create_app(env=None):
                                 # Import rules blueprint with enhanced protection
                                 try:
                                     from routes.rules import rules as rules_blueprint
-                                    if not hasattr(rules_blueprint, 'protected_routes'):
+                                    
+                                    # Verify required protection attributes
+                                    required_attrs = ['protected_routes']
+                                    if not all(hasattr(rules_blueprint, attr) for attr in required_attrs):
                                         logger.error("Rules blueprint missing required protection attributes")
-                                        return None
-                                    logger.info("Rules blueprint imported successfully")
+                                        if env == 'production':
+                                            return None
+                                    else:
+                                        logger.info("Rules blueprint protection verified")
+                                    
+                                    # Initialize routes before registration
+                                    if hasattr(rules_blueprint, 'init_routes'):
+                                        try:
+                                            rules_blueprint.init_routes()
+                                            logger.info("Rules blueprint routes initialized successfully")
+                                        except Exception as init_error:
+                                            logger.error(f"Failed to initialize rules routes: {str(init_error)}")
+                                            if env == 'production':
+                                                return None
+                                    
+                                    logger.info("Rules blueprint imported and initialized successfully")
                                 except ImportError as rules_error:
                                     logger.error(f"Failed to import rules blueprint: {str(rules_error)}")
                                     if env == 'production':

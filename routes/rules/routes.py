@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime
-from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.exc import SQLAlchemyError
+from flask_sqlalchemy import SQLAlchemy
 from models import db, KeywordRule, Account
 from utils.rule_manager import RuleManager
 from .forms import RuleForm
@@ -61,12 +62,16 @@ def create_rule():
                 return redirect(url_for('rules.create_rule'))
             
             # Create rule with protection
+            keyword = form.keyword.data if form.keyword.data else ""
+            category = form.category.data if form.category.data else ""
+            priority = form.priority.data if form.priority.data is not None else 1
+            
             success = rule_manager.add_rule(
                 user_id=current_user.id,
-                keyword=form.keyword.data.strip(),
-                category=form.category.data.strip(),
-                priority=form.priority.data,
-                is_regex=form.is_regex.data
+                keyword=keyword.strip(),
+                category=category.strip(),
+                priority=priority,
+                is_regex=form.is_regex.data or False
             )
             
             if success:

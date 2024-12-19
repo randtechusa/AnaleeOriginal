@@ -3,10 +3,19 @@
 This module handles all rule-related functionality with strict environment separation
 and data protection mechanisms.
 """
+import logging
+import os
 from flask import Blueprint, current_app
+from flask_login import login_required
 
-# Create blueprint with strict environment separation
+logger = logging.getLogger(__name__)
+
+# Create blueprint with strict environment separation and protection
 rules = Blueprint('rules', __name__, url_prefix='/rules')
+
+# Enhanced environment protection
+PROTECT_DATA = os.environ.get('PROTECT_DATA', 'true').lower() == 'true'
+PROTECT_CHART_OF_ACCOUNTS = os.environ.get('PROTECT_CHART_OF_ACCOUNTS', 'true').lower() == 'true'
 
 # Define protected routes for production environment
 protected_routes = [
@@ -17,7 +26,7 @@ protected_routes = [
     'rules.update_priority'
 ]
 
-# Import views
+# Import views after blueprint creation
 from .routes import (
     manage_rules,
     create_rule,
@@ -25,19 +34,25 @@ from .routes import (
     update_priority
 )
 
-# Register routes with proper error handling
-def init_blueprint(blueprint):
-    """Initialize blueprint routes with protection"""
+def init_routes():
+    """Initialize routes with proper environment protection"""
     try:
-        blueprint.add_url_rule('/', view_func=manage_rules, methods=['GET'])
-        blueprint.add_url_rule('/create', view_func=create_rule, methods=['GET', 'POST'])
-        blueprint.add_url_rule('/<int:rule_id>/toggle', view_func=toggle_rule, methods=['POST'])
-        blueprint.add_url_rule('/<int:rule_id>/priority', view_func=update_priority, methods=['POST'])
-        
-        current_app.logger.info("Rules blueprint routes registered successfully")
-    except Exception as e:
-        current_app.logger.error(f"Failed to register rules blueprint routes: {str(e)}")
-        raise
+        # Verify environment protection
+        if current_app.config.get('ENV') == 'production':
+            if not current_app.config.get('PROTECT_DATA'):
+                logger.error("Data protection not enabled in production")
+                return False
 
-# Initialize routes
-init_blueprint(rules)
+        # Register routes with proper error handling
+        rules.add_url_rule('/', view_func=manage_rules, methods=['GET'])
+        rules.add_url_rule('/create', view_func=create_rule, methods=['GET', 'POST'])
+        rules.add_url_rule('/<int:rule_id>/toggle', view_func=toggle_rule, methods=['POST'])
+        rules.add_url_rule('/<int:rule_id>/priority', view_func=update_priority, methods=['POST'])
+        
+        logger.info("Rules blueprint routes registered successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to register rules blueprint routes: {str(e)}")
+        return False
+
+# Initialize routes with protection - moved to app.py for proper app context
