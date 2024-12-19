@@ -1,4 +1,3 @@
-import re
 import logging
 import os
 from datetime import datetime, timedelta
@@ -7,22 +6,15 @@ from typing import Dict, List, Optional
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from sqlalchemy import text
-from models import db, User, Account, Transaction, UploadedFile, CompanySettings, KeywordRule
+from models import User, Account, Transaction, UploadedFile, CompanySettings
+from app import db
 import pandas as pd
 import time
-from predictive_utils import PredictiveEngine, find_similar_transactions, suggest_explanation, TEXT_THRESHOLD
-
-# Configure logging
-logger = logging.getLogger(__name__)
-
-# Initialize blueprint
-main = Blueprint('main', __name__)
+from predictive_utils import PredictiveEngine, find_similar_transactions, TEXT_THRESHOLD
 # Enable AI functionality for analysis
 
 logger = logging.getLogger(__name__)
 main = Blueprint('main', __name__)
-# Initialize rule manager
-rule_manager = RuleManager()
 
 def process_uploaded_file(file, status):
     """Process the uploaded file and return dataframe and total rows."""
@@ -800,175 +792,36 @@ def expense_forecast():
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
         
-
-@main.route('/rules', methods=['GET', 'POST'])
-@login_required
-def manage_rules():
-    """Manage user-defined rules with strict protection"""
-    try:
-        # Initialize rule manager with protection
-        rule_manager = RuleManager()
+        fy_dates = company_settings.get_financial_year()
+        start_date = fy_dates['start_date']
+        end_date = fy_dates['end_date']
         
-        if request.method == 'POST':
-            # Only allow rule creation in development or if explicitly allowed
-            if current_app.config.get('ENV') == 'production' and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-                flash('Rule creation is disabled in production environment')
-                return redirect(url_for('main.manage_rules'))
-            
-            # Get form data
-            keyword = request.form.get('keyword', '').strip()
-            category = request.form.get('category', '').strip()
-            is_regex = request.form.get('is_regex', 'false').lower() == 'true'
-            priority = int(request.form.get('priority', 1))
-            
-            # Validate input
-            if not all([keyword, category]):
-                flash('Keyword and category are required')
-                return redirect(url_for('main.manage_rules'))
-            
-            # Add rule with user_id for proper isolation
-            success = rule_manager.add_rule(
-                user_id=current_user.id,
-                keyword=keyword,
-                category=category,
-                priority=priority,
-                is_regex=is_regex
-            )
-            
-            if success:
-                flash('Rule added successfully')
-            else:
-                flash('Error adding rule')
-            
-            return redirect(url_for('main.manage_rules'))
+        transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.date.between(start_date, end_date)
+        ).order_by(Transaction.date.desc()).all()
         
-        # Get active rules for display
-        active_rules = rule_manager.get_active_rules(user_id=current_user.id)
+        transaction_data = [{
+            'amount': t.amount,
+            'description': t.description,
+            'date': t.date.strftime('%Y-%m-%d'),
+            'account_name': t.account.name if t.account else 'Uncategorized'
+        } for t in transactions]
         
-        # Get available categories from accounts
-        categories = [acc.category for acc in Account.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).distinct(Account.category)]
+        return render_template('expense_forecast.html', 
+                             transactions=transaction_data,
+                             start_date=start_date.strftime('%Y-%m-%d'),
+                             end_date=end_date.strftime('%Y-%m-%d'))
         
-        return render_template('rules_management.html',
-                             rules=active_rules,
-                             categories=categories,
-                             is_production=current_app.config.get('ENV') == 'production')
-                             
     except Exception as e:
-        logger.error(f"Error in rules management: {str(e)}")
-        flash('Error accessing rules management')
+        logger.error(f"Error in expense forecast: {str(e)}")
+        flash('Error generating expense forecast')
         return redirect(url_for('main.dashboard'))
-
-@main.route('/rules/<int:rule_id>/deactivate', methods=['POST'])
-@login_required
-def deactivate_rule(rule_id):
-    """Deactivate a rule instead of deleting it"""
-    try:
-        rule_manager = RuleManager()
-        if rule_manager.deactivate_rule(rule_id):
-            flash('Rule deactivated successfully')
-        else:
-            flash('Error deactivating rule')
-    except Exception as e:
-        logger.error(f"Error deactivating rule: {str(e)}")
-        flash('Error deactivating rule')
-    return redirect(url_for('main.manage_rules'))
-
-@main.route('/rules/<int:rule_id>/priority', methods=['POST'])
-@login_required
-def update_rule_priority(rule_id):
-    """Update rule priority"""
-    try:
-        new_priority = request.form.get('priority', type=int)
-        if new_priority is None:
-            flash('Invalid priority value')
-            return redirect(url_for('main.manage_rules'))
-            
-        rule_manager = RuleManager()
-        if rule_manager.update_rule_priority(rule_id, new_priority):
-            flash('Rule priority updated successfully')
-        else:
-            flash('Error updating rule priority')
-    except Exception as e:
-        logger.error(f"Error updating rule priority: {str(e)}")
-        flash('Error updating rule priority')
-    return redirect(url_for('main.manage_rules'))
-
-@main.route('/rules/create', methods=['POST'])
-@login_required
-def create_rule():
-        """Create a new keyword rule."""
-        try:
-            # Get form data
-            keyword = request.form.get('keyword', '').strip()
-            category = request.form.get('category', '').strip()
-            priority = int(request.form.get('priority', 1))
-            is_regex = bool(request.form.get('is_regex', False))
-            
-            # Validate input
-            if not keyword or not category:
-                flash('Keyword and category are required')
-                return redirect(url_for('main.rules_management'))
-                
-            # Add rule using service layer
-            success = rule_manager.add_rule(
-                user_id=current_user.id,
-                keyword=keyword,
-                category=category,
-                priority=priority,
-                is_regex=is_regex
-            )
-            
-            if success:
-                flash('Rule created successfully')
-            else:
-                flash('Error creating rule')
-                
-        except Exception as e:
-            logger.error(f"Error creating rule: {str(e)}")
-            flash('Error creating rule')
-            
-        return redirect(url_for('main.rules_management'))
-        
-    
-start_date = fy_dates['start_date']
-end_date = fy_dates['end_date']
-
-transactions = Transaction.query.filter(
-    Transaction.user_id == current_user.id,
-    Transaction.date.between(start_date, end_date)
-).order_by(Transaction.date.desc()).all()
 
 @main.route('/api/suggest-explanation', methods=['POST'])
 @login_required
 def suggest_explanation_api():
     """API endpoint for ESF (Explanation Suggestion Feature)"""
-    try:
-        data = request.get_json()
-        description = data.get('description', '').strip()
-        
-        if not description:
-            return jsonify({'error': 'Description is required'}), 400
-            
-        similar_transactions = find_similar_transactions(
-            description,
-            Transaction.query.filter(
-                Transaction.user_id == current_user.id,
-                Transaction.explanation.isnot(None)
-            ).all()
-        )
-        
-        suggestion = suggest_explanation(description, similar_transactions)
-        return jsonify({
-            'success': True,
-            'suggestion': suggestion
-        })
-        
-    except Exception as e:
-        logger.error(f"Error in ESF: {str(e)}")
-        return jsonify({'error': str(e)}), 500
     try:
         data = request.get_json()
         description = data.get('description', '').strip()

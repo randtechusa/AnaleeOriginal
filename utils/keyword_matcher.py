@@ -6,9 +6,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 class KeywordMatcher:
-    def __init__(self, rule_manager=None):
-        from utils.rule_manager import RuleManager
-        self.rule_manager = rule_manager if rule_manager else RuleManager()
+    def __init__(self):
+        self.rule_manager = RuleManager()
         self.category_keywords = defaultdict(set)
         self.custom_rules = []
         self._load_rules()

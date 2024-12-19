@@ -1,9 +1,7 @@
 from typing import List, Dict, Optional
 import re
-import os
 import logging
 from datetime import datetime
-from flask import current_app
 from sqlalchemy.exc import SQLAlchemyError
 from models import db, KeywordRule
 
@@ -16,50 +14,24 @@ class RuleManager:
         self._cached_rules = None
         self._cache_timestamp = None
         self.cache_lifetime = 300  # 5 minutes cache lifetime
-        self.is_production = os.environ.get('FLASK_ENV') == 'production'
-        self.protect_data = True  # Always protect data in both environments
         
-        # Configure strict logging for audit trail
-        self.logger = logging.getLogger(__name__)
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            ))
-            self.logger.addHandler(handler)
-            self.logger.setLevel(logging.INFO)
-        
-    def add_rule(self, user_id: int, keyword: str, category: str, priority: int = 1,
+    def add_rule(self, keyword: str, category: str, priority: int = 1,
                  is_regex: bool = False, is_active: bool = True) -> bool:
         """
         Add a new keyword rule to the database
         Returns True if successful, False otherwise
         """
         try:
-            # Environment protection check
-            if self.is_production and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
-                self.logger.warning(
-                    "Rule creation blocked in production environment. "
-                    "Use development environment for testing."
-                )
-                return False
-                
-            # Validate input data
-            if not all([user_id, keyword, category]):
-                self.logger.error("Missing required fields for rule creation")
-                return False
-                
             # Validate regex pattern if applicable
             if is_regex:
                 try:
                     re.compile(keyword)
                 except re.error as e:
-                    self.logger.error(f"Invalid regex pattern '{keyword}': {str(e)}")
+                    logger.error(f"Invalid regex pattern '{keyword}': {str(e)}")
                     return False
             
             # Create new rule
             rule = KeywordRule(
-                user_id=user_id,
                 keyword=keyword.lower().strip(),
                 category=category.strip(),
                 priority=priority,
@@ -76,29 +48,19 @@ class RuleManager:
             return True
             
         except SQLAlchemyError as e:
-            self.logger.error(f"Database error adding rule: {str(e)}")
+            logger.error(f"Database error adding rule: {str(e)}")
             db.session.rollback()
             return False
             
-    def get_active_rules(self, user_id: int) -> List[Dict]:
-        """Get all active rules for a specific user with caching"""
-        if not user_id:
-            self.logger.error("User ID required for rule retrieval")
-            return []
-            
-        # Check environment and data protection settings
-        if self.protect_data:
-            self.logger.info(f"Retrieving rules for user {user_id} with data protection enabled")
-            
-        # Use cache if available and valid
+    def get_active_rules(self) -> List[Dict]:
+        """Get all active rules with caching"""
         if (self._cached_rules is not None and 
             self._cache_timestamp is not None and
             (datetime.utcnow() - self._cache_timestamp).total_seconds() < self.cache_lifetime):
-            # Filter cached rules by user_id for security
-            return [rule for rule in self._cached_rules if rule.get('user_id') == user_id]
+            return self._cached_rules
             
         try:
-            rules = KeywordRule.query.filter_by(user_id=user_id, is_active=True).order_by(
+            rules = KeywordRule.query.filter_by(is_active=True).order_by(
                 KeywordRule.priority.desc()
             ).all()
             

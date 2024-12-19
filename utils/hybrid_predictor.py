@@ -2,10 +2,8 @@ from typing import List, Dict, Optional, Tuple
 import logging
 from .pattern_matching import PatternMatcher
 from .keyword_matcher import KeywordMatcher
-from .account_usage_analyzer import AccountUsageAnalyzer
 from ai_utils import predict_account, calculate_text_similarity
 import time
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +11,6 @@ class HybridPredictor:
     def __init__(self):
         self.pattern_matcher = PatternMatcher()
         self.keyword_matcher = KeywordMatcher()
-        self.usage_analyzer = AccountUsageAnalyzer()
         self.confidence_threshold = 0.85
         self.use_ai_threshold = 0.7
         self._initialize_keyword_rules()
@@ -77,37 +74,11 @@ class HybridPredictor:
                 })
             
             # Enhanced decision making for AI routing
-            # Enhanced pattern confidence calculation with usage analysis
             pattern_confidence = max((s.get('confidence', 0) for s in combined), default=0)
             pattern_reliability = max(
                 (s.get('pattern_confidence', {}).get('reliability_score', 0) 
                  for s in combined), default=0
             )
-            
-            # Add statistical usage pattern analysis if account suggestions exist
-            for suggestion in combined:
-                if 'account' in suggestion:
-                    try:
-                        usage_analysis = self.usage_analyzer.analyze_account_usage(
-                            suggestion['account'],
-                            start_date=datetime.utcnow() - timedelta(days=90)  # Last 90 days
-                        )
-                        
-                        if usage_analysis['status'] == 'success':
-                            suggestion['usage_patterns'] = {
-                                'confidence': usage_analysis['confidence_score'],
-                                'frequency': usage_analysis['usage_frequency']['frequency_type'],
-                                'amount_pattern': usage_analysis['amount_patterns']['pattern_detected'],
-                                'temporal_pattern': usage_analysis['temporal_patterns']['pattern_detected']
-                            }
-                            # Adjust confidence based on usage patterns
-                            if usage_analysis['confidence_score'] > 0.7:
-                                suggestion['confidence'] = min(
-                                    1.0,
-                                    suggestion['confidence'] + usage_analysis['confidence_score'] * 0.2
-                                )
-                    except Exception as e:
-                        logger.error(f"Error analyzing account usage patterns: {str(e)}")
             
             # Smart routing logic
             should_use_ai = (
