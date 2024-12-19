@@ -816,7 +816,7 @@ def financial_insights():
                              financial_advice=financial_advice)
                              
     except Exception as e:
-        logger.error(f"Error in financial insights: {str(e)}")
+        logger.error(f"Error in financialinsights: {str(e)}")
         flash('Error generating financial insights')
         return redirect(url_for('main.dashboard'))
 
@@ -1043,28 +1043,47 @@ SEMANTIC_THRESHOLD = 0.7
 def icountant_interface():
     """Interactive AI agent for guided double-entry accounting with real-time insights."""
     try:
-        # Get unprocessed transactions
-        transactions = Transaction.query.filter_by(
+        logger.info(f"Starting iCountant interface for user {current_user.id}")
+
+        # First check if user has any transactions at all
+        total_transactions = Transaction.query.filter_by(user_id=current_user.id).count()
+        logger.info(f"Total transactions for user {current_user.id}: {total_transactions}")
+
+        if total_transactions == 0:
+            flash('Please upload some transactions first before using iCountant.', 'info')
+            return redirect(url_for('main.upload'))
+
+        # Get unprocessed transactions with detailed logging
+        unprocessed_query = Transaction.query.filter_by(
             user_id=current_user.id,
             account_id=None
-        ).order_by(Transaction.date).all()
+        ).order_by(Transaction.date)
+
+        transactions = unprocessed_query.all()
+        logger.info(f"Found {len(transactions)} unprocessed transactions for user {current_user.id}")
 
         # Get progress counts
-        total_count = Transaction.query.filter_by(user_id=current_user.id).count()
+        total_count = total_transactions
         processed_count = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.account_id.isnot(None)
         ).count()
+        logger.info(f"Progress: {processed_count}/{total_count} transactions processed")
 
         if not transactions:
-            flash('No transactions available for processing')
+            if processed_count == total_count:
+                flash('All transactions have been processed. Upload new transactions to continue.', 'success')
+            else:
+                flash('No unprocessed transactions found. Please check your data.', 'info')
             return redirect(url_for('main.dashboard'))
 
         # Get available accounts for the user
         accounts = Account.query.filter_by(
             user_id=current_user.id,
             is_active=True
-        ).all()
+        ).order_by(Account.category, Account.name).all()
+
+        logger.info(f"Found {len(accounts)} active accounts for user {current_user.id}")
 
         account_list = [
             {'name': acc.name, 'category': acc.category, 'id': acc.id}
@@ -1111,6 +1130,7 @@ def icountant_interface():
                 'amount': float(current_transaction.amount),
                 'description': current_transaction.description
             })
+            logger.info(f"Processing transaction {current_transaction.id}: {current_transaction.description}")
         else:
             message, transaction_info = 'No transactions available', {}
 
@@ -1126,7 +1146,7 @@ def icountant_interface():
 
     except Exception as e:
         logger.error(f"Error in iCountant interface: {str(e)}")
-        flash('Error processing transactions')
+        flash('Error processing transactions. Please try again.', 'error')
         return redirect(url_for('main.dashboard'))
 
 class ICountant:
