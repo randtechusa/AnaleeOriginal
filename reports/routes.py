@@ -1,7 +1,7 @@
 import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
-from models import Transaction, Account, CompanySettings
+from models import db, Transaction, Account, CompanySettings
 from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.sql import func
@@ -40,11 +40,20 @@ def cashbook():
         else:
             to_date = fy_dates['end_date']
             
-        # Ensure dates are within financial year
-        if from_date < fy_dates['start_date']:
-            from_date = fy_dates['start_date']
-        if to_date > fy_dates['end_date']:
-            to_date = fy_dates['end_date']
+        # Get the earliest and latest transaction dates
+        date_range = db.session.query(
+            func.min(Transaction.date).label('min_date'),
+            func.max(Transaction.date).label('max_date')
+        ).filter(Transaction.user_id == current_user.id).first()
+
+        min_date = date_range.min_date or fy_dates['start_date']
+        max_date = date_range.max_date or fy_dates['end_date']
+
+        # Use provided dates or default to full range
+        if not from_date:
+            from_date = min_date
+        if not to_date:
+            to_date = max_date
             
         # Get transactions for the specified period
         transactions = Transaction.query.filter(
@@ -57,7 +66,9 @@ def cashbook():
                              start_date=from_date,
                              end_date=to_date,
                              fy_start_date=fy_dates['start_date'],
-                             fy_end_date=fy_dates['end_date'])
+                             fy_end_date=fy_dates['end_date'],
+                             min_date=min_date,
+                             max_date=max_date)
                              
     except Exception as e:
         logger.error(f"Error generating cashbook report: {str(e)}")

@@ -13,15 +13,15 @@
                     <label for="from_date" class="form-label">From Date</label>
                     <input type="date" class="form-control" id="from_date" name="from_date" 
                            value="{{ request.args.get('from_date', start_date.strftime('%Y-%m-%d')) }}"
-                           min="{{ fy_start_date.strftime('%Y-%m-%d') }}" 
-                           max="{{ fy_end_date.strftime('%Y-%m-%d') }}">
+                           min="{{ min_date.strftime('%Y-%m-%d') }}" 
+                           max="{{ max_date.strftime('%Y-%m-%d') }}">
                 </div>
                 <div class="col-md-4">
                     <label for="to_date" class="form-label">To Date</label>
                     <input type="date" class="form-control" id="to_date" name="to_date" 
                            value="{{ request.args.get('to_date', end_date.strftime('%Y-%m-%d')) }}"
-                           min="{{ fy_start_date.strftime('%Y-%m-%d') }}" 
-                           max="{{ fy_end_date.strftime('%Y-%m-%d') }}">
+                           min="{{ min_date.strftime('%Y-%m-%d') }}" 
+                           max="{{ max_date.strftime('%Y-%m-%d') }}">
                 </div>
                 <div class="col-md-4">
                     <button type="submit" class="btn btn-primary">Filter</button>
