@@ -806,7 +806,7 @@ def financial_insights():
                 'projected_trend': '',
                 'key_drivers': [],
                 'improvement_suggestions': []
-            }
+                    }
         })
         
         return render_template('financial_insights.html',
@@ -1053,14 +1053,21 @@ def icountant_interface():
             flash('Please upload some transactions first before using iCountant.', 'info')
             return redirect(url_for('main.upload'))
 
-        # Get unprocessed transactions with detailed logging
+        # Get both processed and unprocessed transactions
         unprocessed_query = Transaction.query.filter_by(
             user_id=current_user.id,
             account_id=None
         ).order_by(Transaction.date)
 
-        transactions = unprocessed_query.all()
-        logger.info(f"Found {len(transactions)} unprocessed transactions for user {current_user.id}")
+        processed_query = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.account_id.isnot(None)
+        ).order_by(Transaction.date.desc()).limit(5)  # Show last 5 processed transactions
+
+        unprocessed_transactions = unprocessed_query.all()
+        recently_processed = processed_query.all()
+
+        logger.info(f"Found {len(unprocessed_transactions)} unprocessed transactions for user {current_user.id}")
 
         # Get progress counts
         total_count = total_transactions
@@ -1069,13 +1076,6 @@ def icountant_interface():
             Transaction.account_id.isnot(None)
         ).count()
         logger.info(f"Progress: {processed_count}/{total_count} transactions processed")
-
-        if not transactions:
-            if processed_count == total_count:
-                flash('All transactions have been processed. Upload new transactions to continue.', 'success')
-            else:
-                flash('No unprocessed transactions found. Please check your data.', 'info')
-            return redirect(url_for('main.dashboard'))
 
         # Get available accounts for the user
         accounts = Account.query.filter_by(
@@ -1121,7 +1121,7 @@ def icountant_interface():
                     return redirect(url_for('main.icountant_interface'))
 
         # Get the next unprocessed transaction
-        current_transaction = transactions[0] if transactions else None
+        current_transaction = unprocessed_transactions[0] if unprocessed_transactions else None
 
         # Process it through iCountant with insights
         if current_transaction:
@@ -1132,7 +1132,10 @@ def icountant_interface():
             })
             logger.info(f"Processing transaction {current_transaction.id}: {current_transaction.description}")
         else:
-            message, transaction_info = 'No transactions available', {}
+            message = 'All transactions have been processed. You can:'
+            message += '\n1. Upload new transactions'
+            message += '\n2. View your processed transactions below'
+            transaction_info = {}
 
         return render_template(
             'icountant.html',
@@ -1141,7 +1144,8 @@ def icountant_interface():
             transaction_info=transaction_info,
             accounts=accounts,
             total_count=total_count,
-            processed_count=processed_count
+            processed_count=processed_count,
+            recently_processed=recently_processed
         )
 
     except Exception as e:
