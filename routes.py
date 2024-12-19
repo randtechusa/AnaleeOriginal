@@ -307,7 +307,7 @@ def company_settings():
 @login_required
 def analyze(file_id):
     logger.info(f"Starting analysis for file_id: {file_id} for user {current_user.id}")
-    
+
     try:
         # Verify database connection first
         try:
@@ -318,138 +318,73 @@ def analyze(file_id):
             db.session.rollback()
             flash('Unable to connect to database. Please try again.')
             return redirect(url_for('main.upload'))
-        
+
         # Load file and verify ownership with detailed logging
         file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first()
         logger.info(f"Database query completed. File found: {file is not None}")
-        
+
         if not file:
             logger.error(f"File {file_id} not found or unauthorized access for user {current_user.id}")
             flash('File not found or unauthorized access')
             return redirect(url_for('main.upload'))
-        
+
         # Load transactions with proper error handling
         try:
             transactions = Transaction.query.filter_by(
                 file_id=file_id,
-                user_id=current_user.id
+                user_id=current_user.id,
+                account_id=None  # Only get unprocessed transactions
             ).order_by(Transaction.date).all()
-            
+
+            if not transactions:
+                logger.info(f"No unprocessed transactions found for file {file_id}")
+                flash('No transactions available for processing')
+                return redirect(url_for('main.upload'))
+
             logger.info(f"Successfully loaded {len(transactions)} transactions for file {file_id}")
-            
+
             # Load accounts for the user
             accounts = Account.query.filter_by(
                 user_id=current_user.id,
                 is_active=True
             ).all()
-            
+
+            if not accounts:
+                logger.warning(f"No active accounts found for user {current_user.id}")
+                flash('Please set up your Chart of Accounts first')
+                return redirect(url_for('main.settings'))
+
             logger.info(f"Successfully loaded {len(accounts)} active accounts for user {current_user.id}")
-            
+
+            # Process transactions
+            transaction_insights = {}
+            for transaction in transactions:
+                # Generate insights using pattern matching and AI
+                transaction_insights[transaction.id] = {
+                    'similar_transactions': [],  # Will be populated by AI
+                    'pattern_matches': [],
+                    'keyword_matches': [],
+                    'rule_matches': [],
+                    'explanation_suggestion': None,
+                    'confidence': 0,
+                    'ai_processed': False
+                }
+
             return render_template(
                 'analyze.html',
                 file=file,
                 transactions=transactions,
                 accounts=accounts,
+                transaction_insights=transaction_insights,
                 ai_available=True
             )
-            
+
         except Exception as tx_error:
             logger.error(f"Error loading transactions: {str(tx_error)}")
             db.session.rollback()
             flash('Error loading transaction data. Please try again.')
             return redirect(url_for('main.upload'))
-        
-        logger.info(f"Successfully found file: {file.filename} for user {current_user.id}")
-        
-        # Load active accounts
-        accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
-        
-        # Load transactions with enhanced error handling
-        try:
-            transactions = Transaction.query.filter_by(
-                file_id=file_id, 
-                user_id=current_user.id
-            ).order_by(Transaction.date).all()
-            
-            if not transactions:
-                logger.warning(f"No transactions found for file {file_id} for user {current_user.id}")
-                flash('No transactions found in this file')
-                return redirect(url_for('main.upload'))
-                
-            logger.info(f"Successfully loaded {len(transactions)} transactions for analysis")
-            
-        except Exception as db_error:
-            logger.error(f"Database error loading transactions for file {file_id}: {str(db_error)}")
-            flash('Error loading transactions from database')
-            return redirect(url_for('main.upload'))
-        
-        # Generate transaction insights using pattern matching
-        transaction_insights = {}
-        predictive_engine = PredictiveEngine()
-        
-        for transaction in transactions:
-            # Find patterns and similar transactions
-            similar_transactions = find_similar_transactions(
-                transaction.description,
-                Transaction.query.filter(
-                    Transaction.user_id == current_user.id,
-                    Transaction.explanation.isnot(None),
-                    Transaction.id != transaction.id
-                ).all()
-            )
-            
-            # Get hybrid suggestions using both pattern matching and AI
-            suggestions = predictive_engine.get_hybrid_suggestions(
-                transaction.description,
-                transaction.amount,
-                current_user.id,
-                accounts
-            )
-            
-            transaction_insights[transaction.id] = {
-                'similar_transactions': similar_transactions,
-                'pattern_matches': suggestions.get('pattern_matches', []),
-                'keyword_matches': suggestions.get('keyword_matches', []),
-                'rule_matches': suggestions.get('rule_matches', []),
-                'explanation_suggestion': None,
-                'confidence': max([m['similarity'] for m in similar_transactions], default=0),
-                'ai_processed': False
-            }
-            
-            # Get best explanation suggestion from similar transactions
-            if similar_transactions:
-                best_match = max(similar_transactions, key=lambda x: x['similarity'])
-                if best_match['similarity'] >= TEXT_THRESHOLD:
-                    transaction_insights[transaction.id]['explanation_suggestion'] = \
-                        best_match['transaction'].explanation
-            
-        if request.method == 'POST':
-            try:
-                for transaction in transactions:
-                    explanation_key = f'explanation_{transaction.id}'
-                    account_key = f'account_{transaction.id}'
-                    
-                    if explanation_key in request.form:
-                        transaction.explanation = request.form[explanation_key]
-                    if account_key in request.form and request.form[account_key]:
-                        transaction.account_id = int(request.form[account_key])
-                        
-                db.session.commit()
-                flash('Changes saved successfully', 'success')
-            except Exception as e:
-                logger.error(f"Error saving changes: {str(e)}")
-                db.session.rollback()
-                flash('Error saving changes', 'error')
-        
-        return render_template(
-            'analyze.html',
-            file=file,
-            accounts=accounts,
-            transactions=transactions,
-            bank_account_id=request.form.get('bank_account', type=int) or request.args.get('bank_account', type=int),
-            transaction_insights=transaction_insights
-        )
-        
+
     except Exception as e:
         logger.error(f"Error in analyze route: {str(e)}")
         flash('Error loading transaction data')
