@@ -15,17 +15,39 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
     ENV = 'production'
+    PROTECT_PRODUCTION = True
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
     
-    # Production-specific settings
+    # Enhanced production security settings
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    PERMANENT_SESSION_LIFETIME = 1800  # 30 minutes
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    
+    # Production-specific database settings
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 5,
         'pool_timeout': 30,
         'pool_recycle': 300,
-        'pool_pre_ping': True
+        'pool_pre_ping': True,
+        'connect_args': {
+            'sslmode': 'require',
+            'connect_timeout': 10,
+            'application_name': 'financial_app_prod'
+        }
     }
+    
+    @classmethod
+    def init_app(cls, app):
+        """Production-specific initialization"""
+        Config.init_app(app)
+        
+        # Prevent modifications in production
+        if cls.PROTECT_PRODUCTION:
+            app.config['PREVENT_MODIFICATIONS'] = True
+            app.config['CHARTS_OF_ACCOUNTS_PROTECTED'] = True
     
     @classmethod
     def init_app(cls, app):

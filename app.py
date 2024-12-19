@@ -95,10 +95,13 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         # Initialize Flask application
         app = Flask(__name__)
         
-        # Force production mode if not explicitly set to development
-        if env != 'development':
+        # Strict environment handling
+        if env not in ['development', 'production', 'testing']:
             env = 'production'
-            logger.warning("No environment specified, defaulting to production for safety")
+            logger.warning("Invalid environment specified, defaulting to production for safety")
+        elif env == 'development' and os.environ.get('FLASK_ENV') != 'development':
+            env = 'production'
+            logger.warning("Development mode blocked in non-development environment")
         
         logger.info(f"Starting Flask application initialization in {env} environment...")
         
