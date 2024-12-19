@@ -104,9 +104,19 @@ class ICountant:
         Returns: (message_to_user, transaction_info)
         """
         try:
+            # Initial validation
+            if not transaction:
+                return "No transaction data provided", None
+
             # Validate transaction data
             if not isinstance(transaction, dict):
                 return "Invalid transaction data format", None
+
+            # Validate required fields
+            if 'amount' not in transaction:
+                return "Transaction amount is required", None
+            if 'description' not in transaction:
+                return "Transaction description is required", None
 
             # Validate and convert amount
             is_valid, amount, message = self.validate_amount(transaction.get('amount'))
