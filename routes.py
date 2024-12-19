@@ -509,20 +509,27 @@ def dashboard():
     earliest_transaction = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date).first()
     latest_transaction = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).first()
     
+    # Initialize current_date
+    current_date = datetime.utcnow()
     selected_year = request.args.get('year', type=int)
+    
     if not selected_year and earliest_transaction:
         # Default to the year of the earliest transaction
         if earliest_transaction.date.month > company_settings.financial_year_end:
             selected_year = earliest_transaction.date.year
+            current_date = earliest_transaction.date
         else:
             selected_year = earliest_transaction.date.year - 1
+            current_date = earliest_transaction.date
     elif not selected_year:
         # If no transactions exist, use current year
-        current_date = datetime.utcnow()
         if current_date.month > company_settings.financial_year_end:
             selected_year = current_date.year
         else:
             selected_year = current_date.year - 1
+    else:
+        # If year is selected, create a date object for that year
+        current_date = datetime(selected_year, company_settings.financial_year_end, 1)
     
     fy_dates = company_settings.get_financial_year(current_date)
     start_date = fy_dates['start_date']
