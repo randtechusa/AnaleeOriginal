@@ -2,43 +2,122 @@
 
 {% block content %}
 <div class="container mt-4">
+    {% if config.get('ENV') == 'production' %}
+    <div class="alert alert-warning" role="alert">
+        <i class="fas fa-exclamation-triangle"></i> Production Environment
+        <br><small>Changes made here will affect live data. Proceed with caution.</small>
+    </div>
+    {% elif config.get('ENV') == 'development' %}
+    <div class="alert alert-info" role="alert">
+        <i class="fas fa-code"></i> Development Environment
+        <br><small>Changes made here will not affect production data.</small>
+    </div>
+    {% endif %}
+
     <div class="row justify-content-center">
         <div class="col-md-8">
             <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Create New Rule</h3>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title mb-0">Create New Rule</h3>
+                    <a href="{{ url_for('rules.manage_rules') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Rules
+                    </a>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('rules.create_rule') }}">
-                        <div class="form-group">
-                            <label for="pattern">Pattern</label>
-                            <input type="text" class="form-control" id="pattern" name="pattern" required
-                                   placeholder="Enter pattern (e.g., 'fuel|gas|petrol')">
+                    <form method="POST" action="{{ url_for('rules.create_rule') }}" id="createRuleForm" novalidate>
+                        {{ form.csrf_token }}
+                        
+                        <div class="mb-3">
+                            <label for="keyword" class="form-label">Pattern/Keyword</label>
+                            <div class="input-group">
+                                <input type="text" 
+                                       class="form-control {% if form.keyword.errors %}is-invalid{% endif %}" 
+                                       id="keyword" 
+                                       name="keyword" 
+                                       required
+                                       pattern="^[a-zA-Z0-9\s\|\-_\.]+$"
+                                       placeholder="Enter pattern (e.g., 'fuel|gas|petrol')"
+                                       value="{{ form.keyword.data or '' }}">
+                                <div class="input-group-append">
+                                    <div class="input-group-text">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="is_regex" name="is_regex">
+                                            <label class="form-check-label" for="is_regex">Use Regex</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% if form.keyword.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.keyword.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
                             <small class="form-text text-muted">
-                                Use regular expressions or simple keywords separated by |
+                                Enter keywords separated by | or use regular expressions if enabled
                             </small>
                         </div>
                         
-                        <div class="form-group">
-                            <label for="description">Description</label>
-                            <textarea class="form-control" id="description" name="description" required
-                                    placeholder="Enter rule description"></textarea>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="category">Category</label>
-                            <select class="form-control" id="category" name="category" required>
+                        <div class="mb-3">
+                            <label for="category" class="form-label">Category</label>
+                            <select class="form-select {% if form.category.errors %}is-invalid{% endif %}" 
+                                    id="category" 
+                                    name="category" 
+                                    required>
                                 <option value="">Select a category</option>
-                                <option value="expense">Expense</option>
-                                <option value="income">Income</option>
-                                <option value="transfer">Transfer</option>
-                                <option value="other">Other</option>
+                                {% for category in categories %}
+                                    <option value="{{ category.id }}" 
+                                            {% if category.id in protected_categories %}
+                                            disabled
+                                            data-protected="true"
+                                            {% endif %}
+                                            {% if form.category.data == category.id %}selected{% endif %}>
+                                        {{ category.name }}
+                                        {% if category.id in protected_categories %}
+                                        (Protected)
+                                        {% endif %}
+                                    </option>
+                                {% endfor %}
                             </select>
+                            {% if form.category.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.category.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
                         </div>
                         
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-primary">Create Rule</button>
-                            <a href="{{ url_for('rules.manage_rules') }}" class="btn btn-secondary">Cancel</a>
+                        <div class="mb-3">
+                            <label for="priority" class="form-label">Priority</label>
+                            <input type="number" 
+                                   class="form-control {% if form.priority.errors %}is-invalid{% endif %}" 
+                                   id="priority" 
+                                   name="priority" 
+                                   min="1" 
+                                   max="100" 
+                                   value="{{ form.priority.data or 1 }}"
+                                   required>
+                            {% if form.priority.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.priority.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            <small class="form-text text-muted">
+                                Higher priority rules are evaluated first (1-100)
+                            </small>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Create Rule
+                            </button>
+                            <a href="{{ url_for('rules.manage_rules') }}" class="btn btn-outline-secondary">
+                                Cancel
+                            </a>
                         </div>
                     </form>
                 </div>
@@ -46,4 +125,57 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('createRuleForm');
+    const isRegexCheckbox = document.getElementById('is_regex');
+    const keywordInput = document.getElementById('keyword');
+    const categorySelect = document.getElementById('category');
+    
+    // Toggle pattern validation based on regex mode
+    isRegexCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            keywordInput.pattern = '';  // Remove pattern restriction for regex
+            keywordInput.placeholder = 'Enter regex pattern (e.g., "^fuel|gas|petrol$")';
+        } else {
+            keywordInput.pattern = '^[a-zA-Z0-9\\s\\|\\-_\\.]+$';
+            keywordInput.placeholder = 'Enter pattern (e.g., "fuel|gas|petrol")';
+        }
+    });
+    
+    // Form validation
+    form.addEventListener('submit', function(event) {
+        if (!form.checkValidity()) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        
+        // Additional validation for protected categories
+        const selectedOption = categorySelect.options[categorySelect.selectedIndex];
+        if (selectedOption.dataset.protected === 'true') {
+            event.preventDefault();
+            alert('Cannot create rules for protected categories');
+        }
+        
+        form.classList.add('was-validated');
+    });
+    
+    // Live pattern validation
+    keywordInput.addEventListener('input', function() {
+        if (!isRegexCheckbox.checked) {
+            const isValid = new RegExp(this.pattern).test(this.value);
+            if (isValid) {
+                this.classList.remove('is-invalid');
+                this.classList.add('is-valid');
+            } else {
+                this.classList.remove('is-valid');
+                this.classList.add('is-invalid');
+            }
+        }
+    });
+});
+</script>
 {% endblock %}
