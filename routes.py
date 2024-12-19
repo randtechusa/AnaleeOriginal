@@ -800,30 +800,105 @@ def expense_forecast():
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
         
-        fy_dates = company_settings.get_financial_year()
-    rule_manager = RuleManager()
-    
-    @main.route('/rules', methods=['GET'])
-    @login_required
-    def rules_management():
-        """Display rules management interface."""
-        try:
-            # Get active rules for the current user
-            active_rules = rule_manager.get_active_rules(current_user.id)
-            # Get statistics about rules
-            stats = rule_manager.get_rule_statistics()
+
+@main.route('/rules', methods=['GET', 'POST'])
+@login_required
+def manage_rules():
+    """Manage user-defined rules with strict protection"""
+    try:
+        # Initialize rule manager with protection
+        rule_manager = RuleManager()
+        
+        if request.method == 'POST':
+            # Only allow rule creation in development or if explicitly allowed
+            if current_app.config.get('ENV') == 'production' and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
+                flash('Rule creation is disabled in production environment')
+                return redirect(url_for('main.manage_rules'))
             
-            return render_template('rules_management.html',
-                                rules=active_rules,
-                                stats=stats)
-        except Exception as e:
-            logger.error(f"Error in rules management: {str(e)}")
-            flash('Error loading rules')
-            return redirect(url_for('main.dashboard'))
-    
-    @main.route('/rules/create', methods=['POST'])
-    @login_required
-    def create_rule():
+            # Get form data
+            keyword = request.form.get('keyword', '').strip()
+            category = request.form.get('category', '').strip()
+            is_regex = request.form.get('is_regex', 'false').lower() == 'true'
+            priority = int(request.form.get('priority', 1))
+            
+            # Validate input
+            if not all([keyword, category]):
+                flash('Keyword and category are required')
+                return redirect(url_for('main.manage_rules'))
+            
+            # Add rule with user_id for proper isolation
+            success = rule_manager.add_rule(
+                user_id=current_user.id,
+                keyword=keyword,
+                category=category,
+                priority=priority,
+                is_regex=is_regex
+            )
+            
+            if success:
+                flash('Rule added successfully')
+            else:
+                flash('Error adding rule')
+            
+            return redirect(url_for('main.manage_rules'))
+        
+        # Get active rules for display
+        active_rules = rule_manager.get_active_rules(user_id=current_user.id)
+        
+        # Get available categories from accounts
+        categories = [acc.category for acc in Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).distinct(Account.category)]
+        
+        return render_template('rules_management.html',
+                             rules=active_rules,
+                             categories=categories,
+                             is_production=current_app.config.get('ENV') == 'production')
+                             
+    except Exception as e:
+        logger.error(f"Error in rules management: {str(e)}")
+        flash('Error accessing rules management')
+        return redirect(url_for('main.dashboard'))
+
+@main.route('/rules/<int:rule_id>/deactivate', methods=['POST'])
+@login_required
+def deactivate_rule(rule_id):
+    """Deactivate a rule instead of deleting it"""
+    try:
+        rule_manager = RuleManager()
+        if rule_manager.deactivate_rule(rule_id):
+            flash('Rule deactivated successfully')
+        else:
+            flash('Error deactivating rule')
+    except Exception as e:
+        logger.error(f"Error deactivating rule: {str(e)}")
+        flash('Error deactivating rule')
+    return redirect(url_for('main.manage_rules'))
+
+@main.route('/rules/<int:rule_id>/priority', methods=['POST'])
+@login_required
+def update_rule_priority(rule_id):
+    """Update rule priority"""
+    try:
+        new_priority = request.form.get('priority', type=int)
+        if new_priority is None:
+            flash('Invalid priority value')
+            return redirect(url_for('main.manage_rules'))
+            
+        rule_manager = RuleManager()
+        if rule_manager.update_rule_priority(rule_id, new_priority):
+            flash('Rule priority updated successfully')
+        else:
+            flash('Error updating rule priority')
+    except Exception as e:
+        logger.error(f"Error updating rule priority: {str(e)}")
+        flash('Error updating rule priority')
+    return redirect(url_for('main.manage_rules'))
+
+@main.route('/rules/create', methods=['POST'])
+@login_required
+def create_rule():
         """Create a new keyword rule."""
         try:
             # Get form data
@@ -857,38 +932,7 @@ def expense_forecast():
             
         return redirect(url_for('main.rules_management'))
         
-    @main.route('/rules/<int:rule_id>/deactivate', methods=['POST'])
-    @login_required
-    def deactivate_rule(rule_id):
-        """Deactivate a rule."""
-        try:
-            success = rule_manager.deactivate_rule(rule_id)
-            if success:
-                flash('Rule deactivated successfully')
-            else:
-                flash('Error deactivating rule')
-        except Exception as e:
-            logger.error(f"Error deactivating rule: {str(e)}")
-            flash('Error deactivating rule')
-            
-        return redirect(url_for('main.rules_management'))
-        
-    @main.route('/rules/<int:rule_id>/priority', methods=['POST'])
-    @login_required
-    def update_rule_priority(rule_id):
-        """Update a rule's priority."""
-        try:
-            data = request.get_json()
-            new_priority = int(data.get('priority', 1))
-            
-            success = rule_manager.update_rule_priority(rule_id, new_priority)
-            if success:
-                return jsonify({'status': 'success'})
-            return jsonify({'status': 'error', 'message': 'Failed to update priority'}), 400
-            
-        except Exception as e:
-            logger.error(f"Error updating rule priority: {str(e)}")
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+    
 start_date = fy_dates['start_date']
 end_date = fy_dates['end_date']
 

@@ -48,15 +48,19 @@ class Config:
     }
 
 def verify_database():
-    """Verify database connection and check required tables"""
+    """Verify database connection and protect data integrity"""
     try:
-        logger.info("Verifying database connection...")
+        logger.info("Verifying database connection and protection mechanisms...")
         with db.engine.connect() as conn:
-            # Test basic connection
-            conn.execute(text('SELECT 1'))
-            logger.info("Basic database connection successful")
-            
-            # List existing tables
+            # Test basic connection with timeout
+            try:
+                conn.execute(text('SELECT 1'))
+                logger.info("Basic database connection successful")
+            except Exception as conn_error:
+                logger.error(f"Database connection failed: {str(conn_error)}")
+                return False
+
+            # List and verify existing tables
             tables_query = text("""
                 SELECT tablename 
                 FROM pg_catalog.pg_tables 
@@ -66,41 +70,75 @@ def verify_database():
             existing_tables = [row[0] for row in conn.execute(tables_query)]
             logger.info(f"Existing tables: {existing_tables}")
             
-            # Create tables if they don't exist
+            # Verify environment separation
+            if current_app.config.get('ENV') == 'production':
+                logger.info("Production environment detected - enabling strict protections")
+                if not all([
+                    current_app.config.get('PROTECT_PRODUCTION'),
+                    current_app.config.get('PROTECT_DATA'),
+                    current_app.config.get('PROTECT_CHART_OF_ACCOUNTS'),
+                    current_app.config.get('PROTECT_COMPLETED_FEATURES')
+                ]):
+                    logger.error("Production protection mechanisms not fully enabled")
+                    return False
+            
+            # Create/verify tables with protection
             try:
-                db.create_all()
-                logger.info("Database tables created/verified successfully")
+                # Protect chart of accounts if it exists
+                if 'account' in existing_tables:
+                    logger.info("Chart of accounts found - enabling protection")
+                    if not current_app.config.get('PROTECT_CHART_OF_ACCOUNTS'):
+                        logger.error("Chart of accounts protection not enabled")
+                        return False
                 
-                # Verify each model's table exists
-                for table in db.metadata.tables:
+                # Create missing tables only in development
+                if current_app.config.get('ENV') != 'production':
+                    db.create_all()
+                    logger.info("Database tables verified in development environment")
+                
+                # Verify critical tables
+                protected_tables = current_app.config.get('PROTECTED_TABLES', ['account'])
+                for table in protected_tables:
                     if table not in existing_tables:
-                        logger.warning(f"Table {table} may not have been created properly")
-                    else:
-                        logger.info(f"Table {table} verified")
+                        logger.error(f"Protected table {table} missing")
+                        return False
+                    logger.info(f"Protected table {table} verified")
+                
                 return True
                 
             except Exception as table_error:
-                logger.error(f"Error creating tables: {str(table_error)}")
-                logger.exception("Full table creation error stacktrace:")
+                logger.error(f"Error verifying tables: {str(table_error)}")
+                logger.exception("Full table verification error stacktrace:")
                 return False
             
     except Exception as db_error:
-        logger.error(f"Database connection failed: {str(db_error)}")
-        logger.exception("Full database connection error stacktrace:")
+        logger.error(f"Database verification failed: {str(db_error)}")
+        logger.exception("Full database verification error stacktrace:")
         return False
 
 def create_app(env=os.environ.get('FLASK_ENV', 'production')):
-    """Create and configure the Flask application"""
+    """Create and configure the Flask application with strict environment protection"""
     try:
         # Initialize Flask application
         app = Flask(__name__)
         
-        # Force production mode if not explicitly set to development
+        # Strict environment validation
+        if env not in ['development', 'production', 'testing']:
+            logger.warning("Invalid environment specified, defaulting to production for safety")
+            env = 'production'
+        
+        # Force production mode unless explicitly development
         if env != 'development':
             env = 'production'
-            logger.warning("No environment specified, defaulting to production for safety")
+            logger.info("Production mode enforced for security")
         
-        logger.info(f"Starting Flask application initialization in {env} environment...")
+        logger.info(f"Starting Flask application initialization in {env} environment with protection mechanisms...")
+        
+        # Verify environment separation
+        if env == 'production':
+            if os.environ.get('DEV_DATABASE_URL') == os.environ.get('DATABASE_URL'):
+                logger.error("Critical: Development and production databases cannot be the same")
+                return None
         
         # Load the appropriate configuration
         app.config.from_object(f'config.{env.capitalize()}Config')

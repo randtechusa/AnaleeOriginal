@@ -8,7 +8,27 @@ class Config:
     SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', os.urandom(24).hex())
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     TEMPLATES_AUTO_RELOAD = True
+    
+    # Environment Protection
     PROTECT_PRODUCTION = True  # Global flag to prevent production modifications
+    STRICT_ENV_SEPARATION = True  # Enforce strict environment separation
+    
+    # Data Protection
+    PROTECT_DATA = True  # Protect all data modifications
+    PROTECT_CHART_OF_ACCOUNTS = True  # Protect chart of accounts from modifications
+    PROTECT_COMPLETED_FEATURES = True  # Protect completed features
+    
+    # Feature Protection Settings
+    PROTECTED_TABLES = ['account']  # Tables that cannot be modified
+    PROTECTED_FEATURES = [
+        'transaction_processing',
+        'pattern_matching',
+        'fuzzy_matching',
+        'keyword_rules',
+        'historical_analysis',
+        'frequency_analysis',
+        'statistical_analysis'
+    ]  # Completed features that cannot be modified
 
 class ProductionConfig(Config):
     """Production configuration"""
@@ -18,6 +38,12 @@ class ProductionConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+    
+    # Enhanced Production Protection
+    PROTECT_PRODUCTION = True
+    ALLOW_FEATURE_MODIFICATION = False
+    ALLOW_DATA_MODIFICATION = False
+    STRICT_ENV_SEPARATION = True
     
     # Production-specific settings
     SQLALCHEMY_ENGINE_OPTIONS = {
@@ -30,22 +56,31 @@ class ProductionConfig(Config):
     @classmethod
     def init_app(cls, app):
         """Production-specific initialization"""
-        # Prevent modifications in production
-        if cls.PROTECT_PRODUCTION:
-            app.config['PREVENT_MODIFICATIONS'] = True
+        # Enhanced production protection
+        app.config.update({
+            'PREVENT_MODIFICATIONS': True,
+            'PROTECT_CHART_OF_ACCOUNTS': True,
+            'PROTECT_COMPLETED_FEATURES': True,
+            'PROTECT_DATA': True,
+            'READ_ONLY_TABLES': ['account', 'transaction', 'company_settings']
+        })
 
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
     TESTING = False
     ENV = 'development'
+    
     # Use separate database URL for development
     SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL', os.environ.get('DATABASE_URL'))
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
     
-    # Protect production data in development
+    # Enhanced Development Protection
     PROTECT_PRODUCTION_DATA = True
+    STRICT_ENV_SEPARATION = True
+    PROTECT_CHART_OF_ACCOUNTS = True  # Still protect charts of accounts in development
+    ALLOW_FEATURE_MODIFICATION = True  # Allow new feature development
     
     # Development-specific settings
     SQLALCHEMY_ENGINE_OPTIONS = {
@@ -57,6 +92,16 @@ class DevelopmentConfig(Config):
             'connect_timeout': 10
         }
     }
+    
+    @classmethod
+    def init_app(cls, app):
+        """Development-specific initialization"""
+        app.config.update({
+            'PROTECT_COMPLETED_FEATURES': True,
+            'PROTECT_CHART_OF_ACCOUNTS': True,
+            'DEVELOPMENT_MODE': True,
+            'PROTECTED_TABLES': ['account']  # Protect chart of accounts
+        })
 
 class TestingConfig(Config):
     """Testing configuration"""

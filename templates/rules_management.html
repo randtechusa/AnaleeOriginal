@@ -2,13 +2,23 @@
 
 {% block content %}
 <div class="container">
+    {% if is_production %}
+    <div class="alert alert-warning" role="alert">
+        <i class="fas fa-shield-alt"></i> Production Environment - Enhanced Protection Mode Active
+        {% if not config.get('ALLOW_PRODUCTION_RULES', False) %}
+        <br><small>Rule creation is disabled in production for security. Use development environment for testing.</small>
+        {% endif %}
+    </div>
+    {% endif %}
+    
     <div class="row">
         <!-- Create New Rule Card -->
         <div class="col-md-12 mb-4">
             <div class="card">
                 <div class="card-body">
                     <h2 class="card-title">Create New Rule</h2>
-                    <form method="POST" action="{{ url_for('main.create_rule') }}" id="createRuleForm">
+                    <form method="POST" action="{{ url_for('main.manage_rules') }}" id="createRuleForm"
+                          {% if is_production and not config.get('ALLOW_PRODUCTION_RULES', False) %}class="disabled"{% endif %}>
                         <div class="row">
                             <div class="col-md-4 mb-3">
                                 <label for="keyword" class="form-label">Keyword/Pattern</label>
@@ -17,8 +27,13 @@
                             </div>
                             <div class="col-md-4 mb-3">
                                 <label for="category" class="form-label">Category</label>
-                                <input type="text" class="form-control" id="category" name="category" required>
-                                <div class="form-text">Category for matching transactions</div>
+                                <select class="form-control" id="category" name="category" required>
+                                    <option value="">Select a category</option>
+                                    {% for category in categories %}
+                                    <option value="{{ category }}">{{ category }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">Select from existing categories to maintain data integrity</div>
                             </div>
                             <div class="col-md-2 mb-3">
                                 <label for="priority" class="form-label">Priority</label>
@@ -70,27 +85,49 @@
                             <tbody>
                                 {% for rule in rules %}
                                 <tr>
-                                    <td>{{ rule.keyword }}</td>
-                                    <td>{{ rule.category }}</td>
+                                    <td>
+                                        {{ rule.keyword }}
+                                        {% if rule.is_regex %}
+                                        <span class="badge bg-info" title="Regex Pattern"><i class="fas fa-code"></i></span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {{ rule.category }}
+                                        {% if rule.category in protected_categories %}
+                                        <span class="badge bg-warning" title="Protected Category"><i class="fas fa-lock"></i></span>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         <div class="input-group">
                                             <input type="number" class="form-control form-control-sm priority-input"
                                                    value="{{ rule.priority }}" min="1" max="100"
-                                                   data-rule-id="{{ rule.id }}">
+                                                   data-rule-id="{{ rule.id }}"
+                                                   {% if is_production and not config.get('ALLOW_PRODUCTION_RULES', False) %}disabled{% endif %}>
                                             <button class="btn btn-sm btn-outline-secondary update-priority"
-                                                    data-rule-id="{{ rule.id }}">Update</button>
+                                                    data-rule-id="{{ rule.id }}"
+                                                    {% if is_production and not config.get('ALLOW_PRODUCTION_RULES', False) %}disabled{% endif %}>
+                                                Update
+                                            </button>
                                         </div>
                                     </td>
-                                    <td>{{ 'Regex' if rule.is_regex else 'Simple' }}</td>
+                                    <td>
+                                        <span class="badge {% if rule.is_regex %}bg-info{% else %}bg-secondary{% endif %}">
+                                            {{ 'Regex' if rule.is_regex else 'Simple' }}
+                                        </span>
+                                    </td>
                                     <td>{{ rule.created_at.strftime('%Y-%m-%d') }}</td>
                                     <td>
+                                        {% if not is_production or config.get('ALLOW_PRODUCTION_RULES', False) %}
                                         <form method="POST" action="{{ url_for('main.deactivate_rule', rule_id=rule.id) }}"
                                               class="d-inline">
                                             <button type="submit" class="btn btn-sm btn-danger"
-                                                    onclick="return confirm('Are you sure you want to deactivate this rule?')">
-                                                Deactivate
+                                                    onclick="return confirm('Are you sure you want to deactivate this rule? This action cannot be undone.')">
+                                                <i class="fas fa-power-off"></i> Deactivate
                                             </button>
                                         </form>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Protected in Production</span>
+                                        {% endif %}
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -111,7 +148,18 @@
 
 {% block scripts %}
 <script>
+// Environment and protection status
+const isProduction = {{ 'true' if is_production else 'false' }};
+const allowProductionRules = {{ 'true' if config.get('ALLOW_PRODUCTION_RULES', False) else 'false' }};
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Disable form in production if rules are not allowed
+    if (isProduction && !allowProductionRules) {
+        const form = document.getElementById('createRuleForm');
+        form.querySelectorAll('input, select, button').forEach(element => {
+            element.disabled = true;
+        });
+    }
     // Handle priority updates
     document.querySelectorAll('.update-priority').forEach(button => {
         button.addEventListener('click', async function() {
