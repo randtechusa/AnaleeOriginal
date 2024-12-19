@@ -812,7 +812,7 @@ def financial_insights():
         return render_template('financial_insights.html',
                              transactions=transactions,
                              start_date=start_date,
-                             end_date=end_date,
+                             enddate=end_date,
                              financial_advice=financial_advice)
                              
     except Exception as e:
@@ -1041,13 +1041,20 @@ SEMANTIC_THRESHOLD = 0.7
 @main.route('/icountant', methods=['GET', 'POST'])
 @login_required
 def icountant_interface():
-    """Interactive AI agent for guided double-entry accounting."""
+    """Interactive AI agent for guided double-entry accounting with real-time insights."""
     try:
-        # Get transactions that need processing (no account_id assigned)
+        # Get unprocessed transactions
         transactions = Transaction.query.filter_by(
             user_id=current_user.id,
             account_id=None
         ).order_by(Transaction.date).all()
+
+        # Get progress counts
+        total_count = Transaction.query.filter_by(user_id=current_user.id).count()
+        processed_count = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.account_id.isnot(None)
+        ).count()
 
         if not transactions:
             flash('No transactions available for processing')
@@ -1072,34 +1079,49 @@ def icountant_interface():
             selected_account = request.form.get('selected_account', type=int)
 
             if transaction_id and selected_account is not None:
-                # Get the transaction
                 transaction = Transaction.query.get(transaction_id)
                 if transaction and transaction.user_id == current_user.id:
                     # Complete the transaction with selected account
                     success, message, completed = agent.complete_transaction(selected_account)
+
                     if success:
                         # Update the transaction in database
                         transaction.account_id = account_list[selected_account]['id']
+
+                        # Store AI insights if available
+                        if completed and completed.get('metadata', {}).get('insights_generated'):
+                            transaction.ai_category = completed['metadata'].get('account_category')
+                            transaction.ai_confidence = 0.8  # Default confidence for user-selected accounts
+
                         db.session.commit()
                         flash(message, 'success')
                     else:
                         flash(message, 'error')
 
+                    # Redirect to process the next transaction
+                    return redirect(url_for('main.icountant_interface'))
+
         # Get the next unprocessed transaction
         current_transaction = transactions[0] if transactions else None
-        # Process it through iCountant
-        message, transaction_info = agent.process_transaction({
-            'date': current_transaction.date if current_transaction else None,
-            'amount': float(current_transaction.amount) if current_transaction else 0.0,
-            'description': current_transaction.description if current_transaction else ''
-        }) if current_transaction else ('No transactions available', {})
+
+        # Process it through iCountant with insights
+        if current_transaction:
+            message, transaction_info = agent.process_transaction({
+                'date': current_transaction.date,
+                'amount': float(current_transaction.amount),
+                'description': current_transaction.description
+            })
+        else:
+            message, transaction_info = 'No transactions available', {}
 
         return render_template(
             'icountant.html',
             message=message,
             transaction=current_transaction,
+            transaction_info=transaction_info,
             accounts=accounts,
-            transaction_info=transaction_info
+            total_count=total_count,
+            processed_count=processed_count
         )
 
     except Exception as e:

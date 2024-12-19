@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container mt-4">
     <h2>iCountant - AI Accounting Assistant</h2>
-    
+
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
@@ -15,24 +15,91 @@
     {% endwith %}
 
     {% if transaction and transaction_info %}
+        <div class="row">
+            <!-- Transaction Details Card -->
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="card-title mb-0">Current Transaction</h5>
+                    </div>
+                    <div class="card-body">
+                        <h6>Date: {{ transaction.date.strftime('%Y-%m-%d') }}</h6>
+                        <h6>Description: {{ transaction.description }}</h6>
+                        <h6>Amount: {{ transaction_info.insights.amount_formatted }}</h6>
+                        <div class="alert alert-info">
+                            <strong>Transaction Type:</strong> 
+                            {{ transaction_info.insights.transaction_type|title }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Insights Card -->
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="card-title mb-0">AI Insights</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            {{ transaction_info.insights.ai_insights|safe }}
+                        </div>
+                        {% if transaction_info.insights.similar_transactions %}
+                            <h6>Similar Past Transactions:</h6>
+                            <ul class="list-group">
+                                {% for similar in transaction_info.insights.similar_transactions %}
+                                    <li class="list-group-item">
+                                        {{ similar.description }} - 
+                                        {{ similar.entries[1].account }}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Account Selection Card -->
         <div class="card mt-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0">Account Selection</h5>
+            </div>
             <div class="card-body">
-                <h5 class="card-title">Transaction Analysis</h5>
-                <pre class="bg-light p-3">{{ message }}</pre>
-                
+                {% if transaction_info.insights.suggested_accounts %}
+                    <div class="alert alert-success">
+                        <h6 class="mb-2">Suggested Accounts:</h6>
+                        <ul class="list-unstyled">
+                            {% for suggestion in transaction_info.insights.suggested_accounts %}
+                                <li>
+                                    <strong>{{ suggestion.account.name }}</strong>
+                                    <br>
+                                    <small class="text-muted">{{ suggestion.reason }}</small>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
+
                 <form method="POST" action="{{ url_for('main.icountant_interface') }}">
                     <input type="hidden" name="transaction_id" value="{{ transaction.id }}">
-                    
+
                     <div class="form-group">
                         <label for="selected_account">Select Account:</label>
                         <select class="form-control" id="selected_account" name="selected_account" required>
                             <option value="">Choose an account...</option>
                             {% for i in range(accounts|length) %}
-                            <option value="{{ i }}">{{ accounts[i].name }} ({{ accounts[i].category }})</option>
+                            <option value="{{ i }}"
+                                {% if transaction_info.insights.suggested_accounts and 
+                                    accounts[i].name == transaction_info.insights.suggested_accounts[0].account.name %}
+                                    selected
+                                {% endif %}>
+                                {{ accounts[i].name }} ({{ accounts[i].category }})
+                            </option>
                             {% endfor %}
                         </select>
                     </div>
-                    
+
                     <button type="submit" class="btn btn-primary mt-3">Process Transaction</button>
                 </form>
             </div>
@@ -43,4 +110,38 @@
         </div>
     {% endif %}
 </div>
+
+<!-- Progress Tracking -->
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="card-title mb-0">Processing Progress</h5>
+        </div>
+        <div class="card-body">
+            <div class="progress mb-3">
+                <div class="progress-bar" role="progressbar" 
+                     style="width: {{ (processed_count / total_count * 100) if total_count else 0 }}%">
+                    {{ processed_count }}/{{ total_count }} Transactions
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Enable Bootstrap tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+
+    // Auto-scroll to suggestions when available
+    if (document.querySelector('.alert-success')) {
+        document.querySelector('.alert-success').scrollIntoView({ behavior: 'smooth' });
+    }
+});
+</script>
 {% endblock %}
