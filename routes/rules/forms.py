@@ -4,8 +4,12 @@ from wtforms import StringField, SelectField, IntegerField, BooleanField
 from wtforms.validators import DataRequired, Length, Regexp, NumberRange, ValidationError
 from flask import current_app
 from models import Account, db
+from flask_login import current_user
 
 logger = logging.getLogger(__name__)
+
+# Enhanced environment protection
+logger.setLevel(logging.INFO)
 
 class RuleForm(FlaskForm):
     """Form for creating and editing rules with strict validation"""

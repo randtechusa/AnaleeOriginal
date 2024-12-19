@@ -7,7 +7,11 @@ from flask_migrate import Migrate
 from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
-from models import db, login_manager
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager
+
+db = SQLAlchemy()
+login_manager = LoginManager()
 
 # Configure logging with more detailed error reporting
 logging.basicConfig(
@@ -191,10 +195,13 @@ def create_app(env=None):
             logger.error("Database URL is not set for the current environment")
             return None
             
-        # Handle legacy database URL format once
+        # Handle legacy database URL format and ensure proper format
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
             logger.info("Converted legacy postgres:// URL format to postgresql://")
+        elif not database_url.startswith("postgresql://"):
+            database_url = f"postgresql://{database_url}"
+            logger.info("Added postgresql:// prefix to database URL")
             
         # Verify database URL format
         if not database_url.startswith('postgresql://'):
@@ -478,14 +485,22 @@ if __name__ == '__main__':
                 logger.error(f"Error creating database tables: {str(db_error)}")
                 sys.exit(1)
             
-        # Start the server
+        # Start the server with proper protection
         logger.info(f"Starting Flask application on http://0.0.0.0:{port}")
-        app.run(
-            host='0.0.0.0',
-            port=port,
-            debug=True,  # Enable debug mode
-            use_reloader=False  # Disable reloader to prevent duplicate processes
-        )
+        if app.config.get('ENV') == 'production':
+            app.run(
+                host='0.0.0.0',
+                port=port,
+                debug=False,
+                use_reloader=False
+            )
+        else:
+            app.run(
+                host='0.0.0.0',
+                port=port,
+                debug=True,
+                use_reloader=False  # Disable reloader to prevent duplicate processes
+            )
     except Exception as e:
         logger.error(f"Critical error starting application: {str(e)}")
         logger.exception("Full stack trace:")

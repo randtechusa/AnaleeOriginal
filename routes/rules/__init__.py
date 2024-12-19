@@ -9,6 +9,7 @@ from flask import Blueprint, current_app
 from flask_login import login_required
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # Create blueprint with strict environment separation and protection
 rules = Blueprint('rules', __name__, url_prefix='/rules')
@@ -16,6 +17,7 @@ rules = Blueprint('rules', __name__, url_prefix='/rules')
 # Enhanced environment protection
 PROTECT_DATA = os.environ.get('PROTECT_DATA', 'true').lower() == 'true'
 PROTECT_CHART_OF_ACCOUNTS = os.environ.get('PROTECT_CHART_OF_ACCOUNTS', 'true').lower() == 'true'
+PROTECT_COMPLETED_FEATURES = os.environ.get('PROTECT_COMPLETED_FEATURES', 'true').lower() == 'true'
 
 # Define protected routes for production environment
 protected_routes = [

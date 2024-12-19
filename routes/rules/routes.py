@@ -3,12 +3,15 @@ from datetime import datetime
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.exc import SQLAlchemyError
-from flask_sqlalchemy import SQLAlchemy
 from models import db, KeywordRule, Account
 from utils.rule_manager import RuleManager
 from .forms import RuleForm
 
+# Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Initialize rule manager
 rule_manager = RuleManager()
 
 @login_required
