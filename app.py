@@ -116,25 +116,27 @@ def verify_database():
         logger.exception("Full database verification error stacktrace:")
         return False
 
-def create_app(env=os.environ.get('FLASK_ENV', 'production')):
+def create_app(env=None):
     """Create and configure the Flask application with strict environment protection"""
     try:
         # Initialize Flask application with enhanced protection
         app = Flask(__name__)
         
+        # Get environment from environment variable with strict validation
+        if env is None:
+            env = os.environ.get('FLASK_ENV', 'development')
+            
         # Strict environment validation and protection
         if env not in ['development', 'production', 'testing']:
-            logger.warning("Invalid environment specified, defaulting to production for safety")
-            env = 'production'
+            logger.warning("Invalid environment specified, defaulting to development for local work")
+            env = 'development'
         
-        # Force production mode unless explicitly development with verification
-        if env == 'development':
-            if not os.environ.get('ALLOW_DEVELOPMENT', '').lower() == 'true':
-                logger.warning("Development mode requested but not explicitly allowed, enforcing production")
-                env = 'production'
-        else:
-            env = 'production'
-            logger.info("Production mode enforced for security")
+        # Environment separation protection
+        if env == 'production':
+            if os.environ.get('DEVELOPMENT_FEATURES_ENABLED', '').lower() == 'true':
+                logger.error("Development features cannot be enabled in production")
+                return None
+            logger.info("Production mode activated with full protection")
             
         # Additional environment protection checks
         if env == 'production':
@@ -153,12 +155,22 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         # Load the appropriate configuration
         app.config.from_object(f'config.{env.capitalize()}Config')
         
-        # Get appropriate database URL based on environment
-        if env == 'development':
-            database_url = os.environ.get("DEV_DATABASE_URL", os.environ.get("DATABASE_URL"))
-            logger.info("Using development database configuration")
-        else:
-            database_url = os.environ.get("DATABASE_URL")
+        # Get appropriate database URL based on environment with strict separation
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            logger.error("Database URL is not set for the current environment")
+            return None
+            
+        # Handle legacy database URL format
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+            logger.info("Converted legacy postgres:// URL format to postgresql://")
+            
+        # Verify environment separation
+        if env == 'production':
+            if os.environ.get('DEV_DATABASE_URL') == os.environ.get('DATABASE_URL'):
+                logger.error("Critical: Development and production databases cannot be the same")
+                return None
             
         if not database_url:
             logger.error("Database URL is not set for the current environment")

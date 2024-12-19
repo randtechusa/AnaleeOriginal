@@ -12,13 +12,20 @@ rules.protected_routes = True  # Enable protection for production
 @rules.route('/rules/manage')
 @login_required
 @RouteProtection.protect_production
+@RouteProtection.protect_data
 def manage_rules():
-    """Display rules management interface with protection"""
+    """Display rules management interface with enhanced protection"""
     try:
-        user_rules = KeywordRule.query.filter_by(user_id=current_user.id).order_by(KeywordRule.priority).all()
+        # Only fetch active rules for the current user
+        user_rules = KeywordRule.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).order_by(KeywordRule.priority.desc()).all()
+        
+        logger.info(f"Successfully retrieved rules for user {current_user.id}")
         return render_template('rules/manage.html', rules=user_rules)
     except Exception as e:
-        logger.error(f"Error accessing rules: {str(e)}")
+        logger.error(f"Error accessing rules for user {current_user.id}: {str(e)}")
         flash('Error accessing rules', 'error')
         return redirect(url_for('main.index'))
 

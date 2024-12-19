@@ -69,6 +69,13 @@
                         </div>
                     </div>
                     
+                    {% if is_production %}
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fas fa-shield-alt"></i> Production Environment - Enhanced Protection Mode Active
+                        <br><small>Rule modifications are restricted in production for security. Use development environment for testing.</small>
+                    </div>
+                    {% endif %}
+                    
                     {% if rules %}
                     <div class="table-responsive">
                         <table class="table">

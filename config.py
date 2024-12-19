@@ -1,4 +1,6 @@
 import os
+import logging
+logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -71,16 +73,31 @@ class DevelopmentConfig(Config):
     TESTING = False
     ENV = 'development'
     
-    # Use separate database URL for development
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL', os.environ.get('DATABASE_URL'))
-    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
+    # Database Configuration with Protection
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    if not SQLALCHEMY_DATABASE_URI:
+        logger.error("Database URL is not set")
+        raise ValueError("DATABASE_URL must be set for development environment")
+    if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
     
     # Enhanced Development Protection
     PROTECT_PRODUCTION_DATA = True
     STRICT_ENV_SEPARATION = True
-    PROTECT_CHART_OF_ACCOUNTS = True  # Still protect charts of accounts in development
-    ALLOW_FEATURE_MODIFICATION = True  # Allow new feature development
+    PROTECT_CHART_OF_ACCOUNTS = True  # Protect chart of accounts
+    ALLOW_FEATURE_MODIFICATION = False  # Protect completed features
+    ALLOW_PRODUCTION_RULES = False  # Protect rules in development
+    
+    # Development-specific Protection
+    PROTECTED_FEATURES = [
+        'transaction_processing',
+        'pattern_matching',
+        'fuzzy_matching',
+        'keyword_rules',
+        'historical_analysis',
+        'frequency_analysis',
+        'statistical_analysis'
+    ]
     
     # Development-specific settings
     SQLALCHEMY_ENGINE_OPTIONS = {

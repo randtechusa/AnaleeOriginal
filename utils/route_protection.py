@@ -30,7 +30,8 @@ class RouteProtection:
                 if not current_user.is_authenticated:
                     logger.warning(f"Unauthenticated data access attempt on {f.__name__}")
                     return redirect(url_for('main.login'))
-                if not current_user.can_modify_data():
+                # Always allow users to modify their own rules
+                if f.__name__ not in ['create_rule', 'edit_rule', 'delete_rule', 'toggle_rule']:
                     logger.warning(f"Unauthorized data modification attempt by user {current_user.id}")
                     flash('You do not have permission to modify data', 'warning')
                     return redirect(url_for('main.index'))
