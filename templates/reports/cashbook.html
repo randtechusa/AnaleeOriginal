@@ -26,12 +26,20 @@
                         <tr>
                             <td>{{ transaction.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ transaction.description }}</td>
-                            <td class="text-end">{{ '%.2f'|format(transaction.amount) if transaction.amount > 0 else '' }}</td>
-                            <td class="text-end">{{ '%.2f'|format(-transaction.amount) if transaction.amount < 0 else '' }}</td>
+                            <td class="text-end">{{ '%.2f'|format(transaction.amount) if transaction.amount > 0 else '0.00' }}</td>
+                            <td class="text-end">{{ '%.2f'|format(-transaction.amount) if transaction.amount < 0 else '0.00' }}</td>
                             <td class="text-end">{{ '%.2f'|format(running_balance) }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
+                    <tfoot>
+                        <tr class="table-dark">
+                            <th colspan="2">Closing Balance</th>
+                            <th class="text-end">{{ '%.2f'|format(transactions|selectattr('amount', 'gt', 0)|sum(attribute='amount')|default(0)) }}</th>
+                            <th class="text-end">{{ '%.2f'|format(transactions|selectattr('amount', 'lt', 0)|sum(attribute='amount')|abs|default(0)) }}</th>
+                            <th class="text-end">{{ '%.2f'|format(running_balance|default(0)) }}</th>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         </div>
