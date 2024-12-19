@@ -2,9 +2,22 @@
 
 {% block content %}
 <div class="container mt-4">
+    {% if is_production %}
+    <div class="alert alert-warning" role="alert">
+        <i class="fas fa-shield-alt"></i> Production Environment - Enhanced Protection Mode Active
+        {% if not config.get('ALLOW_PRODUCTION_RULES', False) %}
+        <br><small>Rule modifications are restricted in production for security. Use development environment for testing.</small>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Rule Management</h2>
-        <a href="{{ url_for('rules.create_rule') }}" class="btn btn-primary">Create New Rule</a>
+        {% if not is_production or config.get('ALLOW_PRODUCTION_RULES', False) %}
+        <a href="{{ url_for('rules.create_rule') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Create New Rule
+        </a>
+        {% endif %}
     </div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -32,17 +45,38 @@
                         <tbody>
                             {% for rule in rules %}
                                 <tr>
-                                    <td>{{ rule.pattern }}</td>
+                                    <td>
+                                        {{ rule.pattern }}
+                                        {% if rule.is_protected %}
+                                        <span class="badge bg-warning" title="Protected Rule">
+                                            <i class="fas fa-lock"></i>
+                                        </span>
+                                        {% endif %}
+                                        {% if rule.is_regex %}
+                                        <span class="badge bg-info" title="Regular Expression">
+                                            <i class="fas fa-code"></i>
+                                        </span>
+                                        {% endif %}
+                                    </td>
                                     <td>{{ rule.description }}</td>
-                                    <td>{{ rule.category }}</td>
+                                    <td>
+                                        {{ rule.category }}
+                                        {% if rule.category in protected_categories %}
+                                        <span class="badge bg-warning" title="Protected Category">
+                                            <i class="fas fa-shield-alt"></i>
+                                        </span>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         <div class="custom-control custom-switch">
                                             <input type="checkbox" class="custom-control-input rule-toggle" 
                                                    id="rule-{{ rule.id }}" 
                                                    {% if rule.is_active %}checked{% endif %}
+                                                   {% if rule.is_protected or (is_production and not config.get('ALLOW_PRODUCTION_RULES', False)) %}disabled{% endif %}
                                                    data-rule-id="{{ rule.id }}">
                                             <label class="custom-control-label" for="rule-{{ rule.id }}">
                                                 {{ 'Active' if rule.is_active else 'Inactive' }}
+                                                {% if rule.is_protected %}(Protected){% endif %}
                                             </label>
                                         </div>
                                     </td>

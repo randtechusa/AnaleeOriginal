@@ -2,43 +2,103 @@
 
 {% block content %}
 <div class="container mt-4">
+    {% if is_production %}
+    <div class="alert alert-warning" role="alert">
+        <i class="fas fa-shield-alt"></i> Production Environment - Enhanced Protection Mode Active
+        {% if not config.get('ALLOW_PRODUCTION_RULES', False) %}
+        <br><small>Rule modifications are restricted in production for security. Use development environment for testing.</small>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div class="row justify-content-center">
         <div class="col-md-8">
             <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Edit Rule</h3>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title mb-0">Edit Rule</h3>
+                    {% if rule.is_protected %}
+                    <span class="badge bg-warning">
+                        <i class="fas fa-lock"></i> Protected Rule
+                    </span>
+                    {% endif %}
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('rules.edit_rule', rule_id=rule.id) }}">
-                        <div class="form-group">
-                            <label for="pattern">Pattern</label>
-                            <input type="text" class="form-control" id="pattern" name="pattern"
-                                   value="{{ rule.pattern }}" required>
+                    <form method="POST" action="{{ url_for('rules.edit_rule', rule_id=rule.id) }}" 
+                          id="editRuleForm" class="needs-validation" novalidate
+                          {% if is_production and not config.get('ALLOW_PRODUCTION_RULES', False) %}class="disabled"{% endif %}>
+                        
+                        <div class="form-group mb-3">
+                            <label for="pattern" class="form-label">Pattern</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="pattern" name="pattern"
+                                       value="{{ rule.pattern }}" required
+                                       {% if rule.is_protected or (is_production and not config.get('ALLOW_PRODUCTION_RULES', False)) %}readonly{% endif %}
+                                       pattern="^[a-zA-Z0-9\s\-_|.*+?()[\]{}\\]+$">
+                                <span class="input-group-text">
+                                    <i class="fas fa-code" title="Regular Expression Pattern"></i>
+                                </span>
+                            </div>
                             <small class="form-text text-muted">
                                 Use regular expressions or simple keywords separated by |
+                                {% if rule.is_protected %}
+                                <br><strong>Note:</strong> This is a protected pattern and cannot be modified.
+                                {% endif %}
                             </small>
+                            <div class="invalid-feedback">
+                                Please enter a valid pattern using allowed characters.
+                            </div>
                         </div>
                         
-                        <div class="form-group">
-                            <label for="description">Description</label>
+                        <div class="form-group mb-3">
+                            <label for="description" class="form-label">Description</label>
                             <textarea class="form-control" id="description" name="description" 
-                                    required>{{ rule.description }}</textarea>
+                                    required rows="3"
+                                    {% if rule.is_protected or (is_production and not config.get('ALLOW_PRODUCTION_RULES', False)) %}readonly{% endif %}
+                                    >{{ rule.description }}</textarea>
+                            <div class="invalid-feedback">
+                                Please provide a description for this rule.
+                            </div>
                         </div>
                         
-                        <div class="form-group">
-                            <label for="category">Category</label>
-                            <select class="form-control" id="category" name="category" required>
+                        <div class="form-group mb-3">
+                            <label for="category" class="form-label">Category</label>
+                            <select class="form-control" id="category" name="category" required
+                                    {% if rule.is_protected or (is_production and not config.get('ALLOW_PRODUCTION_RULES', False)) %}disabled{% endif %}>
                                 <option value="">Select a category</option>
-                                <option value="expense" {% if rule.category == 'expense' %}selected{% endif %}>Expense</option>
-                                <option value="income" {% if rule.category == 'income' %}selected{% endif %}>Income</option>
-                                <option value="transfer" {% if rule.category == 'transfer' %}selected{% endif %}>Transfer</option>
-                                <option value="other" {% if rule.category == 'other' %}selected{% endif %}>Other</option>
+                                {% for category in categories %}
+                                <option value="{{ category }}" 
+                                        {% if rule.category == category %}selected{% endif %}
+                                        {% if category in protected_categories %}data-protected="true"{% endif %}>
+                                    {{ category }}
+                                    {% if category in protected_categories %}(Protected){% endif %}
+                                </option>
+                                {% endfor %}
                             </select>
+                            <div class="invalid-feedback">
+                                Please select a category.
+                            </div>
                         </div>
                         
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-primary">Update Rule</button>
-                            <a href="{{ url_for('rules.manage_rules') }}" class="btn btn-secondary">Cancel</a>
+                        <div class="form-group mb-3">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="is_regex" name="is_regex"
+                                       {% if rule.is_regex %}checked{% endif %}
+                                       {% if rule.is_protected or (is_production and not config.get('ALLOW_PRODUCTION_RULES', False)) %}disabled{% endif %}>
+                                <label class="form-check-label" for="is_regex">
+                                    Use Regular Expression
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group d-flex justify-content-between">
+                            {% if not rule.is_protected and (not is_production or config.get('ALLOW_PRODUCTION_RULES', False)) %}
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Update Rule
+                            </button>
+                            {% endif %}
+                            <a href="{{ url_for('rules.manage_rules') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to Rules
+                            </a>
                         </div>
                     </form>
                 </div>
@@ -46,4 +106,44 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Form validation
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('editRuleForm');
+    const isProduction = {{ 'true' if is_production else 'false' }};
+    const allowProductionRules = {{ 'true' if config.get('ALLOW_PRODUCTION_RULES', False) else 'false' }};
+    
+    // Disable form in production if rules are not allowed
+    if (isProduction && !allowProductionRules) {
+        form.querySelectorAll('input, select, textarea, button').forEach(element => {
+            element.disabled = true;
+        });
+    }
+
+    // Pattern validation for regex
+    const patternInput = document.getElementById('pattern');
+    const isRegexCheckbox = document.getElementById('is_regex');
+    
+    form.addEventListener('submit', function(event) {
+        if (!form.checkValidity()) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        
+        if (isRegexCheckbox.checked) {
+            try {
+                new RegExp(patternInput.value);
+            } catch (e) {
+                event.preventDefault();
+                alert('Invalid regular expression pattern: ' + e.message);
+            }
+        }
+        
+        form.classList.add('was-validated');
+    });
+});
+</script>
 {% endblock %}

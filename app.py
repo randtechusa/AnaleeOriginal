@@ -27,10 +27,8 @@ logging.getLogger('sqlalchemy.pool').setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-
 # Load environment variables
 load_dotenv()
-
 
 # Initialize Flask extensions
 migrate = Migrate()
@@ -54,31 +52,39 @@ def verify_database():
         with db.engine.connect() as conn:
             # Test basic connection with timeout
             try:
-                conn.execute(text('SELECT 1'))
+                result = conn.execute(text('SELECT 1'))
+                if not result:
+                    logger.error("Database connection test failed")
+                    return False
                 logger.info("Basic database connection successful")
             except Exception as conn_error:
                 logger.error(f"Database connection failed: {str(conn_error)}")
                 return False
 
-            # List and verify existing tables
-            tables_query = text("""
-                SELECT tablename 
-                FROM pg_catalog.pg_tables 
-                WHERE schemaname != 'pg_catalog' 
-                AND schemaname != 'information_schema';
-            """)
-            existing_tables = [row[0] for row in conn.execute(tables_query)]
-            logger.info(f"Existing tables: {existing_tables}")
+            # List and verify existing tables with proper error handling
+            try:
+                tables_query = text("""
+                    SELECT tablename 
+                    FROM pg_catalog.pg_tables 
+                    WHERE schemaname != 'pg_catalog' 
+                    AND schemaname != 'information_schema';
+                """)
+                existing_tables = [row[0] for row in conn.execute(tables_query)]
+                logger.info(f"Existing tables: {existing_tables}")
+            except Exception as table_error:
+                logger.error(f"Error querying tables: {str(table_error)}")
+                return False
             
-            # Verify environment separation
+            # Verify environment separation - Consolidated check
             if current_app.config.get('ENV') == 'production':
                 logger.info("Production environment detected - enabling strict protections")
-                if not all([
-                    current_app.config.get('PROTECT_PRODUCTION'),
-                    current_app.config.get('PROTECT_DATA'),
-                    current_app.config.get('PROTECT_CHART_OF_ACCOUNTS'),
-                    current_app.config.get('PROTECT_COMPLETED_FEATURES')
-                ]):
+                required_settings = [
+                    'PROTECT_PRODUCTION',
+                    'PROTECT_DATA',
+                    'PROTECT_CHART_OF_ACCOUNTS',
+                    'PROTECT_COMPLETED_FEATURES'
+                ]
+                if not all(current_app.config.get(setting) for setting in required_settings):
                     logger.error("Production protection mechanisms not fully enabled")
                     return False
             
@@ -91,24 +97,29 @@ def verify_database():
                         logger.error("Chart of accounts protection not enabled")
                         return False
                 
-                # Create missing tables only in development
-                if current_app.config.get('ENV') != 'production':
-                    db.create_all()
-                    logger.info("Database tables verified in development environment")
-                
-                # Verify critical tables
-                protected_tables = current_app.config.get('PROTECTED_TABLES', ['account'])
-                for table in protected_tables:
-                    if table not in existing_tables:
-                        logger.error(f"Protected table {table} missing")
-                        return False
-                    logger.info(f"Protected table {table} verified")
-                
-                return True
-                
-            except Exception as table_error:
-                logger.error(f"Error verifying tables: {str(table_error)}")
-                logger.exception("Full table verification error stacktrace:")
+                # Create missing tables only in development with protection
+                try:
+                    if current_app.config.get('ENV') != 'production':
+                        db.create_all()
+                        logger.info("Database tables verified in development environment")
+                    
+                    # Verify critical tables with enhanced protection
+                    protected_tables = current_app.config.get('PROTECTED_TABLES', ['account'])
+                    for table in protected_tables:
+                        if table not in existing_tables:
+                            logger.error(f"Protected table {table} missing")
+                            return False
+                        logger.info(f"Protected table {table} verified")
+                    
+                    return True
+                    
+                except Exception as table_error:
+                    logger.error(f"Error verifying tables: {str(table_error)}")
+                    logger.exception("Full table verification error stacktrace:")
+                    return False
+            except Exception as create_error:
+                logger.error(f"Error creating or verifying tables: {str(create_error)}")
+                logger.exception("Full table creation/verification error stacktrace:")
                 return False
             
     except Exception as db_error:
@@ -131,75 +142,46 @@ def create_app(env=None):
             logger.warning("Invalid environment specified, defaulting to development for local work")
             env = 'development'
         
-        # Environment separation protection
+        # Environment separation protection - Consolidated check
         if env == 'production':
             if os.environ.get('DEVELOPMENT_FEATURES_ENABLED', '').lower() == 'true':
                 logger.error("Development features cannot be enabled in production")
                 return None
             logger.info("Production mode activated with full protection")
             
-        # Additional environment protection checks
-        if env == 'production':
-            if os.environ.get('DEVELOPMENT_FEATURES_ENABLED', '').lower() == 'true':
-                logger.error("Development features cannot be enabled in production")
-                return None
-        
         logger.info(f"Starting Flask application initialization in {env} environment with protection mechanisms...")
-        
-        # Verify environment separation
-        if env == 'production':
-            if os.environ.get('DEV_DATABASE_URL') == os.environ.get('DATABASE_URL'):
-                logger.error("Critical: Development and production databases cannot be the same")
-                return None
         
         # Load the appropriate configuration
         app.config.from_object(f'config.{env.capitalize()}Config')
         
-        # Get appropriate database URL based on environment with strict separation
+        # Get and validate database URL with strict environment separation
         database_url = os.environ.get("DATABASE_URL")
         if not database_url:
             logger.error("Database URL is not set for the current environment")
             return None
             
-        # Handle legacy database URL format
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-            logger.info("Converted legacy postgres:// URL format to postgresql://")
-            
-        # Verify environment separation
-        if env == 'production':
-            if os.environ.get('DEV_DATABASE_URL') == os.environ.get('DATABASE_URL'):
-                logger.error("Critical: Development and production databases cannot be the same")
-                return None
-            
-        if not database_url:
-            logger.error("Database URL is not set for the current environment")
-            return None
-            
-        # Handle legacy database URL format
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-            logger.info("Converted legacy postgres:// URL format to postgresql://")
-
-        # Handle legacy database URL format
+        # Handle legacy database URL format once
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
             logger.info("Converted legacy postgres:// URL format to postgresql://")
             
         # Verify database URL format
-        if not database_url.startswith(('postgresql://', 'postgres://')):
+        if not database_url.startswith('postgresql://'):
             logger.error("Invalid database URL format")
             return None
             
+        # Enhanced environment separation verification
+        if env == 'production':
+            dev_database_url = os.environ.get('DEV_DATABASE_URL')
+            if dev_database_url and dev_database_url == database_url:
+                logger.error("Critical: Development and production databases cannot be the same")
+                return None
+            logger.info("Environment separation verified for production")
+        
         # Configure logging for database operations with proper level
         db_logger = logging.getLogger('sqlalchemy.engine')
         db_logger.setLevel(logging.INFO)
         
-        # Verify database URL format
-        if not any(database_url.startswith(prefix) for prefix in ['postgresql://', 'postgres://']):
-            logger.error(f"Invalid database URL format")
-            return None
-            
         # Basic application configuration check
         if not app.config:
             logger.error("Flask app configuration missing")
@@ -232,7 +214,7 @@ def create_app(env=None):
             }
         }
     
-    # Environment-specific configuration
+        # Environment-specific configuration
         if env == 'testing':
             config.update({
                 'TESTING': True,
@@ -294,8 +276,9 @@ def create_app(env=None):
                 
                 # Create database tables with proper error handling
                 try:
-                    db.create_all()
-                    logger.info("Database tables created successfully")
+                    if env != 'production':
+                        db.create_all()
+                        logger.info("Database tables created successfully")
                 except Exception as table_error:
                     logger.error(f"Failed to create database tables: {str(table_error)}")
                     return None
@@ -321,7 +304,7 @@ def create_app(env=None):
                         # Additional protection for production routes
                         if env == 'production':
                             if not all(hasattr(bp, 'protected_routes') 
-                                     for bp in [main_blueprint, rules_blueprint]):
+                                   for bp in [main_blueprint, rules_blueprint]):
                                 logger.error("Production routes protection not configured")
                                 return None
                                 
@@ -371,8 +354,9 @@ if __name__ == '__main__':
                 
             # Ensure all tables exist
             try:
-                db.create_all()
-                logger.info("Database tables verified/created")
+                if app.config.get('ENV') != 'production':
+                    db.create_all()
+                    logger.info("Database tables verified/created")
             except Exception as db_error:
                 logger.error(f"Error creating database tables: {str(db_error)}")
                 sys.exit(1)
