@@ -193,20 +193,47 @@ class RuleManager:
             
     def update_rule_priority(self, rule_id: int, new_priority: int) -> bool:
         """
-        Update the priority of a rule
+        Update the priority of a rule with enhanced protection
         Returns True if successful, False otherwise
         """
         try:
+            # Input validation
+            if not isinstance(new_priority, int) or new_priority < 1 or new_priority > 100:
+                logger.error(f"Invalid priority value: {new_priority}")
+                return False
+                
             rule = KeywordRule.query.get(rule_id)
-            if rule:
-                rule.priority = new_priority
-                db.session.commit()
-                self._cached_rules = None
-                return True
-            return False
+            if not rule:
+                logger.warning(f"Attempted to update non-existent rule: {rule_id}")
+                return False
+                
+            # Environment protection
+            if self.is_production and not current_app.config.get('ALLOW_PRODUCTION_RULES', False):
+                logger.warning("Attempted rule modification in protected production environment")
+                return False
+                
+            # Verify rule isn't in protected category
+            if rule.category in self.protected_categories:
+                logger.warning(f"Attempted to modify rule in protected category: {rule.category}")
+                return False
+                
+            # Update priority
+            old_priority = rule.priority
+            rule.priority = new_priority
+            rule.updated_at = datetime.utcnow()
+            
+            db.session.commit()
+            self._cached_rules = None
+            
+            logger.info(f"Rule {rule_id} priority updated from {old_priority} to {new_priority}")
+            return True
             
         except SQLAlchemyError as e:
             logger.error(f"Database error updating rule priority: {str(e)}")
+            db.session.rollback()
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error updating rule priority: {str(e)}")
             db.session.rollback()
             return False
 

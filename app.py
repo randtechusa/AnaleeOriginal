@@ -119,18 +119,28 @@ def verify_database():
 def create_app(env=os.environ.get('FLASK_ENV', 'production')):
     """Create and configure the Flask application with strict environment protection"""
     try:
-        # Initialize Flask application
+        # Initialize Flask application with enhanced protection
         app = Flask(__name__)
         
-        # Strict environment validation
+        # Strict environment validation and protection
         if env not in ['development', 'production', 'testing']:
             logger.warning("Invalid environment specified, defaulting to production for safety")
             env = 'production'
         
-        # Force production mode unless explicitly development
-        if env != 'development':
+        # Force production mode unless explicitly development with verification
+        if env == 'development':
+            if not os.environ.get('ALLOW_DEVELOPMENT', '').lower() == 'true':
+                logger.warning("Development mode requested but not explicitly allowed, enforcing production")
+                env = 'production'
+        else:
             env = 'production'
             logger.info("Production mode enforced for security")
+            
+        # Additional environment protection checks
+        if env == 'production':
+            if os.environ.get('DEVELOPMENT_FEATURES_ENABLED', '').lower() == 'true':
+                logger.error("Development features cannot be enabled in production")
+                return None
         
         logger.info(f"Starting Flask application initialization in {env} environment with protection mechanisms...")
         
@@ -289,14 +299,32 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 except Exception as e:
                     logger.warning(f"Test suite initialization deferred (non-critical): {str(e)}")
                 
-                # Register blueprints
+                # Register blueprints with enhanced protection
                 try:
-                    from routes import main as main_blueprint
-                    app.register_blueprint(main_blueprint)
-                    logger.debug("Blueprints registered successfully")
+                    # Import and register blueprints only if environment checks pass
+                    if verify_database():
+                        from routes import main as main_blueprint
+                        from routes.rules import rules as rules_blueprint
+                        
+                        # Additional protection for production routes
+                        if env == 'production':
+                            if not all(hasattr(bp, 'protected_routes') 
+                                     for bp in [main_blueprint, rules_blueprint]):
+                                logger.error("Production routes protection not configured")
+                                return None
+                                
+                        app.register_blueprint(main_blueprint)
+                        app.register_blueprint(rules_blueprint)
+                        logger.info("Blueprints registered successfully with protection")
+                    else:
+                        logger.error("Database verification failed, cannot register blueprints")
+                        return None
+                except ImportError as import_error:
+                    logger.error(f"Critical: Blueprint import failed: {str(import_error)}")
+                    return None
                 except Exception as blueprint_error:
-                    logger.error(f"Error registering blueprints: {str(blueprint_error)}")
-                    raise
+                    logger.error(f"Critical: Blueprint registration failed: {str(blueprint_error)}")
+                    return None
                 
                 logger.info("Application initialization completed successfully")
                 return app
