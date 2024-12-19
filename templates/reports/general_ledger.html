@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title mb-0">General Ledger</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Account Code</th>
+                            <th>Account Name</th>
+                            <th>Category</th>
+                            <th class="text-end">Total Debits</th>
+                            <th class="text-end">Total Credits</th>
+                            <th class="text-end">Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in accounts %}
+                        <tr>
+                            <td>{{ account.link }}</td>
+                            <td>{{ account.name }}</td>
+                            <td>{{ account.category }}</td>
+                            <td class="text-end">
+                                {% set debits = account.transactions|selectattr('amount', 'gt', 0)|sum(attribute='amount')|default(0) %}
+                                {{ '%.2f'|format(debits) }}
+                            </td>
+                            <td class="text-end">
+                                {% set credits = account.transactions|selectattr('amount', 'lt', 0)|sum(attribute='amount')|abs|default(0) %}
+                                {{ '%.2f'|format(credits) }}
+                            </td>
+                            <td class="text-end">
+                                {{ '%.2f'|format(debits - credits) }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

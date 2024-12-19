@@ -36,6 +36,19 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.company_settings') }}">Company Settings</a>
                     </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="reportsDropdown" role="button" data-bs-toggle="dropdown">
+                            Reports
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('reports.cashbook') }}">Cashbook</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('reports.general_ledger') }}">General Ledger</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('reports.trial_balance') }}">Trial Balance</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('reports.financial_position') }}">Financial Position</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('reports.income_statement') }}">Income Statement</a></li>
+                        </ul>
+                    </li>
                 </ul>
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
