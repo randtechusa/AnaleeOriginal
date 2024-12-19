@@ -20,12 +20,12 @@
                     </thead>
                     <tbody>
                         {% for account in accounts %}
-                        {% set balance = account.transactions|sum(attribute='amount')|default(0) %}
+                        {% set balance = account.transactions|rejectattr('amount', 'none')|sum(attribute='amount')|default(0) %}
                         <tr>
                             <td>{{ account.name }}</td>
                             <td>{{ account.link }}</td>
-                            <td class="text-end">{{ '%.2f'|format(balance) if balance > 0 else '' }}</td>
-                            <td class="text-end">{{ '%.2f'|format(-balance) if balance < 0 else '' }}</td>
+                            <td class="text-end">{{ '%.2f'|format(balance) if balance > 0 else '0.00' }}</td>
+                            <td class="text-end">{{ '%.2f'|format(-balance) if balance < 0 else '0.00' }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

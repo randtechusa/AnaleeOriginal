@@ -70,11 +70,28 @@ def trial_balance():
             return redirect(url_for('main.company_settings'))
             
         fy_dates = company_settings.get_financial_year()
-        accounts = Account.query.filter_by(user_id=current_user.id).order_by(Account.link).all()
         
-        # Calculate totals for footer - corrected SQLAlchemy syntax
-        total_debits = sum(account.balance for account in accounts if account.balance > 0)
-        total_credits = sum(abs(account.balance) for account in accounts if account.balance < 0)
+        # Get accounts with their transactions
+        accounts = (Account.query
+                   .filter_by(user_id=current_user.id)
+                   .outerjoin(Account.transactions)
+                   .filter(
+                       (Transaction.date >= fy_dates['start_date']) &
+                       (Transaction.date <= fy_dates['end_date'])
+                   )
+                   .order_by(Account.link)
+                   .all())
+        
+        # Calculate totals
+        total_debits = 0
+        total_credits = 0
+        
+        for account in accounts:
+            balance = sum(t.amount for t in account.transactions)
+            if balance > 0:
+                total_debits += balance
+            else:
+                total_credits += abs(balance)
         
         return render_template('reports/trial_balance.html',
                              accounts=accounts,
@@ -84,8 +101,8 @@ def trial_balance():
                              total_credits=total_credits)
                              
     except Exception as e:
-        logger.error(f"Error generating trial balance: {str(e)}")
-        flash('Error generating trial balance')
+        logger.error(f"Error generating trial balance: {str(e)}, Stack trace: {str(e.__traceback__)}")
+        flash('Error loading transaction data. Please try again.')
         return redirect(url_for('main.dashboard'))
 
 @reports.route('/financial-position')
