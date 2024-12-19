@@ -10,8 +10,8 @@ from sqlalchemy.sql import func
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Blueprint definition - the url_prefix is handled in app.py
-reports = Blueprint('reports', __name__)
+# Import the blueprint instance from __init__.py
+from . import reports
 
 @reports.route('/cashbook')
 @login_required
