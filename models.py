@@ -247,13 +247,16 @@ class CompanySettings(db.Model):
     def get_financial_year(self, date=None, year=None):
         """Get financial year dates based on provided date or year.
         If neither is provided, uses current date.
-        Handles historical dates by calculating the appropriate financial year."""
+        Financial year starts from month after financial_year_end and ends on financial_year_end of next year."""
         if date is None and year is None:
             date = datetime.utcnow()
         
         if year is not None:
+            # If year is provided, use it as the start year
             start_year = year
         else:
+            # If date's month is after financial year end, start year is the same as date year
+            # Otherwise, start year is the previous year
             if date.month > self.financial_year_end:
                 start_year = date.year
             else:
@@ -261,26 +264,21 @@ class CompanySettings(db.Model):
         
         end_year = start_year + 1
         
-        # Calculate start date
-        if self.financial_year_end == 12:
-            start_date = datetime(start_year, 1, 1)  # Start from January 1st
-        else:
-            # Start from the month after financial year end
-            start_date = datetime(start_year, self.financial_year_end + 1, 1)
+        # Start date is always the first day of the month after financial_year_end
+        start_month = self.financial_year_end + 1 if self.financial_year_end < 12 else 1
+        start_year_adj = start_year if self.financial_year_end < 12 else start_year + 1
+        start_date = datetime(start_year_adj, start_month, 1)
         
-        # Calculate end date
-        if self.financial_year_end == 12:
-            end_date = datetime(start_year, 12, 31)
+        # End date is the last day of financial_year_end month in the next year
+        if self.financial_year_end == 2:
+            # Handle February and leap years
+            last_day = 29 if end_year % 4 == 0 and (end_year % 100 != 0 or end_year % 400 == 0) else 28
+        elif self.financial_year_end in [4, 6, 9, 11]:
+            last_day = 30
         else:
-            # Handle different month lengths for financial year end
-            if self.financial_year_end == 2:
-                last_day = 29 if end_year % 4 == 0 and (end_year % 100 != 0 or end_year % 400 == 0) else 28
-            elif self.financial_year_end in [4, 6, 9, 11]:
-                last_day = 30
-            else:
-                last_day = 31
+            last_day = 31
             
-            end_date = datetime(end_year, self.financial_year_end, last_day)
+        end_date = datetime(end_year, self.financial_year_end, last_day)
         
         return {
             'start_date': start_date,
