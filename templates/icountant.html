@@ -47,14 +47,18 @@
     </div>
 
     {% if transaction and transaction_info %}
-        <div class="row">
+        <div class="transaction-container" id="transactionSwipeContainer">
             <!-- Transaction Details Card -->
-            <div class="col-md-6">
-                <div class="card mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="card-title mb-0">Current Transaction</h5>
+            <div class="card mb-4 transaction-card" id="transactionCard">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Current Transaction</h5>
+                    <div class="swipe-indicator d-block d-md-none">
+                        <small>Swipe for actions</small>
+                        <i class="fas fa-arrows-alt-h"></i>
                     </div>
-                    <div class="card-body">
+                </div>
+                <div class="card-body">
+                    <div class="transaction-details">
                         <h6>Date: {{ transaction.date.strftime('%Y-%m-%d') }}</h6>
                         <h6>Description: {{ transaction.description }}</h6>
                         <h6>Amount: {{ transaction_info.insights.amount_formatted }}</h6>
@@ -67,17 +71,17 @@
             </div>
 
             <!-- AI Insights Card -->
-            <div class="col-md-6">
-                <div class="card mb-4">
-                    <div class="card-header bg-info text-white">
-                        <h5 class="card-title mb-0">AI Insights</h5>
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="card-title mb-0">AI Insights</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        {{ transaction_info.insights.ai_insights|safe }}
                     </div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            {{ transaction_info.insights.ai_insights|safe }}
-                        </div>
-                        {% if transaction_info.insights.similar_transactions %}
-                            <h6>Similar Past Transactions:</h6>
+                    {% if transaction_info.insights.similar_transactions %}
+                        <h6>Similar Past Transactions:</h6>
+                        <div class="similar-transactions-scroll">
                             <ul class="list-group">
                                 {% for similar in transaction_info.insights.similar_transactions %}
                                     <li class="list-group-item">
@@ -86,54 +90,54 @@
                                     </li>
                                 {% endfor %}
                             </ul>
-                        {% endif %}
-                    </div>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
-        </div>
 
-        <!-- Account Selection Card -->
-        <div class="card mt-4">
-            <div class="card-header bg-success text-white">
-                <h5 class="card-title mb-0">Account Selection</h5>
-            </div>
-            <div class="card-body">
-                {% if transaction_info.insights.suggested_accounts %}
-                    <div class="alert alert-success">
-                        <h6 class="mb-2">Suggested Accounts:</h6>
-                        <ul class="list-unstyled">
-                            {% for suggestion in transaction_info.insights.suggested_accounts %}
-                                <li>
-                                    <strong>{{ suggestion.account.name }}</strong>
-                                    <br>
-                                    <small class="text-muted">{{ suggestion.reason }}</small>
-                                </li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                {% endif %}
+            <!-- Account Selection Card -->
+            <div class="card mt-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">Account Selection</h5>
+                </div>
+                <div class="card-body">
+                    {% if transaction_info.insights.suggested_accounts %}
+                        <div class="alert alert-success">
+                            <h6 class="mb-2">Suggested Accounts:</h6>
+                            <ul class="list-unstyled">
+                                {% for suggestion in transaction_info.insights.suggested_accounts %}
+                                    <li>
+                                        <strong>{{ suggestion.account.name }}</strong>
+                                        <br>
+                                        <small class="text-muted">{{ suggestion.reason }}</small>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endif %}
 
-                <form method="POST" action="{{ url_for('main.icountant_interface') }}" id="transactionForm">
-                    <input type="hidden" name="transaction_id" value="{{ transaction.id }}">
+                    <form method="POST" action="{{ url_for('main.icountant_interface') }}" id="transactionForm">
+                        <input type="hidden" name="transaction_id" value="{{ transaction.id }}">
 
-                    <div class="form-group">
-                        <label for="selected_account">Select Account:</label>
-                        <select class="form-control" id="selected_account" name="selected_account" required>
-                            <option value="">Choose an account...</option>
-                            {% for i in range(accounts|length) %}
-                            <option value="{{ i }}"
-                                {% if transaction_info.insights.suggested_accounts and 
-                                    accounts[i].name == transaction_info.insights.suggested_accounts[0].account.name %}
-                                    selected
-                                {% endif %}>
-                                {{ accounts[i].name }} ({{ accounts[i].category }})
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
+                        <div class="form-group">
+                            <label for="selected_account">Select Account:</label>
+                            <select class="form-control" id="selected_account" name="selected_account" required>
+                                <option value="">Choose an account...</option>
+                                {% for i in range(accounts|length) %}
+                                <option value="{{ i }}"
+                                    {% if transaction_info.insights.suggested_accounts and 
+                                        accounts[i].name == transaction_info.insights.suggested_accounts[0].account.name %}
+                                        selected
+                                    {% endif %}>
+                                    {{ accounts[i].name }} ({{ accounts[i].category }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
 
-                    <button type="submit" class="btn btn-primary mt-3">Process Transaction</button>
-                </form>
+                        <button type="submit" class="btn btn-primary mt-3">Process Transaction</button>
+                    </form>
+                </div>
             </div>
         </div>
     {% else %}
@@ -146,30 +150,32 @@
         <!-- Recently Processed Transactions -->
         <div class="card mt-4">
             <div class="card-header bg-success text-white">
-                <h5 class="card-title mb-0">Recently Processed Transactions</h5>
+                <h5 class="card-title mb-0">Recently Processed</h5>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Description</th>
-                                <th>Amount</th>
-                                <th>Account</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for tx in recently_processed %}
+                    <div class="recent-transactions-scroll">
+                        <table class="table table-striped">
+                            <thead>
                                 <tr>
-                                    <td>{{ tx.date.strftime('%Y-%m-%d') }}</td>
-                                    <td>{{ tx.description }}</td>
-                                    <td>{{ "${:,.2f}".format(tx.amount) }}</td>
-                                    <td>{{ tx.account.name if tx.account else 'N/A' }}</td>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Account</th>
                                 </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {% for tx in recently_processed %}
+                                    <tr>
+                                        <td>{{ tx.date.strftime('%Y-%m-%d') }}</td>
+                                        <td>{{ tx.description }}</td>
+                                        <td>{{ "${:,.2f}".format(tx.amount) }}</td>
+                                        <td>{{ tx.account.name if tx.account else 'N/A' }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -200,6 +206,60 @@
     color: #333;
     margin-top: 10px;
 }
+
+/* Mobile-friendly styles */
+.transaction-container {
+    position: relative;
+    overflow: hidden;
+    touch-action: pan-x;
+}
+
+.transaction-card {
+    transition: transform 0.3s ease-out;
+    position: relative;
+}
+
+.swipe-indicator {
+    font-size: 0.8em;
+    opacity: 0.8;
+}
+
+.similar-transactions-scroll,
+.recent-transactions-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .card {
+        border-radius: 10px;
+        margin-bottom: 15px;
+    }
+
+    .transaction-details {
+        font-size: 0.95em;
+    }
+
+    .btn {
+        width: 100%;
+        margin: 5px 0;
+    }
+
+    select.form-control {
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+}
+
+/* Swipe animation classes */
+.swipe-left {
+    transform: translateX(-100px);
+}
+
+.swipe-right {
+    transform: translateX(100px);
+}
 </style>
 
 <script>
@@ -223,6 +283,47 @@ document.addEventListener('DOMContentLoaded', function() {
         form.addEventListener('submit', function() {
             loadingOverlay.classList.remove('d-none');
         });
+    }
+
+    // Touch swipe handling
+    const transactionCard = document.getElementById('transactionCard');
+    if (transactionCard) {
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        transactionCard.addEventListener('touchstart', function(e) {
+            touchStartX = e.changedTouches[0].screenX;
+        }, false);
+
+        transactionCard.addEventListener('touchmove', function(e) {
+            touchEndX = e.changedTouches[0].screenX;
+            const diffX = touchEndX - touchStartX;
+
+            if (Math.abs(diffX) > 20) {
+                e.preventDefault();
+                const transform = `translateX(${diffX}px)`;
+                transactionCard.style.transform = transform;
+            }
+        }, { passive: false });
+
+        transactionCard.addEventListener('touchend', function(e) {
+            touchEndX = e.changedTouches[0].screenX;
+            const diffX = touchEndX - touchStartX;
+
+            if (Math.abs(diffX) > 100) {
+                // Swipe threshold met
+                if (diffX > 0) {
+                    // Swipe right - approve
+                    document.getElementById('transactionForm').submit();
+                } else {
+                    // Swipe left - skip
+                    window.location.reload();
+                }
+            } else {
+                // Reset position if swipe threshold not met
+                transactionCard.style.transform = 'translateX(0)';
+            }
+        }, false);
     }
 });
 </script>
