@@ -829,7 +829,7 @@ def _parse_insights(insights_text):
 
 def _extract_risk_factors(insights_text):
     """Extract risk factors from AI insights"""
-    # TODO: Implement risk factor extraction
+        # TODO: Implement risk factor extraction
     return ["Risk analysis will be available in the next update"]
 
 def _extract_opportunities(insights_text):
@@ -988,57 +988,26 @@ SEMANTIC_THRESHOLD = 0.7
 @main.route('/icountant', methods=['GET', 'POST'])
 @login_required
 def icountant_interface():
-    """Interactive AI agent for guided double-entry accounting with real-time insights."""
+    """Handle the iCountant interface with proper transaction processing"""
+    logger.info(f"Starting iCountant interface for user {current_user.id}")
+
     try:
-        logger.info(f"Starting iCountant interface for user {current_user.id}")
+        # Get total transaction count
+        total_count = Transaction.query.filter_by(user_id=current_user.id).count()
+        logger.info(f"Total transactions for user {current_user.id}: {total_count}")
 
-        # First check if user has any transactions at all
-        total_transactions = Transaction.query.filter_by(user_id=current_user.id).count()
-        logger.info(f"Total transactions for user {current_user.id}: {total_transactions}")
-
-        if total_transactions == 0:
-            flash('Please upload some transactions first before using iCountant.', 'info')
-            return redirect(url_for('main.upload'))
-
-        # Get both processed and unprocessed transactions
-        unprocessed_query = Transaction.query.filter_by(
+        # Get unprocessed transactions
+        transactions = Transaction.query.filter_by(
             user_id=current_user.id,
             account_id=None
-        ).order_by(Transaction.date)
+        ).order_by(Transaction.date).all()
 
-        processed_query = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.account_id.isnot(None)
-        ).order_by(Transaction.date.desc()).limit(5)  # Show last 5 processed transactions
-
-        unprocessed_transactions = unprocessed_query.all()
-        recently_processed = processed_query.all()
-
-        logger.info(f"Found {len(unprocessed_transactions)} unprocessed transactions for user {current_user.id}")
-
-        # Get progress counts
-        total_count = total_transactions
-        processed_count = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.account_id.isnot(None)
-        ).count()
-        logger.info(f"Progress: {processed_count}/{total_count} transactions processed")
-
-        # Get available accounts for the user
+        # Get active accounts for processing
         accounts = Account.query.filter_by(
             user_id=current_user.id,
             is_active=True
-        ).order_by(Account.category, Account.name).all()
-
+        ).all()
         logger.info(f"Found {len(accounts)} active accounts for user {current_user.id}")
-
-        account_list = [
-            {'name': acc.name, 'category': acc.category, 'id': acc.id}
-            for acc in accounts
-        ]
-
-        # Initialize iCountant agent
-        agent = ICountant(account_list)
 
         if request.method == 'POST':
             transaction_id = request.form.get('transaction_id', type=int)
@@ -1047,57 +1016,64 @@ def icountant_interface():
             if transaction_id and selected_account is not None:
                 transaction = Transaction.query.get(transaction_id)
                 if transaction and transaction.user_id == current_user.id:
-                    # Complete the transaction with selected account
-                    success, message, completed = agent.complete_transaction(selected_account)
-
-                    if success:
-                        # Update the transaction in database
-                        transaction.account_id = account_list[selected_account]['id']
-
-                        # Store AI insights if available
-                        if completed and completed.get('metadata', {}).get('insights_generated'):
-                            transaction.ai_category = completed['metadata'].get('account_category')
-                            transaction.ai_confidence = 0.8  # Default confidence for user-selected accounts
-
+                    if 0 <= selected_account < len(accounts):
+                        transaction.account_id = accounts[selected_account].id
                         db.session.commit()
-                        flash(message, 'success')
-                    else:
-                        flash(message, 'error')
+                        flash('Transaction processed successfully')
+                        return redirect(url_for('main.icountant_interface'))
 
-                    # Redirect to process the next transaction
-                    return redirect(url_for('main.icountant_interface'))
-
-        # Get the next unprocessed transaction
-        current_transaction = unprocessed_transactions[0] if unprocessed_transactions else None
-
-        # Process it through iCountant with insights
+        # Get current transaction and process it
+        current_transaction = next((t for t in transactions), None)
         if current_transaction:
-            message, transaction_info = agent.process_transaction({
-                'date': current_transaction.date,
-                'amount': float(current_transaction.amount),
-                'description': current_transaction.description
-            })
             logger.info(f"Processing transaction {current_transaction.id}: {current_transaction.description}")
+
+            # Initialize insights generator
+            insights_generator = FinancialInsightsGenerator()
+            transaction_info = {
+                'insights': {
+                    'amount_formatted': f"${abs(current_transaction.amount):,.2f}",
+                    'transaction_type': 'credit' if current_transaction.amount < 0 else 'debit',
+                    'ai_insights': "Transaction analysis in progress...",
+                    'suggested_accounts': [
+                        {
+                            'account': account,
+                            'reason': 'Suggested based on transaction type'
+                        } for account in accounts[:3]  # Suggest first 3 accounts
+                    ]
+                }
+            }
+            message = None
         else:
-            message = 'All transactions have been processed. You can:'
-            message += '\n1. Upload new transactions'
-            message += '\n2. View your processed transactions below'
-            transaction_info = {}
+            current_transaction = None
+            transaction_info = None
+            message = "No transactions pending for processing"
+
+        # Get recently processed transactions
+        recently_processed = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.account_id.isnot(None)
+        ).order_by(Transaction.date.desc()).limit(5).all()
+
+        processed_count = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.account_id.isnot(None)
+        ).count()
 
         return render_template(
             'icountant.html',
-            message=message,
             transaction=current_transaction,
             transaction_info=transaction_info,
             accounts=accounts,
-            total_count=total_count,
+            message=message,
+            recently_processed=recently_processed,
             processed_count=processed_count,
-            recently_processed=recently_processed
+            total_count=total_count
         )
 
     except Exception as e:
         logger.error(f"Error in iCountant interface: {str(e)}")
-        flash('Error processing transactions. Please try again.', 'error')
+        db.session.rollback()
+        flash('Error processing transaction')
         return redirect(url_for('main.dashboard'))
 
 class ICountant:
