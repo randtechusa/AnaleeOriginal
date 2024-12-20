@@ -26,7 +26,7 @@ def process_uploaded_file(file, status):
             df = pd.read_csv(file)
         else:
             raise ValueError('Invalid file format')
-            
+
         total_rows = len(df)
         return df, total_rows
     except Exception as e:
@@ -50,7 +50,7 @@ def process_transaction_rows(df, uploaded_file, user):
     """Process transaction rows from dataframe."""
     processed_rows = 0
     error_rows = []
-    
+
     try:
         for index, row in df.iterrows():
             try:
@@ -68,10 +68,10 @@ def process_transaction_rows(df, uploaded_file, user):
                     'row': index + 2,  # +2 for Excel row number (header + 1-based index)
                     'error': str(e)
                 })
-                
+
         db.session.commit()
         return processed_rows, error_rows
-        
+
     except Exception as e:
         logger.error(f"Error processing transactions: {str(e)}")
         db.session.rollback()
@@ -98,7 +98,7 @@ def login():
         try:
             email = request.form.get('email', '').strip()
             password = request.form.get('password', '')
-            
+
             if not email or not password:
                 logger.warning("Login attempt with missing credentials")
                 flash('Please provide both email and password')
@@ -121,7 +121,7 @@ def login():
                 return render_template('login.html')
 
             logger.info(f"Found user {user.username} with ID {user.id}")
-            
+
             if not user.check_password(password):
                 logger.warning(f"Password verification failed for user: {email}")
                 flash('Invalid email or password')
@@ -130,12 +130,12 @@ def login():
             # Login successful - set up session
             login_user(user, remember=True)
             logger.info(f"User {email} logged in successfully")
-            
+
             # Handle redirect
             next_page = request.args.get('next')
             if not next_page or not next_page.startswith('/'):
                 next_page = url_for('main.dashboard')
-            
+
             logger.info(f"Login successful, redirecting to: {next_page}")
             return redirect(next_page)
 
@@ -166,13 +166,13 @@ def register():
             username = request.form.get('username', '').strip()
             email = request.form.get('email', '').strip()
             password = request.form.get('password', '')
-            
+
             # Validate required fields
             if not username or not email or not password:
                 logger.warning("Registration attempt with missing fields")
                 flash('All fields are required')
                 return render_template('register.html')
-            
+
             # Validate email format
             from email_validator import validate_email, EmailNotValidError
             try:
@@ -181,7 +181,7 @@ def register():
                 logger.warning(f"Invalid email format during registration: {email}")
                 flash('Please enter a valid email address')
                 return render_template('register.html')
-            
+
             # Check for existing user
             existing_user = User.query.filter(
                 (User.username == username) | (User.email == email)
@@ -190,7 +190,7 @@ def register():
                 logger.warning(f"Registration attempt with existing username/email: {username}/{email}")
                 flash('Username or email already exists')
                 return render_template('register.html')
-            
+
             # Create new user with enhanced error handling
             try:
                 user = User(
@@ -199,11 +199,11 @@ def register():
                 )
                 user.set_password(password)
                 logger.info(f"Created new user object for {username}")
-                
+
                 db.session.add(user)
                 db.session.commit()
                 logger.info(f"Successfully registered new user: {username}")
-                
+
                 # Log the user in after registration
                 # Create default Chart of Accounts for the new user
                 try:
@@ -217,19 +217,19 @@ def register():
                     db.session.rollback()
                     flash('Error during registration. Please try again.')
                     return render_template('register.html')
-                
+
             except Exception as user_error:
                 logger.error(f"Error creating user: {str(user_error)}")
                 db.session.rollback()
                 flash('Error creating user account. Please try again.')
                 return render_template('register.html')
-            
+
         except Exception as e:
             logger.error(f'Unexpected error during registration: {str(e)}')
             logger.exception("Full registration error stacktrace:")
             db.session.rollback()
             flash('Registration failed. Please try again.')
-            
+
 
     return render_template('register.html')
 
@@ -268,35 +268,35 @@ def logout():
 @login_required
 def company_settings():
     settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
-    
+
     if request.method == 'POST':
         try:
             if not settings:
                 settings = CompanySettings(user_id=current_user.id)
                 db.session.add(settings)
-            
+
             settings.company_name = request.form['company_name']
             settings.registration_number = request.form['registration_number']
             settings.tax_number = request.form['tax_number']
             settings.vat_number = request.form['vat_number']
             settings.address = request.form['address']
             settings.financial_year_end = int(request.form['financial_year_end'])
-            
+
             db.session.commit()
             flash('Company settings updated successfully')
-            
+
         except Exception as e:
             logger.error(f'Error updating company settings: {str(e)}')
             flash('Error updating company settings')
             db.session.rollback()
-    
+
     months = [
         (1, 'January'), (2, 'February'), (3, 'March'),
         (4, 'April'), (5, 'May'), (6, 'June'),
         (7, 'July'), (8, 'August'), (9, 'September'),
         (10, 'October'), (11, 'November'), (12, 'December')
     ]
-    
+
     return render_template(
         'company_settings.html',
         settings=settings,
@@ -328,20 +328,19 @@ def analyze(file_id):
             flash('File not found or unauthorized access')
             return redirect(url_for('main.upload'))
 
-        # Load transactions with proper error handling
+        # Load ALL transactions for the file, not just unprocessed ones
         try:
             transactions = Transaction.query.filter_by(
                 file_id=file_id,
-                user_id=current_user.id,
-                account_id=None  # Only get unprocessed transactions
+                user_id=current_user.id
             ).order_by(Transaction.date).all()
 
-            if not transactions:
-                logger.info(f"No unprocessed transactions found for file {file_id}")
-                flash('No transactions available for processing')
-                return redirect(url_for('main.upload'))
+            logger.info(f"Found {len(transactions)} total transactions for file {file_id}")
 
-            logger.info(f"Successfully loaded {len(transactions)} transactions for file {file_id}")
+            if not transactions:
+                logger.warning(f"No transactions found for file {file_id}")
+                flash('No transactions found in this file')
+                return redirect(url_for('main.upload'))
 
             # Load accounts for the user
             accounts = Account.query.filter_by(
@@ -354,21 +353,31 @@ def analyze(file_id):
                 flash('Please set up your Chart of Accounts first')
                 return redirect(url_for('main.settings'))
 
-            logger.info(f"Successfully loaded {len(accounts)} active accounts for user {current_user.id}")
+            logger.info(f"Successfully loaded {len(accounts)} active accounts")
 
-            # Process transactions
+            # Initialize insights for each transaction
             transaction_insights = {}
             for transaction in transactions:
-                # Generate insights using pattern matching and AI
+                logger.info(f"Processing transaction {transaction.id}: {transaction.description}")
                 transaction_insights[transaction.id] = {
-                    'similar_transactions': [],  # Will be populated by AI
+                    'similar_transactions': [],
                     'pattern_matches': [],
                     'keyword_matches': [],
                     'rule_matches': [],
                     'explanation_suggestion': None,
                     'confidence': 0,
-                    'ai_processed': False
+                    'ai_processed': False,
+                    'needs_processing': transaction.account_id is None
                 }
+
+            # Count unprocessed transactions
+            unprocessed_count = sum(1 for t in transactions if t.account_id is None)
+            logger.info(f"Found {unprocessed_count} unprocessed transactions")
+
+            if unprocessed_count == 0:
+                flash('All transactions have been processed')
+            else:
+                flash(f'Found {unprocessed_count} transactions that need processing')
 
             return render_template(
                 'analyze.html',
@@ -376,17 +385,20 @@ def analyze(file_id):
                 transactions=transactions,
                 accounts=accounts,
                 transaction_insights=transaction_insights,
+                unprocessed_count=unprocessed_count,
                 ai_available=True
             )
 
         except Exception as tx_error:
             logger.error(f"Error loading transactions: {str(tx_error)}")
+            logger.exception("Full transaction loading error:")
             db.session.rollback()
             flash('Error loading transaction data. Please try again.')
             return redirect(url_for('main.upload'))
 
     except Exception as e:
         logger.error(f"Error in analyze route: {str(e)}")
+        logger.exception("Full analyze route error:")
         flash('Error loading transaction data')
         return redirect(url_for('main.upload'))
 
@@ -440,15 +452,15 @@ def dashboard():
     if not company_settings:
         flash('Please configure company settings first.')
         return redirect(url_for('main.company_settings'))
-    
+
     # Get year from request or use earliest transaction year
     earliest_transaction = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date).first()
     latest_transaction = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).first()
-    
+
     # Initialize current_date
     current_date = datetime.utcnow()
     selected_year = request.args.get('year', type=int)
-    
+
     if not selected_year and earliest_transaction:
         # Default to the year of the earliest transaction
         if earliest_transaction.date.month > company_settings.financial_year_end:
@@ -466,20 +478,20 @@ def dashboard():
     else:
         # If year is selected, create a date object for that year
         current_date = datetime(selected_year, company_settings.financial_year_end, 1)
-    
+
     fy_dates = company_settings.get_financial_year(current_date)
     start_date = fy_dates['start_date']
     end_date = fy_dates['end_date']
-    
+
     transactions = Transaction.query.filter(
         Transaction.user_id == current_user.id,
         Transaction.date.between(start_date, end_date)
     ).order_by(Transaction.date.desc()).all()
-    
+
     total_income = sum(t.amount for t in transactions if t.amount > 0)
     total_expenses = abs(sum(t.amount for t in transactions if t.amount < 0))
     transaction_count = len(transactions)
-    
+
     monthly_data = {}
     for transaction in transactions:
         month_key = transaction.date.strftime('%Y-%m')
@@ -489,22 +501,22 @@ def dashboard():
             monthly_data[month_key]['income'] += transaction.amount
         else:
             monthly_data[month_key]['expenses'] += abs(transaction.amount)
-    
+
     sorted_months = sorted(monthly_data.keys())
     monthly_labels = [datetime.strptime(m, '%Y-%m').strftime('%b %Y') for m in sorted_months]
     monthly_income = [monthly_data[m]['income'] for m in sorted_months]
     monthly_expenses = [monthly_data[m]['expenses'] for m in sorted_months]
-    
+
     category_data = {}
     for transaction in transactions:
         if transaction.account and transaction.amount < 0:
             category = transaction.account.category or 'Uncategorized'
             category_data[category] = category_data.get(category, 0) + abs(transaction.amount)
-    
+
     sorted_categories = sorted(category_data.items(), key=lambda x: x[1], reverse=True)
     category_labels = [cat[0] for cat in sorted_categories]
     category_amounts = [cat[1] for cat in sorted_categories]
-    
+
     financial_years = set()
     for t in Transaction.query.filter_by(user_id=current_user.id).all():
         if t.date.month > company_settings.financial_year_end:
@@ -512,12 +524,12 @@ def dashboard():
         else:
             financial_years.add(t.date.year - 1)
     financial_years = sorted(list(financial_years))
-    
+
     recent_transactions = Transaction.query.filter_by(user_id=current_user.id)\
         .order_by(Transaction.date.desc())\
         .limit(5)\
         .all()
-    
+
     return render_template('dashboard.html',
                          transactions=recent_transactions,
                          total_income=total_income,
@@ -538,7 +550,7 @@ def upload():
         # Get uploaded files
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
         logger.info(f"Retrieved {len(files)} existing files for user {current_user.id}")
-        
+
         # Get bank accounts with detailed logging
         try:
             bank_accounts = Account.query.filter(
@@ -546,44 +558,44 @@ def upload():
                 Account.link.ilike('ca.810%'),  # Case-insensitive LIKE
                 Account.is_active == True
             ).order_by(Account.link).all()
-            
+
             logger.info(f"Found {len(bank_accounts)} bank accounts for user {current_user.id}")
             if bank_accounts:
                 for account in bank_accounts:
                     logger.info(f"Bank account found: ID={account.id}, Link={account.link}, Name={account.name}")
             else:
                 logger.warning(f"No bank accounts found for user {current_user.id} with link pattern 'ca.810%'")
-                
+
             # Query all accounts to verify filter
             all_accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
             logger.info(f"Total active accounts: {len(all_accounts)}")
             logger.info(f"Account links: {[acc.link for acc in all_accounts]}")
-            
+
         except Exception as e:
             logger.error(f"Error fetching bank accounts: {str(e)}")
             db.session.rollback()
             bank_accounts = []
-        
+
         if request.method == 'POST':
             logger.debug("Processing file upload request")
             if 'file' not in request.files:
                 logger.warning("No file found in request")
                 flash('No file uploaded')
                 return redirect(url_for('main.upload'))
-                
+
             file = request.files['file']
             if not file.filename:
                 logger.warning("Empty filename received")
                 flash('No file selected')
                 return redirect(url_for('main.upload'))
-            
+
             logger.info(f"Processing uploaded file: {file.filename}")
-            
+
             if not file.filename.endswith(('.csv', '.xlsx')):
                 logger.warning(f"Invalid file format: {file.filename}")
                 flash('Invalid file format. Please upload a CSV or Excel file.')
                 return redirect(url_for('main.upload'))
-                
+
             try:
                 uploaded_file = UploadedFile(
                     filename=file.filename,
@@ -591,11 +603,11 @@ def upload():
                 )
                 db.session.add(uploaded_file)
                 db.session.commit()
-                
+
                 df, total_rows = process_uploaded_file(file, init_upload_status(file.filename))
                 processed_rows, error_rows = process_transaction_rows(df, uploaded_file, current_user)
-                
-                
+
+
                 if processed_rows > 0:
                     session['upload_status']['processed_rows'] = processed_rows
                     session['upload_status']['failed_rows'] = len(error_rows)
@@ -608,18 +620,18 @@ def upload():
                 else:
                     flash('No transactions could be processed from the file.')
                     return redirect(url_for('main.upload'))
-                
+
             except Exception as e:
                 logger.error(f"Error processing file: {str(e)}")
                 db.session.rollback()
                 flash('Error processing file')
                 return redirect(url_for('main.upload'))
-                
+
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}")
         flash('An error occurred during file upload')
         return redirect(url_for('main.upload'))
-        
+
     return render_template('upload.html', files=files, bank_accounts=bank_accounts)
 
 
@@ -647,26 +659,26 @@ def update_explanation():
         transaction_id = data.get('transaction_id')
         explanation = data.get('explanation', '').strip()
         description = data.get('description', '').strip()
-        
+
         if not transaction_id or not description:
             return jsonify({'error': 'Missing required fields'}), 400
-            
+
         transaction = Transaction.query.filter_by(
-            id=transaction_id, 
+            id=transaction_id,
             user_id=current_user.id
         ).first()
-        
+
         if not transaction:
             return jsonify({'error': 'Transaction not found'}), 404
-            
+
         transaction.explanation = explanation
         db.session.commit()
-        
+
         return jsonify({
             'success': True,
             'message': 'Explanation updated successfully'
         })
-        
+
     except Exception as e:
         logger.error(f"Error updating explanation: {str(e)}")
         db.session.rollback()
@@ -679,29 +691,29 @@ def predict_account_route():
         data = request.get_json()
         description = data.get('description', '').strip()
         explanation = data.get('explanation', '').strip()
-        
+
         if not description:
             return jsonify({'error': 'Description is required'}), 400
-            
+
         available_accounts = Account.query.filter_by(
             user_id=current_user.id,
             is_active=True
         ).all()
-        
+
         if not available_accounts:
             return jsonify({'error': 'No active accounts found'}), 400
-        
+
         account_data = [{
             'name': acc.name,
             'category': acc.category,
             'balance': 0  # Initialize with zero balance
         } for acc in available_accounts]
-        
+
         return jsonify({
             'success': True,
             'accounts': account_data
         })
-        
+
     except Exception as e:
         logger.error(f"Error predicting account: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -715,21 +727,21 @@ def financial_insights():
         if not company_settings:
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
-        
+
         # Get current financial year dates
         fy_dates = company_settings.get_financial_year()
         start_date = fy_dates['start_date']
         end_date = fy_dates['end_date']
-        
+
         # Get transactions for analysis
         transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.date.between(start_date, end_date)
         ).order_by(Transaction.date.desc()).all()
-        
+
         # Initialize financial insights generator
         insights_generator = FinancialInsightsGenerator()
-        
+
         # Get AI-generated insights if available
         financial_advice = session.get('financial_advice', {
             'key_insights': [],
@@ -743,13 +755,13 @@ def financial_insights():
                 'improvement_suggestions': []
                     }
         })
-        
+
         return render_template('financial_insights.html',
                              transactions=transactions,
                              start_date=start_date,
                              enddate=end_date,
                              financial_advice=financial_advice)
-                             
+
     except Exception as e:
         logger.error(f"Error in financialinsights: {str(e)}")
         flash('Error generating financial insights')
@@ -765,13 +777,13 @@ def generate_insights():
         if not company_settings:
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
-            
+
         fy_dates = company_settings.get_financial_year()
         transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.date.between(fy_dates['start_date'], fy_dates['end_date'])
         ).order_by(Transaction.date.desc()).all()
-        
+
         # Convert transactions to dictionary format for AI processing
         transaction_data = [{
             'date': t.date.isoformat(),
@@ -779,11 +791,11 @@ def generate_insights():
             'amount': float(t.amount),
             'category': t.account.category if t.account else 'Uncategorized'
         } for t in transactions]
-        
+
         # Generate insights using AI
         insights_generator = FinancialInsightsGenerator()
         insights = insights_generator.generate_transaction_insights(transaction_data)
-        
+
         if insights.get('success'):
             # Parse AI response and structure it
             financial_advice = {
@@ -797,9 +809,9 @@ def generate_insights():
             flash('Financial insights generated successfully', 'success')
         else:
             flash('Unable to generate insights at this time', 'error')
-            
+
         return redirect(url_for('main.financial_insights'))
-        
+
     except Exception as e:
         logger.error(f"Error generating AI insights: {str(e)}")
         flash('Error generating financial insights')
@@ -813,7 +825,7 @@ def _parse_insights(insights_text):
         return insights_text
     except Exception as e:
         logger.error(f"Error parsing insights: {str(e)}")
-        return "Unable to parse insights"
+        return "Unable to parseinsights"
 
 def _extract_risk_factors(insights_text):
     """Extract risk factors from AI insights"""
@@ -836,7 +848,7 @@ def _analyze_cash_flow(transactions):
         total_inflow = sum(t['amount'] for t in transactions if t['amount'] > 0)
         total_outflow = sum(abs(t['amount']) for t in transactions if t['amount'] < 0)
         net_flow = total_inflow - total_outflow
-        
+
         return {
             'current_status': f"Net cash flow: ${net_flow:,.2f}",
             'projected_trend': "Trend analysis will be available in the next update",
@@ -863,28 +875,28 @@ def expense_forecast():
         if not company_settings:
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
-        
+
         fy_dates = company_settings.get_financial_year()
         start_date = fy_dates['start_date']
         end_date = fy_dates['end_date']
-        
+
         transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.date.between(start_date, end_date)
         ).order_by(Transaction.date.desc()).all()
-        
+
         transaction_data = [{
             'amount': t.amount,
             'description': t.description,
             'date': t.date.strftime('%Y-%m-%d'),
             'account_name': t.account.name if t.account else 'Uncategorized'
         } for t in transactions]
-        
-        return render_template('expense_forecast.html', 
+
+        return render_template('expense_forecast.html',
                              transactions=transaction_data,
                              start_date=start_date.strftime('%Y-%m-%d'),
                              end_date=end_date.strftime('%Y-%m-%d'))
-        
+
     except Exception as e:
         logger.error(f"Error in expense forecast: {str(e)}")
         flash('Error generating expense forecast')
@@ -897,10 +909,10 @@ def suggest_explanation_api():
     try:
         data = request.get_json()
         description = data.get('description', '').strip()
-        
+
         if not description:
             return jsonify({'error': 'Description is required'}), 400
-            
+
         similar_transactions = find_similar_transactions(
             description,
             Transaction.query.filter(
@@ -908,13 +920,13 @@ def suggest_explanation_api():
                 Transaction.explanation.isnot(None)
             ).all()
         )
-        
+
         suggestion = suggest_explanation(description, similar_transactions)
         return jsonify({
             'success': True,
             'suggestion': suggestion
         })
-        
+
     except Exception as e:
         logger.error(f"Error in ESF: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -929,7 +941,7 @@ def upload_progress():
                 'status': 'no_upload',
                 'message': 'No upload in progress'
             })
-            
+
         return jsonify({
             'status': status.get('status', 'unknown'),
             'filename': status.get('filename', ''),
@@ -940,7 +952,7 @@ def upload_progress():
             'last_update': status.get('last_update'),
             'errors': status.get('errors', [])
         })
-        
+
     except Exception as e:
         logger.error(f"Error checking upload progress: {str(e)}")
         return jsonify({
