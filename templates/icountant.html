@@ -14,6 +14,23 @@
         {% endif %}
     {% endwith %}
 
+    <!-- Loading Animation -->
+    <div id="loadingOverlay" class="loading-overlay d-none">
+        <div class="loading-content">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <div class="loading-text mt-3">Processing Transaction</div>
+            <div class="progress mt-3" style="width: 200px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     style="width: {{ (processed_count / total_count * 100) if total_count else 0 }}%">
+                    {{ processed_count }}/{{ total_count }}
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Progress Tracking -->
     <div class="card mb-4">
         <div class="card-header bg-secondary text-white">
@@ -96,7 +113,7 @@
                     </div>
                 {% endif %}
 
-                <form method="POST" action="{{ url_for('main.icountant_interface') }}">
+                <form method="POST" action="{{ url_for('main.icountant_interface') }}" id="transactionForm">
                     <input type="hidden" name="transaction_id" value="{{ transaction.id }}">
 
                     <div class="form-group">
@@ -160,6 +177,31 @@
 </div>
 
 {% block scripts %}
+<style>
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.loading-content {
+    text-align: center;
+}
+
+.loading-text {
+    font-size: 1.2em;
+    color: #333;
+    margin-top: 10px;
+}
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Enable Bootstrap tooltips
@@ -171,6 +213,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-scroll to suggestions when available
     if (document.querySelector('.alert-success')) {
         document.querySelector('.alert-success').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Show loading overlay when form is submitted
+    const form = document.getElementById('transactionForm');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+
+    if (form) {
+        form.addEventListener('submit', function() {
+            loadingOverlay.classList.remove('d-none');
+        });
     }
 });
 </script>
