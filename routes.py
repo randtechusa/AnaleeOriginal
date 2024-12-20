@@ -828,7 +828,7 @@ def _parse_insights(insights_text):
         return "Unable to parseinsights"
 
 def _extract_risk_factors(insights_text):
-    """Extract risk factors from AI insights"""
+    """Extract risk factors fromAI insights"""
         # TODO: Implement risk factor extraction
     return ["Risk analysis will be available in the next update"]
 
@@ -988,7 +988,7 @@ SEMANTIC_THRESHOLD = 0.7
 @main.route('/icountant', methods=['GET', 'POST'])
 @login_required
 def icountant_interface():
-    """Handle the iCountant interface with proper transaction processing"""
+    """Handle the iCountant interface with proper transaction processing and AI suggestions"""
     logger.info(f"Starting iCountant interface for user {current_user.id}")
 
     try:
@@ -1006,7 +1006,7 @@ def icountant_interface():
         accounts = Account.query.filter_by(
             user_id=current_user.id,
             is_active=True
-        ).all()
+        ).order_by(Account.category, Account.name).all()
         logger.info(f"Found {len(accounts)} active accounts for user {current_user.id}")
 
         if request.method == 'POST':
@@ -1017,10 +1017,13 @@ def icountant_interface():
                 transaction = Transaction.query.get(transaction_id)
                 if transaction and transaction.user_id == current_user.id:
                     if 0 <= selected_account < len(accounts):
-                        transaction.account_id = accounts[selected_account].id
-                        db.session.commit()
-                        flash('Transaction processed successfully')
-                        return redirect(url_for('main.icountant_interface'))
+                        # Store the AI suggestion before updating
+                        if transaction.ai_category:
+                            transaction.account_id = accounts[selected_account].id
+                            transaction.ai_confidence = float(transaction.ai_confidence or 0.0)
+                            db.session.commit()
+                            flash('Transaction processed successfully')
+                            return redirect(url_for('main.icountant_interface'))
 
         # Get current transaction and process it
         current_transaction = next((t for t in transactions), None)
@@ -1029,17 +1032,41 @@ def icountant_interface():
 
             # Initialize insights generator
             insights_generator = FinancialInsightsGenerator()
+
+            # Generate insights with AI categorization
+            insights = insights_generator.generate_transaction_insights([{
+                'date': current_transaction.date.isoformat(),
+                'description': current_transaction.description,
+                'amount': float(current_transaction.amount),
+                'category': current_transaction.account.category if current_transaction.account else None
+            }])
+
+            # Store AI suggestions in the transaction
+            current_transaction.ai_category = insights['category_suggestion']['category']
+            current_transaction.ai_confidence = insights['category_suggestion']['confidence']
+            current_transaction.ai_explanation = insights['category_suggestion']['explanation']
+            db.session.commit()
+
+            # Format suggestions for display
+            suggested_accounts = []
+            if insights['category_suggestion']['category']:
+                matching_accounts = [acc for acc in accounts 
+                                  if acc.category.lower() == insights['category_suggestion']['category'].lower()]
+                suggested_accounts = [{
+                    'account': acc,
+                    'confidence': insights['category_suggestion']['confidence'],
+                    'reason': insights['category_suggestion']['explanation']
+                } for acc in matching_accounts[:3]]  # Top 3 matching accounts
+
             transaction_info = {
                 'insights': {
                     'amount_formatted': f"${abs(current_transaction.amount):,.2f}",
                     'transaction_type': 'credit' if current_transaction.amount < 0 else 'debit',
-                    'ai_insights': "Transaction analysis in progress...",
-                    'suggested_accounts': [
-                        {
-                            'account': account,
-                            'reason': 'Suggested based on transaction type'
-                        } for account in accounts[:3]  # Suggest first 3 accounts
-                    ]
+                    'ai_insights': insights['insights'],
+                    'suggested_accounts': suggested_accounts or [{
+                        'account': account,
+                        'reason': 'Alternative suggestion based on category'
+                    } for account in accounts[:3]]  # Fallback to first 3 accounts if no AI matches
                 }
             }
             message = None
