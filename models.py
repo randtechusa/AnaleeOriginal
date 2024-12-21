@@ -36,6 +36,7 @@ class User(UserMixin, db.Model):
     transactions = relationship('Transaction', backref='user', lazy=True, cascade='all, delete-orphan')
     accounts = relationship('Account', backref='user', lazy=True, cascade='all, delete-orphan')
     company_settings = relationship('CompanySettings', backref='user', uselist=False, lazy=True, cascade='all, delete-orphan')
+    financial_goals = relationship('FinancialGoal', backref='user', lazy=True, cascade='all, delete-orphan')
 
     def set_password(self, password):
         """Set hashed password."""
@@ -456,3 +457,51 @@ class RecommendationMetrics(db.Model):
 
     def __repr__(self):
         return f'<RecommendationMetrics {self.metric_name}: {self.current_value}>'
+
+class FinancialGoal(db.Model):
+    """Model for tracking financial goals and progress"""
+    __tablename__ = 'financial_goal'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    target_amount = Column(Float, nullable=False)
+    current_amount = Column(Float, default=0.0)
+    start_date = Column(DateTime, default=datetime.utcnow)
+    deadline = Column(DateTime)
+    category = Column(String(50))  # savings, investment, debt_reduction, etc.
+    status = Column(String(20), default='active')  # active, completed, cancelled
+    is_recurring = Column(Boolean, default=False)
+    recurrence_period = Column(String(20))  # monthly, quarterly, yearly
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship('User', backref='financial_goals')
+
+    def calculate_progress(self):
+        """Calculate current progress as percentage"""
+        if self.target_amount == 0:
+            return 0
+        return min(100, (self.current_amount / self.target_amount) * 100)
+
+    def get_status_details(self):
+        """Get detailed status information"""
+        progress = self.calculate_progress()
+        days_remaining = None
+        if self.deadline:
+            days_remaining = (self.deadline - datetime.utcnow()).days
+
+        return {
+            'progress': progress,
+            'days_remaining': days_remaining,
+            'is_overdue': days_remaining < 0 if days_remaining is not None else False,
+            'status': self.status
+        }
+
+    def __repr__(self):
+        return f'<FinancialGoal {self.name}: {self.current_amount}/{self.target_amount}>'
+
+# Add relationship to User model
+User.financial_goals = relationship('FinancialGoal', backref='user', lazy=True, cascade='all, delete-orphan')

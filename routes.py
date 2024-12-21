@@ -11,7 +11,7 @@ import pandas as pd
 
 from models import (
     db, User, Account, Transaction, UploadedFile, 
-    CompanySettings, HistoricalData, AlertHistory, AlertConfiguration
+    CompanySettings, HistoricalData, AlertHistory, AlertConfiguration, FinancialGoal # Added FinancialGoal import
 )
 from ai_insights import FinancialInsightsGenerator
 from alert_system import AlertSystem # Assuming this class is defined elsewhere
@@ -1364,4 +1364,99 @@ def check_alerts():
 
     except Exception as e:
         logger.error(f"Error checking alerts: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# Add after the last route
+
+@main.route('/goals')
+@login_required
+def goals_dashboard():
+    """Display financial goals dashboard"""
+    try:
+        goals = FinancialGoal.query.filter_by(
+            user_id=current_user.id
+        ).order_by(FinancialGoal.created_at.desc()).all()
+
+        # Calculate overall progress statistics
+        total_goals = len(goals)
+        completed_goals = sum(1 for g in goals if g.status == 'completed')
+        active_goals = sum(1 for g in goals if g.status == 'active')
+
+        # Group goals by category
+        goals_by_category = {}
+        for goal in goals:
+            category = goal.category or 'Uncategorized'
+            if category not in goals_by_category:
+                goals_by_category[category] = []
+            goals_by_category[category].append(goal)
+
+        return render_template('goals_dashboard.html',
+                            goals=goals,
+                            total_goals=total_goals,
+                            completed_goals=completed_goals,
+                            active_goals=active_goals,
+                            goals_by_category=goals_by_category)
+
+    except Exception as e:
+        logger.error(f"Error loading goals dashboard: {str(e)}")
+        flash('Error loading goals dashboard')
+        return redirect(url_for('main.dashboard'))
+
+@main.route('/goals/create', methods=['GET', 'POST'])
+@login_required
+def create_goal():
+    """Create a new financial goal"""
+    if request.method == 'POST':
+        try:
+            goal = FinancialGoal(
+                user_id=current_user.id,
+                name=request.form['name'],
+                description=request.form.get('description'),
+                target_amount=float(request.form['target_amount']),
+                current_amount=float(request.form.get('current_amount', 0)),
+                category=request.form.get('category'),
+                deadline=datetime.strptime(request.form['deadline'], '%Y-%m-%d') if request.form.get('deadline') else None,
+                is_recurring=bool(request.form.get('is_recurring')),
+                recurrence_period=request.form.get('recurrence_period')
+            )
+            db.session.add(goal)
+            db.session.commit()
+            flash('Financial goal created successfully')
+            return redirect(url_for('main.goals_dashboard'))
+
+        except Exception as e:
+            logger.error(f"Error creating financial goal: {str(e)}")
+            db.session.rollback()
+            flash('Error creating financial goal')
+            return redirect(url_for('main.goals_dashboard'))
+
+    return render_template('create_goal.html')
+
+@main.route('/goals/<int:goal_id>/update', methods=['POST'])
+@login_required
+def update_goal():
+    """Update goal progress"""
+    try:
+        goal = FinancialGoal.query.filter_by(
+            id=goal_id,
+            user_id=current_user.id
+        ).first_or_404()
+
+        # Update goal progress
+        goal.current_amount = float(request.form['current_amount'])
+
+        # Update status if goal is completed
+        if goal.calculate_progress() >= 100:
+            goal.status = 'completed'
+
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'progress': goal.calculate_progress(),
+            'status': goal.status
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating goal: {str(e)}")
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
