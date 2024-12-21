@@ -11,8 +11,9 @@ class FinancialInsightsGenerator:
     def __init__(self):
         self.api_key = os.environ.get('OPENAI_API_KEY')
         self.client = get_openai_client() if self.api_key else None
+        self.env = os.environ.get('FLASK_ENV', 'development')
 
-    def generate_transaction_insights(self, transactions: List[Dict], period: str = "current") -> Dict:
+    def generate_insights(self, transactions: List[Dict]) -> Dict:
         """Generate insights from transaction data using AI."""
         try:
             if not self.client:
@@ -24,20 +25,33 @@ class FinancialInsightsGenerator:
             # Get AI categorization for the latest transaction
             latest_transaction = transactions[0] if transactions else None
             if latest_transaction:
-                category, confidence, explanation = categorize_transaction(latest_transaction['description'])
+                try:
+                    category, confidence, explanation = categorize_transaction(latest_transaction['description'])
+                except Exception as e:
+                    logger.error(f"Error in categorization: {str(e)}")
+                    category, confidence, explanation = None, 0, "Categorization unavailable"
             else:
                 category, confidence, explanation = None, 0, "No transaction to analyze"
 
-            # Generate combined insights using OpenAI
+            # Generate combined insights using OpenAI with environment-specific handling
             try:
+                if self.env == 'production':
+                    # Production: More conservative token usage and caching
+                    max_tokens = 300
+                    temperature = 0.5
+                else:
+                    # Development: More experimental
+                    max_tokens = 500
+                    temperature = 0.7
+
                 response = self.client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": "You are a financial analyst providing insights on transaction data."},
                         {"role": "user", "content": f"Analyze these financial transactions and provide key insights: {transaction_summary}"}
                     ],
-                    max_tokens=500,
-                    temperature=0.7
+                    max_tokens=max_tokens,
+                    temperature=temperature
                 )
 
                 insights = response.choices[0].message.content

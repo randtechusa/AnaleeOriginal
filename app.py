@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
+from historical_data import historical_data as historical_data_blueprint
 
 # Configure logging with more detailed error reporting
 logging.basicConfig(
@@ -143,6 +144,9 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
 
                 from reports import reports as reports_blueprint
                 app.register_blueprint(reports_blueprint, url_prefix='/reports')
+
+                # Register historical data blueprint
+                app.register_blueprint(historical_data_blueprint)
 
                 logger.info("Blueprints registered successfully")
             except Exception as blueprint_error:
