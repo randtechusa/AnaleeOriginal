@@ -4,6 +4,7 @@ from Levenshtein import distance
 import logging
 from collections import defaultdict
 from datetime import datetime
+import statistics
 
 logger = logging.getLogger(__name__)
 
@@ -372,7 +373,7 @@ class PatternMatcher:
             return []
             
         return []  # Fallback empty return
-
+        
     def get_suggestion_confidence(self, suggestion: Dict) -> float:
         """Calculate enhanced confidence score incorporating statistical and temporal patterns"""
         base_confidence = suggestion.get('confidence', 0.0)
@@ -711,158 +712,422 @@ class PatternMatcher:
         """Detect seasonal patterns in transaction amounts"""
         if len(amounts) < 4:  # Need at least 4 points to detect seasonality
             return 0.0
-            
-        try:
-            # Calculate intervals between transactions
-            intervals = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
-            
-    def calculate_historical_confidence(self, transaction_data: List[Dict]) -> Dict:
-        """Calculate confidence scores based on historical pattern analysis"""
-        if not transaction_data:
-            return {'confidence': 0.0, 'metrics': {}}
-            
-        try:
-            # Extract relevant data
-            amounts = [float(t.get('amount', 0)) for t in transaction_data]
-            dates = [t.get('date') for t in transaction_data if t.get('date')]
-            descriptions = [t.get('description', '') for t in transaction_data]
-            
-            # Initialize metrics
-            metrics = {
-                'transaction_count': len(transaction_data),
-                'date_range': None,
-                'amount_stability': 0.0,
-                'frequency_score': 0.0,
-                'pattern_confidence': 0.0,
-                'interval_analysis': None,
-                'amount_pattern': None
-            }
-            
-            if dates:
-                # Calculate date range and frequency
-                first_date = min(dates)
-                last_date = max(dates)
-                date_range_days = (last_date - first_date).days
-                
-                if date_range_days > 0:
-                    # Calculate transaction frequency score
-                    avg_days_between = date_range_days / (len(dates) - 1) if len(dates) > 1 else float('inf')
-                    metrics['frequency_score'] = min(1.0, 30 / avg_days_between) if avg_days_between > 0 else 0.0
-                    
-                metrics['date_range'] = {
-                    'first': first_date.isoformat(),
-                    'last': last_date.isoformat(),
-                    'days': date_range_days
-                }
-            
-            if amounts:
-                # Calculate amount stability and patterns
-                mean_amount = sum(amounts) / len(amounts)
-                if len(amounts) > 1:
-                    relative_std = statistics.stdev(amounts) / mean_amount
-                    metrics['amount_stability'] = max(0.0, min(1.0, 1 - relative_std))
-                    
-                    # Group similar amounts
-                    amount_groups = defaultdict(list)
-                    for amount in amounts:
-                        # Group amounts within 1% of each other
-                        normalized_amount = round(amount / (mean_amount * 0.01)) * (mean_amount * 0.01)
-                        amount_groups[normalized_amount].append(amount)
-                    
-                    # Analyze amount patterns
-                    if amount_groups:
-                        largest_group = max(amount_groups.values(), key=len)
-                        amount_consistency = len(largest_group) / len(amounts)
-                        metrics['amount_pattern'] = {
-                            'consistency': amount_consistency,
-                            'common_amount': round(sum(largest_group) / len(largest_group), 2),
-                            'variation_count': len(amount_groups)
-                        }
-                
-            # Calculate interval patterns
-            if dates and len(dates) > 1:
-                intervals = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
-                metrics['interval_analysis'] = self._detect_seasonality(intervals, amounts[1:])
-                
-                # Update frequency score based on interval analysis
-                if metrics['interval_analysis']['interval_type']:
-                    metrics['frequency_score'] = metrics['interval_analysis']['score']
-            
-            # Calculate overall pattern confidence with enhanced metrics
-            metrics['pattern_confidence'] = (
-                metrics['frequency_score'] * 0.35 +
-                metrics['amount_stability'] * 0.35 +
-                min(1.0, len(transaction_data) / 10) * 0.2 +  # Sample size factor
-                (metrics['amount_pattern']['consistency'] if metrics.get('amount_pattern') else 0.0) * 0.1
-            )
-            
-            return {
-                'confidence': metrics['pattern_confidence'],
-                'metrics': metrics
-            }
-            
-        except Exception as e:
-            logger.error(f"Error calculating historical confidence: {str(e)}")
-            return {'confidence': 0.0, 'metrics': {}}
 
-            if not intervals:
-                return {'score': 0.0, 'interval_type': None}
-                
-            # Calculate average interval
-            avg_interval = sum(intervals) / len(intervals)
-            
-            # Detect common interval patterns
-            interval_types = {
-                'daily': 1,
-                'weekly': 7,
-                'biweekly': 14,
-                'monthly': 30,
-                'quarterly': 90,
-                'yearly': 365
-            }
-            
-            # Group transactions by similar intervals
-            interval_groups = defaultdict(list)
-            interval_type_scores = defaultdict(float)
-            
-            for i, interval in enumerate(intervals):
-                normalized_interval = round(interval / avg_interval) * avg_interval
-                interval_groups[normalized_interval].append(amounts[i])
-                
-                # Score against known interval types
-                for interval_name, days in interval_types.items():
-                    similarity = 1 - min(abs(interval - days) / max(days, interval), 1)
-                    interval_type_scores[interval_name] = max(
-                        interval_type_scores[interval_name],
-                        similarity
-                    )
-            
-            # Find the most likely interval type
-            best_interval_type = max(
-                interval_type_scores.items(),
-                key=lambda x: x[1]
-            ) if interval_type_scores else (None, 0)
-            
-            # Calculate regularity score
-            if len(interval_groups) > 1:
-                group_sizes = [len(group) for group in interval_groups.values()]
-                max_group_size = max(group_sizes)
-                total_points = sum(group_sizes)
-                regularity_score = max_group_size / total_points
-            else:
-                regularity_score = 0.0
-            
-            return {
-                'score': regularity_score,
-                'interval_type': best_interval_type[0],
-                'confidence': best_interval_type[1],
-                'avg_interval_days': round(avg_interval, 1),
-                'pattern_metrics': {
-                    name: round(score, 2)
-                    for name, score in interval_type_scores.items()
-                }
-            }
-            
+        try:
+            # Sort data by date
+            amount_date_pairs = sorted(zip(dates, amounts), key=lambda x: x[0])
+            sorted_amounts = [pair[1] for pair in amount_date_pairs]
+
+            # Calculate basic seasonal metrics
+            total_periods = len(sorted_amounts)
+            half_period = total_periods // 2
+
+            # Compare first and second half patterns
+            first_half = sorted_amounts[:half_period]
+            second_half = sorted_amounts[half_period:2*half_period]
+
+            if not first_half or not second_half:
+                return 0.0
+
+            # Calculate correlation between halves
+            mean_first = sum(first_half) / len(first_half)
+            mean_second = sum(second_half) / len(second_half)
+
+            # Normalize amounts for comparison
+            norm_first = [x - mean_first for x in first_half]
+            norm_second = [x - mean_second for x in second_half]
+
+            # Calculate correlation coefficient
+            correlation = sum(a * b for a, b in zip(norm_first, norm_second))
+            denominators = (sum(x * x for x in norm_first) * sum(x * x for x in norm_second)) ** 0.5
+
+            if denominators == 0:
+                return 0.0
+
+            correlation_coefficient = correlation / denominators
+
+            # Scale to [0, 1] range and return
+            return max(0.0, min(1.0, (correlation_coefficient + 1) / 2))
+
         except Exception as e:
             logger.error(f"Error detecting seasonality: {str(e)}")
-            return {'score': 0.0, 'interval_type': None, 'error': str(e)}
+            return 0.0
+
+    def calculate_historical_confidence(self, transaction_data: List[Dict]) -> Dict:
+        """Calculate confidence scores for historical transaction patterns"""
+        try:
+            if not transaction_data:
+                return {
+                    'confidence_score': 0.0,
+                    'pattern_metrics': {},
+                    'sample_size': 0
+                }
+
+            amounts = [t.get('amount', 0.0) for t in transaction_data if t.get('amount') is not None]
+            dates = [t.get('date') for t in transaction_data if t.get('date') is not None]
+
+            if not amounts or not dates:
+                return {
+                    'confidence_score': 0.0,
+                    'pattern_metrics': {},
+                    'sample_size': 0
+                }
+
+            # Calculate basic statistics
+            mean_amount = sum(amounts) / len(amounts)
+            sorted_amounts = sorted(amounts)
+            median_amount = sorted_amounts[len(amounts) // 2]
+
+            # Calculate variance and standard deviation
+            variance = sum((x - mean_amount) ** 2 for x in amounts) / len(amounts)
+            std_dev = variance ** 0.5 if variance > 0 else 0
+
+            # Calculate seasonality score
+            seasonality_score = self._detect_seasonality(amounts, dates)
+
+            # Calculate overall metrics
+            metrics = {
+                'mean': mean_amount,
+                'median': median_amount,
+                'std_dev': std_dev,
+                'seasonality': seasonality_score,
+                'sample_size': len(amounts),
+                'date_range': {
+                    'start': min(dates),
+                    'end': max(dates)
+                }
+            }
+
+            # Calculate confidence score based on various factors
+            sample_size_factor = min(len(amounts) / 10, 1.0)  # More samples increase confidence
+            stability_factor = 1.0 - min(std_dev / (abs(mean_amount) + 1e-6), 1.0)  # Less variance means more confidence
+            seasonality_factor = seasonality_score
+
+            confidence_score = (
+                sample_size_factor * 0.4 +    # 40% weight on sample size
+                stability_factor * 0.4 +      # 40% weight on stability
+                seasonality_factor * 0.2      # 20% weight on seasonality
+            )
+
+            return {
+                'confidence_score': confidence_score,
+                'pattern_metrics': metrics,
+                'sample_size': len(amounts)
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating historical confidence: {str(e)}")
+            return {
+                'confidence_score': 0.0,
+                'pattern_metrics': {},
+                'sample_size': 0
+            }
+
+    def analyze_recurring_patterns(self, temporal_data: List[Dict]) -> Dict:
+        """Analyze recurring patterns in temporal transaction data"""
+        if not temporal_data or len(temporal_data) < 2:
+            return {'is_recurring': False, 'confidence': 0.0}
+            
+        # Sort transactions by date
+        sorted_data = sorted(temporal_data, key=lambda x: x['date'])
+        
+        # Calculate time intervals between transactions
+        intervals = []
+        for i in range(1, len(sorted_data)):
+            interval = (sorted_data[i]['date'] - sorted_data[i-1]['date']).days
+            intervals.append(interval)
+            
+        if not intervals:
+            return {'is_recurring': False, 'confidence': 0.0}
+            
+        # Analyze interval patterns
+        avg_interval = sum(intervals) / len(intervals)
+        variance = sum((x - avg_interval) ** 2 for x in intervals) / len(intervals)
+        std_dev = variance ** 0.5
+        
+        # Calculate coefficient of variation (CV) to measure regularity
+        cv = std_dev / avg_interval if avg_interval > 0 else float('inf')
+        
+        # Determine if pattern is recurring based on CV
+        is_recurring = cv < 0.5  # Less variation suggests more regular pattern
+        
+        # Calculate confidence based on regularity and sample size
+        base_confidence = max(0, 1 - cv) if cv < 1 else 0
+        sample_size_factor = min(len(intervals) / 6, 1)  # More samples increase confidence
+        confidence = base_confidence * sample_size_factor
+        
+        return {
+            'is_recurring': is_recurring,
+            'confidence': confidence,
+            'metrics': {
+                'average_interval': avg_interval,
+                'variance': variance,
+                'coefficient_variation': cv,
+                'sample_size': len(intervals)
+            },
+            'suggested_frequency': self._suggest_frequency(avg_interval)
+        }
+        
+    def _suggest_frequency(self, avg_interval: float) -> str:
+        """Suggest transaction frequency based on average interval"""
+        if avg_interval < 2:
+            return 'daily'
+        elif avg_interval < 8:
+            return 'weekly'
+        elif avg_interval < 15:
+            return 'biweekly'
+        elif avg_interval < 32:
+            return 'monthly'
+        elif avg_interval < 95:
+            return 'quarterly'
+        else:
+            return 'annually'
+            
+    def analyze_temporal_stability(self, amounts: List[float], dates: List[datetime]) -> Dict:
+        """Analyze the stability of transaction amounts over time"""
+        if not amounts or not dates or len(amounts) != len(dates):
+            return {'stability': 0.0, 'trend': 'unknown'}
+            
+        # Sort by date
+        amount_date_pairs = sorted(zip(dates, amounts), key=lambda x: x[0])
+        sorted_amounts = [pair[1] for pair in amount_date_pairs]
+        
+        # Calculate trend
+        if len(sorted_amounts) >= 2:
+            trend_direction = sorted_amounts[-1] - sorted_amounts[0]
+            if abs(trend_direction) < 0.01 * sorted_amounts[0]:
+                trend = 'stable'
+            else:
+                trend = 'increasing' if trend_direction > 0 else 'decreasing'
+        else:
+            trend = 'unknown'
+            
+        # Calculate stability score
+        if len(sorted_amounts) >= 2:
+            avg = sum(sorted_amounts) / len(sorted_amounts)
+            relative_variations = [abs(x - avg) / avg for x in sorted_amounts]
+            stability_score = 1 - min(1, sum(relative_variations) / len(relative_variations))
+        else:
+            stability_score = 0.0
+            
+        return {
+            'stability': stability_score,
+            'trend': trend,
+            'metrics': {
+                'min_amount': min(sorted_amounts),
+                'max_amount': max(sorted_amounts),
+                'avg_amount': sum(sorted_amounts) / len(sorted_amounts)
+            }
+        }
+    def calculate_advanced_metrics(self, amounts: List[float], dates: List[datetime]) -> Dict:
+        """Calculate advanced statistical metrics for transaction patterns with enhanced historical analysis"""
+        if not amounts or not dates or len(amounts) != len(dates):
+            return {
+                'seasonality_score': 0.0,
+                'trend_strength': 0.0,
+                'pattern_strength': 0.0,
+                'reliability_score': 0.0,
+                'historical_metrics': {}
+            }
+            
+        try:
+            # Sort by date for time-series analysis
+            amount_date_pairs = sorted(zip(dates, amounts), key=lambda x: x[0])
+            sorted_amounts = [pair[1] for pair in amount_date_pairs]
+            sorted_dates = [pair[0] for pair in amount_date_pairs]
+            
+            # Calculate enhanced historical statistics
+            mean_amount = sum(sorted_amounts) / len(sorted_amounts)
+            deviations = [x - mean_amount for x in sorted_amounts]
+            variance = sum(d * d for d in deviations) / len(deviations)
+            std_dev = variance ** 0.5 if variance > 0 else 0
+            
+            # Calculate rolling statistics for trend detection
+            window_size = min(3, len(sorted_amounts))
+            rolling_means = []
+            for i in range(len(sorted_amounts) - window_size + 1):
+                window = sorted_amounts[i:i + window_size]
+                rolling_means.append(sum(window) / len(window))
+                
+            # Calculate month-over-month changes
+            monthly_changes = []
+            if len(sorted_dates) >= 2:
+                for i in range(1, len(sorted_dates)):
+                    days_diff = (sorted_dates[i] - sorted_dates[i-1]).days
+                    if 25 <= days_diff <= 35:  # Approximately monthly
+                        change = (sorted_amounts[i] - sorted_amounts[i-1]) / sorted_amounts[i-1]
+                        monthly_changes.append(change)
+            
+            # Calculate trend strength using linear regression approximation
+            n = len(sorted_amounts)
+            if n >= 2:
+                x = list(range(n))
+                x_mean = sum(x) / n
+                y_mean = mean_amount
+                
+                # Calculate slope using least squares
+                numerator = sum((x[i] - x_mean) * (sorted_amounts[i] - y_mean) for i in range(n))
+                denominator = sum((x[i] - x_mean) ** 2 for i in range(n))
+                slope = numerator / denominator if denominator != 0 else 0
+                
+                # Normalize trend strength to [0, 1]
+                trend_strength = min(abs(slope) / (mean_amount + 1e-6), 1.0)
+            else:
+                trend_strength = 0.0
+                
+            # Calculate pattern strength based on regularity
+            if std_dev > 0:
+                pattern_strength = 1.0 - min(std_dev / mean_amount, 1.0)
+            else:
+                pattern_strength = 1.0 if len(sorted_amounts) > 1 else 0.0
+                
+            # Calculate seasonality score
+            seasonality_score = self._detect_seasonality(sorted_amounts, sorted_dates)
+            
+            # Calculate overall reliability score
+            sample_size_factor = min(len(sorted_amounts) / 12, 1.0)  # More samples increase reliability
+            time_span_factor = min((sorted_dates[-1] - sorted_dates[0]).days / 365, 1.0)
+            reliability_score = (sample_size_factor * 0.4 + 
+                              pattern_strength * 0.3 +
+                              (1 - trend_strength) * 0.2 +  # Less trend means more stable pattern
+                              seasonality_score * 0.1)
+            
+            return {
+                'seasonality_score': seasonality_score,
+                'trend_strength': trend_strength,
+                'pattern_strength': pattern_strength,
+                'reliability_score': reliability_score,
+                'metrics': {
+                    'mean': mean_amount,
+                    'std_dev': std_dev,
+                    'sample_size': len(sorted_amounts),
+                    'date_range': {
+                        'start': sorted_dates[0],
+                        'end': sorted_dates[-1]
+                    }
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating advanced metrics: {str(e)}")
+            return {
+                'seasonality_score': 0.0,
+                'trend_strength': 0.0,
+                'pattern_strength': 0.0,
+                'reliability_score': 0.0
+            }
+            
+    def _detect_seasonality(self, amounts: List[float], dates: List[datetime]) -> float:
+        """Detect seasonal patterns in transaction amounts"""
+        if len(amounts) < 4:  # Need at least 4 points to detect seasonality
+            return 0.0
+
+        try:
+            # Sort data by date
+            amount_date_pairs = sorted(zip(dates, amounts), key=lambda x: x[0])
+            sorted_amounts = [pair[1] for pair in amount_date_pairs]
+
+            # Calculate basic seasonal metrics
+            total_periods = len(sorted_amounts)
+            half_period = total_periods // 2
+
+            # Compare first and second half patterns
+            first_half = sorted_amounts[:half_period]
+            second_half = sorted_amounts[half_period:2*half_period]
+
+            if not first_half or not second_half:
+                return 0.0
+
+            # Calculate correlation between halves
+            mean_first = sum(first_half) / len(first_half)
+            mean_second = sum(second_half) / len(second_half)
+
+            # Normalize amounts for comparison
+            norm_first = [x - mean_first for x in first_half]
+            norm_second = [x - mean_second for x in second_half]
+
+            # Calculate correlation coefficient
+            correlation = sum(a * b for a, b in zip(norm_first, norm_second))
+            denominators = (sum(x * x for x in norm_first) * sum(x * x for x in norm_second)) ** 0.5
+
+            if denominators == 0:
+                return 0.0
+
+            correlation_coefficient = correlation / denominators
+
+            # Scale to [0, 1] range and return
+            return max(0.0, min(1.0, (correlation_coefficient + 1) / 2))
+
+        except Exception as e:
+            logger.error(f"Error detecting seasonality: {str(e)}")
+            return 0.0
+
+    def calculate_historical_confidence(self, transaction_data: List[Dict]) -> Dict:
+        """Calculate confidence scores for historical transaction patterns"""
+        try:
+            if not transaction_data:
+                return {
+                    'confidence_score': 0.0,
+                    'pattern_metrics': {},
+                    'sample_size': 0
+                }
+
+            amounts = [t.get('amount', 0.0) for t in transaction_data if t.get('amount') is not None]
+            dates = [t.get('date') for t in transaction_data if t.get('date') is not None]
+
+            if not amounts or not dates:
+                return {
+                    'confidence_score': 0.0,
+                    'pattern_metrics': {},
+                    'sample_size': 0
+                }
+
+            # Calculate basic statistics
+            mean_amount = sum(amounts) / len(amounts)
+            sorted_amounts = sorted(amounts)
+            median_amount = sorted_amounts[len(amounts) // 2]
+
+            # Calculate variance and standard deviation
+            variance = sum((x - mean_amount) ** 2 for x in amounts) / len(amounts)
+            std_dev = variance ** 0.5 if variance > 0 else 0
+
+            # Calculate seasonality score
+            seasonality_score = self._detect_seasonality(amounts, dates)
+
+            # Calculate overall metrics
+            metrics = {
+                'mean': mean_amount,
+                'median': median_amount,
+                'std_dev': std_dev,
+                'seasonality': seasonality_score,
+                'sample_size': len(amounts),
+                'date_range': {
+                    'start': min(dates),
+                    'end': max(dates)
+                }
+            }
+
+            # Calculate confidence score based on various factors
+            sample_size_factor = min(len(amounts) / 10, 1.0)  # More samples increase confidence
+            stability_factor = 1.0 - min(std_dev / (abs(mean_amount) + 1e-6), 1.0)  # Less variance means more confidence
+            seasonality_factor = seasonality_score
+
+            confidence_score = (
+                sample_size_factor * 0.4 +    # 40% weight on sample size
+                stability_factor * 0.4 +      # 40% weight on stability
+                seasonality_factor * 0.2      # 20% weight on seasonality
+            )
+
+            return {
+                'confidence_score': confidence_score,
+                'pattern_metrics': metrics,
+                'sample_size': len(amounts)
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating historical confidence: {str(e)}")
+            return {
+                'confidence_score': 0.0,
+                'pattern_metrics': {},
+                'sample_size': 0
+            }

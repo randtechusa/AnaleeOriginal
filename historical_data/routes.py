@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 
 from models import db, Account, HistoricalData
 from . import historical_data
+from .ai_suggestions import HistoricalDataAI
 
 logger = logging.getLogger(__name__)
 
@@ -108,10 +109,19 @@ def upload():
                 error_count = 0
                 errors = []
 
+                # Initialize AI suggestions
+                ai_helper = HistoricalDataAI()
+                processed_data = []
+
                 for idx, row in df.iterrows():
                     try:
                         # Sanitize data
                         clean_data = sanitize_data(row)
+
+                        # Get AI suggestions for missing details
+                        suggestions = ai_helper.suggest_missing_details(clean_data)
+                        if suggestions:
+                            clean_data.update(suggestions)
 
                         # Validate account exists
                         account_id = account_map.get(clean_data['account'])
@@ -131,6 +141,7 @@ def upload():
                         )
                         db.session.add(historical_entry)
                         success_count += 1
+                        processed_data.append(clean_data)
 
                     except Exception as row_error:
                         logger.error(f"Error processing row {idx + 2}: {str(row_error)}")
@@ -140,6 +151,11 @@ def upload():
 
                 if success_count > 0:
                     db.session.commit()
+
+                    # Apply AI enhancements to processed data
+                    enhanced_data = ai_helper.enhance_historical_data(processed_data)
+                    if enhanced_data:
+                        flash('AI suggestions have been generated for incomplete entries.', 'info')
 
                 flash(f'Successfully processed {success_count} entries.', 'success')
                 if error_count > 0:

@@ -44,20 +44,20 @@ def handle_rate_limit(func, max_retries=3, base_delay=2):
                 logger.warning(f"Waiting {retry_after} seconds as suggested by API")
                 time.sleep(retry_after)
             raise
-            
+
         except APIError as e:
             if e.status_code == 429:
                 logger.warning(f"Rate limit hit via APIError: {str(e)}")
                 raise RateLimitError("Rate limit exceeded")
             logger.error(f"API error: {str(e)}")
             raise
-            
+
         except Exception as e:
             error_msg = str(e).lower()
             if "invalid api key" in error_msg:
                 logger.error("Invalid API key detected")
                 raise ValueError("Invalid OpenAI API key configuration")
-            
+
             logger.error(f"Unexpected error in API call: {str(e)}")
             raise
     return wrapper
@@ -69,15 +69,15 @@ def process_in_batches(items, process_func, batch_size=3):
     results = []
     total_batches = (len(items) + batch_size - 1) // batch_size
     base_delay = 2  # Base delay between batches in seconds
-    
+
     for i in range(0, len(items), batch_size):
         batch = items[i:i + batch_size]
         batch_number = i // batch_size + 1
         logger.info(f"Processing batch {batch_number}/{total_batches}")
-        
+
         retry_count = 0
         max_retries = 3
-        
+
         while retry_count < max_retries:
             try:
                 batch_results = []
@@ -96,12 +96,12 @@ def process_in_batches(items, process_func, batch_size=3):
                     except Exception as e:
                         logger.error(f"Error processing item in batch {batch_number}: {str(e)}")
                         continue
-                
+
                 results.extend(batch_results)
                 # Successful batch, add base delay before next batch
                 time.sleep(base_delay)
                 break  # Break while loop on success
-                
+
             except RateLimitError:
                 retry_count += 1
                 if retry_count >= max_retries:
@@ -110,7 +110,7 @@ def process_in_batches(items, process_func, batch_size=3):
             except Exception as e:
                 logger.error(f"Unexpected error processing batch {batch_number}: {str(e)}")
                 break
-                
+
     return results
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -127,21 +127,21 @@ def get_openai_client() -> OpenAI:
     Get or create OpenAI client with improved error handling and caching
     """
     global _openai_client, _last_client_error
-    
+
     try:
         # Return existing client if available and valid
         if _openai_client is not None:
             return _openai_client
-            
+
         # Get API key from environment
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
             logger.error("OpenAI API key not found in environment variables")
             raise ValueError("OpenAI API key not configured")
-            
+
         # Initialize new client with proper configuration
         _openai_client = OpenAI()  # Uses API key from environment by default
-        
+
         # Test the client with basic operation
         try:
             _openai_client.models.list(limit=1)
@@ -151,22 +151,22 @@ def get_openai_client() -> OpenAI:
             logger.error(f"Client test failed: {str(e)}")
             _openai_client = None
             raise
-            
+
     except RateLimitError as e:
         _last_client_error = str(e)
         logger.warning(f"Rate limit error during client initialization: {_last_client_error}")
         raise
-        
+
     except APIError as e:
         _last_client_error = str(e)
         logger.error(f"OpenAI API error during client initialization: {_last_client_error}")
         raise
-        
+
     except Exception as e:
         _last_client_error = str(e)
         logger.error(f"Unexpected error during client initialization: {_last_client_error}")
         raise
-    
+
     return None
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
@@ -179,7 +179,7 @@ def predict_account(description: str, explanation: str, available_accounts: List
             return []
 
         logger.info(f"ASF: Predicting account for description: {description}")
-        
+
         # Initialize OpenAI client with retries
         retries = 3
         while retries > 0:
@@ -190,20 +190,20 @@ def predict_account(description: str, explanation: str, available_accounts: List
             if retries > 0:
                 logger.warning(f"Retrying OpenAI client initialization, {retries} attempts remaining")
                 time.sleep(2 ** (3 - retries))  # Exponential backoff
-        
+
         if not client:
             logger.error("Failed to initialize OpenAI client after retries")
             return rule_based_account_matching(description, available_accounts)
-            
+
         # Format available accounts
         # Format available accounts
         account_info = "\n".join([
             f"- {acc['name']}\n  Category: {acc['category']}\n  Code: {acc['link']}\n  Purpose: Standard {acc['category']} account for {acc['name'].lower()} transactions"
             for acc in available_accounts
         ])
-        
+
         logger.debug(f"ASF: Analyzing {len(available_accounts)} accounts from Chart of Accounts")
-        
+
         # Enhanced prompt for better account matching
         prompt = f"""As an expert financial analyst, analyze this transaction and suggest the most appropriate account classification from the Chart of Accounts:
 
@@ -259,7 +259,7 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
             if not content:
                 logger.error("Empty response from AI service")
                 return rule_based_account_matching(description, available_accounts)
-            
+
             # Enhanced response validation
             content = content.strip()
             # Remove any non-JSON prefix/suffix that might have been added
@@ -268,9 +268,9 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
             if start_idx == -1 or end_idx == -1:
                 logger.error("Invalid JSON format in AI response")
                 return rule_based_account_matching(description, available_accounts)
-            
+
             content = content[start_idx:end_idx + 1]
-            
+
             # Validate JSON structure
             try:
                 suggestions = json.loads(content)
@@ -283,7 +283,7 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
             except Exception as e:
                 logger.error(f"Unexpected error parsing AI response: {str(e)}")
                 return rule_based_account_matching(description, available_accounts)
-            
+
             # Enhanced validation and formatting
             valid_suggestions = []
             for suggestion in suggestions:
@@ -292,16 +292,16 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
                     if not all(k in suggestion for k in ['account_name', 'confidence']):
                         logger.warning(f"Skipping suggestion due to missing required fields: {suggestion}")
                         continue
-                        
+
                     # Match with available accounts
                     matching_accounts = [
-                        acc for acc in available_accounts 
+                        acc for acc in available_accounts
                         if acc['name'].lower() == suggestion['account_name'].lower()
                     ]
-                    
+
                     if matching_accounts:
                         # Enhanced suggestion with additional validations
-                        financial_insight = suggestion.get('financial_insight', 
+                        financial_insight = suggestion.get('financial_insight',
                                                         suggestion.get('reasoning', 'No detailed insight available'))
                         valid_suggestion = {
                             'account_name': suggestion['account_name'],
@@ -311,23 +311,23 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
                             'reasoning': suggestion.get('reasoning', 'No reasoning provided')
                         }
                         valid_suggestions.append(valid_suggestion)
-                        
+
                 except Exception as suggestion_error:
                     logger.warning(f"Error processing suggestion: {str(suggestion_error)}")
                     continue
-            
+
             if not valid_suggestions:
                 logger.warning("No valid suggestions found from AI response")
                 return rule_based_account_matching(description, available_accounts)
-                
+
             # Sort by confidence and return top 3
             valid_suggestions.sort(key=lambda x: x['confidence'], reverse=True)
             return valid_suggestions[:3]
-                
+
         except Exception as e:
             logger.error(f"Error processing AI response: {str(e)}")
             return rule_based_account_matching(description, available_accounts)
-            
+
     except Exception as e:
         logger.error(f"Critical error in predict_account: {str(e)}")
         return rule_based_account_matching(description, available_accounts)
@@ -336,7 +336,7 @@ def detect_transaction_anomalies(transactions, historical_data=None):
     """Detect anomalies in transactions using AI analysis."""
     try:
         client = get_openai_client()
-        
+
         # Format transaction data for analysis
         transaction_text = "\n".join([
             f"Transaction {idx + 1}:\n"
@@ -431,20 +431,20 @@ def forecast_expenses(transactions, accounts, forecast_months=12):
     """Generate expense forecasts based on historical transaction patterns."""
     try:
         client = get_openai_client()
-        
+
         # Format transaction data for analysis
         transaction_summary = "\n".join([
             f"- Amount: ${t['amount']}, Description: {t['description']}, "
             f"Date: {t.get('date', 'N/A')}, Account: {t.get('account_name', 'Uncategorized')}"
             for t in transactions[:50]  # Use recent transactions for pattern analysis
         ])
-        
+
         # Format account information
         account_summary = "\n".join([
             f"- {acc['name']}: ${acc.get('balance', 0):.2f} ({acc['category']})"
             for acc in accounts
         ])
-        
+
         prompt = f"""Analyze these financial transactions and accounts to generate detailed expense forecasts:
 
 Transaction History:
@@ -522,7 +522,7 @@ Format your response as a JSON object with this structure:
                 temperature=0.2,
                 max_tokens=1000
             )
-            
+
             # Parse and validate the forecast
             try:
                 content = response.choices[0].message.content.strip()
@@ -538,7 +538,7 @@ Format your response as a JSON object with this structure:
 
                 forecast = json.loads(content)
                 return forecast
-                
+
             except json.JSONDecodeError as je:
                 logger.error(f"JSON parsing error in forecast: {str(je)}")
                 return {
@@ -549,11 +549,11 @@ Format your response as a JSON object with this structure:
                     "confidence_metrics": {"overall_confidence": 0, "variance_range": {"min": 0, "max": 0}, "reliability_score": 0},
                     "recommendations": []
                 }
-            
+
         except Exception as e:
             logger.error(f"Error in OpenAI API call: {str(e)}")
             raise
-            
+
     except Exception as e:
         logger.error(f"Error generating expense forecast: {str(e)}")
         return {
@@ -571,20 +571,20 @@ def generate_financial_advice(transactions, accounts):
     """
     try:
         client = get_openai_client()
-        
+
         # Format transaction data for the prompt
         transaction_summary = "\n".join([
             f"- Amount: ${t['amount']}, Description: {t['description']}, "
             f"Account: {t['account_name'] if 'account_name' in t else 'Uncategorized'}"
             for t in transactions[:10]  # Limit to recent transactions for context
         ])
-        
+
         # Format account balances
         account_summary = "\n".join([
             f"- {acc['name']}: ${acc.get('balance', 0):.2f} ({acc['category']})"
             for acc in accounts
         ])
-        
+
         prompt = f"""Analyze these financial transactions and account balances to provide comprehensive natural language insights and predictive advice:
 
 Transaction History:
@@ -679,7 +679,7 @@ Provide a detailed financial analysis in this JSON structure:
             # Parse and validate the response
             try:
                 advice = json.loads(response.choices[0].message.content.strip())
-                
+
                 # Enhance the advice with more detailed natural language summaries
                 enhanced_advice = {
                     "key_insights": advice.get("key_insights", []),
@@ -693,20 +693,20 @@ Provide a detailed financial analysis in this JSON structure:
                         "improvement_suggestions": advice.get("cash_flow_analysis", {}).get("improvement_suggestions", [])
                     }
                 }
-                
+
                 return enhanced_advice
-                
+
             except json.JSONDecodeError as je:
                 logger.error(f"Error parsing financial advice: {str(je)}")
                 return {
                     "error": "Failed to parse financial advice",
                     "details": str(je)
                 }
-                
+
         except Exception as e:
             logger.error(f"Error in OpenAI API call: {str(e)}")
             raise
-            
+
     except Exception as e:
         logger.error(f"Error generating financial advice: {str(e)}")
         return {
@@ -719,31 +719,36 @@ def calculate_text_similarity(text1: str, text2: str) -> float:
     try:
         # Initialize OpenAI client
         client = get_openai_client()
-        
+
         prompt = f"""Compare these two transaction descriptions and return their similarity score:
         Text 1: {text1}
         Text 2: {text2}
-        
+
         Consider both textual and semantic similarity. Return a single float between 0 and 1.
         A score of 1 means identical or semantically equivalent descriptions.
         A score of 0 means completely different descriptions.
-        
+
         Format: Return only the numerical score, e.g. "0.85"
         """
-        
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a text similarity analyzer. Provide similarity scores based on both textual and semantic similarity."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.1,
-            max_tokens=10
-        )
-        
-        similarity = float(response.choices[0].message.content.strip())
-        return min(max(similarity, 0.0), 1.0)  # Ensure score is between 0 and 1
-        
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a text similarity analyzer. Provide similarity scores based on both textual and semantic similarity."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=10
+            )
+
+            similarity = float(response.choices[0].message.content.strip())
+            return min(max(similarity, 0.0), 1.0)  # Ensure score is between 0 and 1
+
+        except Exception as e:
+            logger.error(f"Error in OpenAI API call: {str(e)}")
+            return 0.0
+
     except Exception as e:
         logger.error(f"Error calculating text similarity: {str(e)}")
         return 0.0
@@ -753,20 +758,20 @@ def rule_based_account_matching(description: str, available_accounts: List[Dict]
     try:
         matches = []
         description_lower = description.lower()
-        
+
         for account in available_accounts:
             score = 0
-            account_terms = set(account['name'].lower().split() + 
-                             account['category'].lower().split())
-            
+            account_terms = set(account['name'].lower().split() +
+                                 account['category'].lower().split())
+
             # Check for exact matches in name or category
             if any(term in description_lower for term in account_terms):
                 score += 0.5
-            
+
             # Check for partial matches
             if any(term in description_lower for term in account_terms):
                 score += 0.3
-                
+
             if score > 0:
                 matches.append({
                     'account_name': account['name'],
@@ -775,9 +780,9 @@ def rule_based_account_matching(description: str, available_accounts: List[Dict]
                     'account': account,
                     'financial_insight': 'Suggestion based on text matching rules'
                 })
-        
+
         return sorted(matches, key=lambda x: x['confidence'], reverse=True)[:3]
-        
+
     except Exception as e:
         logger.error(f"Error in rule_based_account_matching: {str(e)}")
         return []
@@ -787,22 +792,22 @@ def calculate_similarity(transaction_description: str, comparison_description: s
     if not transaction_description or not comparison_description:
         logger.warning("Empty description provided for similarity calculation")
         return 0.0
-        
+
     prompt = f"""Compare these two transaction descriptions and rate their semantic similarity:
     Description 1: {transaction_description.strip()}
     Description 2: {comparison_description.strip()}
-    
+
     Consider both textual similarity and semantic meaning.
     Your response must be ONLY a single number between 0 and 1.
     For example: 0.75
-    
+
     DO NOT include any explanation or text, just the number."""
-    
+
     client = get_openai_client()
     if not client:
         logger.error("Failed to initialize OpenAI client")
         return 0.0
-    
+
     @handle_rate_limit
     def make_similarity_request():
         try:
@@ -815,12 +820,12 @@ def calculate_similarity(transaction_description: str, comparison_description: s
                 temperature=0.1,
                 max_tokens=10  # Reduced to prevent verbose responses
             )
-            
+
             content = response.choices[0].message.content.strip()
-            
+
             # Clean the response to handle potential formatting issues
             content = content.replace(',', '.').strip('%')
-            
+
             # Extract the first number found in the response
             import re
             numbers = re.findall(r"[-+]?\d*\.\d+|\d+", content)
@@ -831,7 +836,7 @@ def calculate_similarity(transaction_description: str, comparison_description: s
             else:
                 logger.error(f"No valid number found in response: {content}")
                 return 0.0
-                
+
         except ValueError as ve:
             logger.error(f"Error parsing similarity score: {str(ve)}")
             return 0.0
@@ -879,7 +884,18 @@ def find_similar_transactions(transaction_description: str, transactions: list) 
                 
                 while retries > 0:
                     try:
-                        # Process matches based on similarity thresholds
+                        similarity = calculate_similarity(transaction_description, transaction.description)
+                        break
+                    except Exception as e:
+                        last_error = e
+                        retries -= 1
+                        if retries > 0:
+                            time.sleep(2 ** (MAX_RETRIES - retries))  # Exponential backoff
+                            
+                if retries == 0 and last_error:
+                    logger.error(f"Failed to calculate similarity after {MAX_RETRIES} attempts: {str(last_error)}")
+                    return None
+                # Process matches based on similarity thresholds
                 if similarity >= SEMANTIC_THRESHOLD:
                     return {
                         'transaction': transaction,
@@ -918,41 +934,6 @@ def find_similar_transactions(transaction_description: str, transactions: list) 
             
     except Exception as e:
         logger.error(f"Critical error in find_similar_transactions: {str(e)}")
-        return []
-                        break
-                    except Exception as e:
-                        last_error = e
-                        retries -= 1
-                        if retries > 0:
-                            time.sleep(2 ** (MAX_RETRIES - retries))  # Exponential backoff
-                            
-                if retries == 0 and last_error:
-                    logger.error(f"Failed to calculate similarity after {MAX_RETRIES} attempts: {str(last_error)}")
-                    return None
-        if similarity >= TEXT_THRESHOLD or similarity >= SEMANTIC_THRESHOLD:
-            return {
-                'transaction': transaction,
-                'similarity': similarity
-            }
-        return None
-    
-    try:
-        # Process transactions in batches to handle rate limits
-        similar_transactions = process_in_batches(
-            transactions,
-            process_transaction,
-            batch_size=5
-        )
-        
-        # Filter out None values and sort by similarity
-        similar_transactions = [t for t in similar_transactions if t is not None]
-        similar_transactions.sort(key=lambda x: x['similarity'], reverse=True)
-        
-        logger.info(f"Found {len(similar_transactions)} similar transactions")
-        return similar_transactions
-        
-    except Exception as e:
-        logger.error(f"Error in find_similar_transactions: {str(e)}")
         return []
 
 def suggest_explanation(description: str, similar_transactions: list = None) -> dict:
