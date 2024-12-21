@@ -819,8 +819,8 @@ def _analyze_cash_flow(transactions):
             'current_status': f"Net cash flow: ${net_flow:,.2f}",
             'projected_trend': "Trend analysis will be available in the next update",
             'key_drivers': [                f"Total inflow: ${total_inflow:,.2f}",
-                f"Total outflow: ${total_outflow:,.2f}"
-            ],
+                    f"Total outflow: ${total_outflow:,.2f}"
+                ],
             'improvement_suggestions': ["Cash flow optimization suggestions will be available in the next update"]
                 }
     except Exception as e:
@@ -1250,3 +1250,29 @@ def generate_insights_api():
     except Exception as e:
         logger.error(f"Error generating AI insights: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@main.route('/system-maintenance')
+@login_required
+def system_maintenance():
+    """
+    Display system maintenance dashboard with AI-powered predictions
+    Monitors core modules without modifying their functionality
+    """
+    try:
+        # Initialize maintenance monitor
+        monitor = MaintenanceMonitor()
+
+        # Get health metrics for current user
+        health_metrics = monitor.check_module_health(current_user.id)
+
+        # Get maintenance predictions
+        maintenance_needs = monitor.predict_maintenance_needs()
+
+        return render_template('system_maintenance.html',
+                             health_metrics=health_metrics,
+                             maintenance_needs=maintenance_needs)
+
+    except Exception as e:
+        logger.error(f"Error in system maintenance: {str(e)}")
+        flash('Error checking system health')
+        return redirect(url_for('main.dashboard'))

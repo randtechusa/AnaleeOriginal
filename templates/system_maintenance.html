@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>System Maintenance Dashboard</h2>
+    
+    <!-- Module Health Overview -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Module Health Status</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for module, metrics in health_metrics.items() %}
+                        <div class="col-md-3 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="card-title">{{ module|title }}</h6>
+                                    <p class="card-text">
+                                        Status: 
+                                        <span class="badge {% if metrics.status == 'healthy' %}bg-success{% elif metrics.status == 'warning' %}bg-warning{% else %}bg-danger{% endif %}">
+                                            {{ metrics.status|title }}
+                                        </span>
+                                    </p>
+                                    {% if metrics.error_rate is defined %}
+                                    <p class="card-text small">Error Rate: {{ "%.2f"|format(metrics.error_rate) }}%</p>
+                                    {% endif %}
+                                    {% if metrics.response_time is defined %}
+                                    <p class="card-text small">Response Time: {{ metrics.response_time }}ms</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Maintenance Recommendations -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Maintenance Recommendations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Module</th>
+                                    <th>Priority</th>
+                                    <th>Issue</th>
+                                    <th>Recommendation</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for need in maintenance_needs %}
+                                <tr>
+                                    <td>{{ need.module|title }}</td>
+                                    <td>
+                                        <span class="badge {% if need.priority == 'high' %}bg-danger{% elif need.priority == 'medium' %}bg-warning{% else %}bg-info{% endif %}">
+                                            {{ need.priority|title }}
+                                        </span>
+                                    </td>
+                                    <td>{{ need.issue }}</td>
+                                    <td>{{ need.recommendation }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
