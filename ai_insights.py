@@ -8,10 +8,75 @@ from nlp_utils import get_openai_client, categorize_transaction
 logger = logging.getLogger(__name__)
 
 class FinancialInsightsGenerator:
+    """
+    Class responsible for generating financial insights using AI.
+    Handles both OpenAI-powered and fallback basic analysis.
+    """
     def __init__(self):
         self.api_key = os.environ.get('OPENAI_API_KEY')
         self.client = get_openai_client() if self.api_key else None
         self.env = os.environ.get('FLASK_ENV', 'development')
+
+    def generate_transaction_insights(self, transaction_data: Dict) -> Dict:
+        """
+        Generate AI-powered insights for a specific transaction.
+
+        Args:
+            transaction_data (Dict): Transaction information including description, amount, etc.
+
+        Returns:
+            Dict: Generated insights and analysis results
+        """
+        try:
+            if not self.client:
+                return self._generate_fallback_insights([transaction_data])
+
+            # Prepare transaction for analysis
+            transaction_summary = self._prepare_transaction_summary([transaction_data])
+
+            # Get AI categorization
+            try:
+                category, confidence, explanation = categorize_transaction(transaction_data.get('description', ''))
+            except Exception as e:
+                logger.error(f"Error in categorization: {str(e)}")
+                category, confidence, explanation = None, 0, "Categorization unavailable"
+
+            # Generate insights using OpenAI
+            try:
+                max_tokens = 300 if self.env == 'production' else 500
+                temperature = 0.5 if self.env == 'production' else 0.7
+
+                response = self.client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a financial analyst providing insights on transaction data."},
+                        {"role": "user", "content": f"Analyze this financial transaction and provide key insights: {transaction_summary}"}
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+
+                insights = response.choices[0].message.content
+
+            except Exception as e:
+                logger.error(f"Error generating OpenAI insights: {str(e)}")
+                insights = "AI insights currently unavailable. Using basic analysis."
+
+            return {
+                'success': True,
+                'insights': insights,
+                'generated_at': datetime.now().isoformat(),
+                'analysis_type': 'ai_powered',
+                'category_suggestion': {
+                    'category': category,
+                    'confidence': confidence,
+                    'explanation': explanation
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating AI insights: {str(e)}")
+            return self._generate_fallback_insights([transaction_data])
 
     def generate_insights(self, transactions: List[Dict]) -> Dict:
         """Generate insights from transaction data using AI."""

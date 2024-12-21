@@ -8,6 +8,87 @@ from datetime import datetime, timedelta
 import time
 from collections import deque
 
+# Configure logging with more detailed format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# Global client instance with better state management
+_openai_client = None
+_last_client_error = None
+_last_client_init = None
+_client_error_count = 0
+MAX_ERROR_COUNT = 3
+CLIENT_RETRY_INTERVAL = 300  # 5 minutes
+
+def get_openai_client() -> Optional[OpenAI]:
+    """
+    Get OpenAI client with improved error handling and state tracking
+    """
+    global _openai_client, _last_client_error, _last_client_init, _client_error_count
+
+    try:
+        # Check if we have a recent error and should wait
+        if _last_client_error and _client_error_count >= MAX_ERROR_COUNT:
+            if _last_client_init is not None:
+                wait_time = CLIENT_RETRY_INTERVAL - (time.time() - _last_client_init)
+                if wait_time > 0:
+                    logger.warning(f"Waiting {wait_time:.0f}s before retrying client initialization")
+                    return None
+
+        # Reset error count if we're retrying after waiting
+        if _last_client_init and (time.time() - _last_client_init) > CLIENT_RETRY_INTERVAL:
+            _client_error_count = 0
+
+        # Check for API key
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            logger.error("OpenAI API key not found in environment variables")
+            return None
+
+        # Return existing client if available
+        if _openai_client is not None:
+            return _openai_client
+
+        # Initialize new client without proxies
+        _openai_client = OpenAI(api_key=api_key)
+        _last_client_init = time.time()
+
+        # Test the client with a minimal request
+        try:
+            _openai_client.models.list(limit=1)
+            logger.info("OpenAI client initialized and tested successfully")
+            _client_error_count = 0
+            _last_client_error = None
+            return _openai_client
+
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "rate limit" in error_msg:
+                logger.warning(f"Rate limit during initialization: {str(e)}")
+                time.sleep(5)  # Basic backoff
+                return _openai_client
+            elif "invalid api key" in error_msg:
+                logger.error("Invalid API key configuration")
+                _last_client_error = "Invalid API key"
+            else:
+                logger.error(f"Client test failed: {str(e)}")
+                _last_client_error = str(e)
+
+            _client_error_count += 1
+            _openai_client = None
+            return None
+
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+        _last_client_error = str(e)
+        _client_error_count += 1
+        _openai_client = None
+        return None
+
 # Rate limiting configuration
 RATE_LIMIT_REQUESTS = 50  # requests per minute
 RATE_LIMIT_WINDOW = 60  # seconds
@@ -28,85 +109,6 @@ def wait_for_rate_limit():
             break
     request_times.append(now)
 
-# Configure logging with more detailed format
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
-
-# Global client instance with better state management
-_openai_client = None
-_last_client_error = None
-_last_client_init = None
-_client_error_count = 0
-MAX_ERROR_COUNT = 3
-CLIENT_RETRY_INTERVAL = 300  # 5 minutes
-
-def get_openai_client() -> Optional[OpenAI]:
-    """
-    Get OpenAI client with improved error handling, rate limit management, and state tracking
-    """
-    global _openai_client, _last_client_error, _last_client_init, _client_error_count
-    
-    try:
-        # Check if we have a recent error and should wait
-        if _last_client_error and _client_error_count >= MAX_ERROR_COUNT:
-            wait_time = CLIENT_RETRY_INTERVAL - (time.time() - _last_client_init)
-            if wait_time > 0:
-                logger.warning(f"Waiting {wait_time:.0f}s before retrying client initialization")
-                return None
-
-        # Reset error count if we're retrying after waiting
-        if _last_client_init and (time.time() - _last_client_init) > CLIENT_RETRY_INTERVAL:
-            _client_error_count = 0
-            
-        # Check for API key
-        api_key = os.environ.get('OPENAI_API_KEY')
-        if not api_key:
-            logger.error("OpenAI API key not found in environment variables")
-            return None
-            
-        # Return existing client if available and valid
-        if _openai_client is not None:
-            return _openai_client
-            
-        # Initialize new client
-        _openai_client = OpenAI(api_key=api_key)
-        _last_client_init = time.time()
-        
-        # Test the client with a minimal request
-        try:
-            _openai_client.models.list(limit=1)
-            logger.info("OpenAI client initialized and tested successfully")
-            _client_error_count = 0
-            _last_client_error = None
-            return _openai_client
-            
-        except Exception as e:
-            error_msg = str(e).lower()
-            if "rate limit" in error_msg:
-                logger.warning(f"Rate limit during initialization: {str(e)}")
-                time.sleep(5)  # Basic backoff
-                return _openai_client
-            elif "invalid api key" in error_msg:
-                logger.error("Invalid API key configuration")
-                _last_client_error = "Invalid API key"
-            else:
-                logger.error(f"Client test failed: {str(e)}")
-                _last_client_error = str(e)
-                
-            _client_error_count += 1
-            _openai_client = None
-            return None
-            
-    except Exception as e:
-        logger.error(f"Failed to initialize OpenAI client: {str(e)}")
-        _last_client_error = str(e)
-        _client_error_count += 1
-        _openai_client = None
-        return None
 
 CATEGORIES = [
     'income', 'groceries', 'utilities', 'transportation', 'entertainment',
@@ -151,7 +153,7 @@ def categorize_transaction(description: str) -> Tuple[str, float, str]:
     try:
         # Apply rate limiting
         wait_for_rate_limit()
-        
+
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -161,12 +163,12 @@ def categorize_transaction(description: str) -> Tuple[str, float, str]:
             temperature=0.3,
             max_tokens=150
         )
-        
+
         # Parse response
         if not response.choices:
             logger.error("Empty response from OpenAI API")
             return 'other', 0.1, "Service returned empty response"
-            
+
         result = response.choices[0].message.content.strip().split('|')
         if len(result) == 3:
             category = result[0].strip().lower()
@@ -177,15 +179,15 @@ def categorize_transaction(description: str) -> Tuple[str, float, str]:
                 logger.warning(f"Invalid confidence value: {result[1]}")
                 confidence = 0.5
             explanation = result[2].strip()
-            
+
             # Validate category
             if category not in CATEGORIES:
                 logger.warning(f"Invalid category returned: {category}")
                 category = 'other'
                 confidence = 0.5
-            
+
             return category, confidence, explanation
-            
+
     except RateLimitError as e:
         logger.error(f"Rate limit exceeded: {str(e)}")
         raise  # Let retry handle this
@@ -195,6 +197,6 @@ def categorize_transaction(description: str) -> Tuple[str, float, str]:
     except Exception as e:
         logger.error(f"Unexpected error in categorization: {str(e)}")
         return 'other', 0.1, f"Error in categorization: {str(e)}"
-    
+
     logger.warning("Failed to parse categorization response")
     return 'other', 0.1, "Unable to categorize transaction"
