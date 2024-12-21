@@ -92,6 +92,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 logger.info("Registering historical data blueprint with URL prefix: /historical-data")
                 app.register_blueprint(historical_data_blueprint)
 
+                # Register chat blueprint
+                from chat.routes import chat as chat_blueprint
+                logger.info("Registering chat blueprint")
+                app.register_blueprint(chat_blueprint)
+
                 logger.info("Blueprints registered successfully")
             except Exception as blueprint_error:
                 logger.error(f"Error registering blueprints: {str(blueprint_error)}")
@@ -103,6 +108,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
     except Exception as e:
         logger.error(f"Critical error in application creation: {str(e)}")
         return None
+
 
 if __name__ == '__main__':
     try:
