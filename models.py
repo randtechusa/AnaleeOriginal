@@ -194,7 +194,7 @@ class UploadedFile(db.Model):
 
 class Transaction(db.Model):
     __tablename__ = 'transaction'
-    
+
     id = Column(Integer, primary_key=True)
     date = Column(DateTime, nullable=False)
     description = Column(String(200), nullable=False)
@@ -206,12 +206,16 @@ class Transaction(db.Model):
     ai_category = Column(String(50))
     ai_confidence = Column(Float)
     ai_explanation = Column(String(200))
+    explanation = Column(String(200))  
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     account = relationship('Account', backref='transactions')
     uploaded_file = relationship('UploadedFile', back_populates='transactions')
+
+    def __repr__(self):
+        return f'<Transaction {self.date}: {self.description}>'
 
 class Account(db.Model):
     __tablename__ = 'account'
