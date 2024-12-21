@@ -4,78 +4,115 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
-from ai_insights import FinancialInsightsGenerator
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import text
-from models import User, Account, Transaction, UploadedFile, CompanySettings
-from app import db
 import pandas as pd
-import time
-from predictive_utils import PredictiveEngine, find_similar_transactions, TEXT_THRESHOLD
-# Enable AI functionality for analysis
 
+from models import (
+    db, User, Account, Transaction, UploadedFile, 
+    CompanySettings, HistoricalData
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Create blueprint
 main = Blueprint('main', __name__)
 
-def process_uploaded_file(file, status):
-    """Process the uploaded file and return dataframe and total rows."""
+@main.route('/historical-data', methods=['GET', 'POST'])
+@login_required
+def historical_data():
+    """Handle historical data upload and management."""
     try:
-        if file.filename.endswith('.xlsx'):
-            df = pd.read_excel(file)
-        elif file.filename.endswith('.csv'):
-            df = pd.read_csv(file)
-        else:
-            raise ValueError('Invalid file format')
+        if request.method == 'POST':
+            if 'file' not in request.files:
+                flash('No file uploaded')
+                return redirect(url_for('main.historical_data'))
 
-        total_rows = len(df)
-        return df, total_rows
-    except Exception as e:
-        logger.error(f"Error processing file: {str(e)}")
-        raise
+            file = request.files['file']
+            if not file.filename:
+                flash('No file selected')
+                return redirect(url_for('main.historical_data'))
 
-def init_upload_status(filename):
-    """Initialize the upload status dictionary."""
-    return {
-        'status': 'processing',
-        'filename': filename,
-        'total_rows': 0,
-        'processed_rows': 0,
-        'current_chunk': 0,
-        'progress': 0,
-        'last_update': datetime.utcnow().isoformat(),
-        'errors': []
-    }
+            if not file.filename.endswith(('.csv', '.xlsx')):
+                flash('Invalid file format. Please upload a CSV or Excel file.')
+                return redirect(url_for('main.historical_data'))
 
-def process_transaction_rows(df, uploaded_file, user):
-    """Process transaction rows from dataframe."""
-    processed_rows = 0
-    error_rows = []
-
-    try:
-        for index, row in df.iterrows():
             try:
-                transaction = Transaction(
-                    date=pd.to_datetime(row['Date']).date(),
-                    description=str(row['Description']),
-                    amount=float(row['Amount']),
-                    file_id=uploaded_file.id,
-                    user_id=user.id
-                )
-                db.session.add(transaction)
-                processed_rows += 1
-            except Exception as e:
-                error_rows.append({
-                    'row': index + 2,  # +2 for Excel row number (header + 1-based index)
-                    'error': str(e)
-                })
+                # Read the file
+                if file.filename.endswith('.xlsx'):
+                    df = pd.read_excel(file)
+                else:
+                    df = pd.read_csv(file)
 
-        db.session.commit()
-        return processed_rows, error_rows
+                # Validate required columns
+                required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
+                if not all(col in df.columns for col in required_columns):
+                    flash('Invalid file format. Please ensure all required columns are present.')
+                    return redirect(url_for('main.historical_data'))
+
+                # Get available accounts for mapping
+                accounts = Account.query.filter_by(user_id=current_user.id).all()
+                account_map = {acc.name: acc.id for acc in accounts}
+
+                # Process each row
+                success_count = 0
+                error_count = 0
+
+                for _, row in df.iterrows():
+                    try:
+                        # Find account ID from name
+                        account_name = str(row['Account']).strip()
+                        account_id = account_map.get(account_name)
+
+                        if not account_id:
+                            logger.warning(f"Account not found: {account_name}")
+                            error_count += 1
+                            continue
+
+                        # Create historical data entry
+                        historical_entry = HistoricalData(
+                            date=pd.to_datetime(row['Date']).date(),
+                            description=str(row['Description']),
+                            amount=float(row['Amount']),
+                            explanation=str(row['Explanation']),
+                            account_id=account_id,
+                            user_id=current_user.id
+                        )
+                        db.session.add(historical_entry)
+                        success_count += 1
+
+                    except Exception as row_error:
+                        logger.error(f"Error processing row: {str(row_error)}")
+                        error_count += 1
+                        continue
+
+                db.session.commit()
+                flash(f'Successfully processed {success_count} entries. {error_count} entries had errors.')
+                return redirect(url_for('main.historical_data'))
+
+            except Exception as e:
+                logger.error(f"Error processing file: {str(e)}")
+                db.session.rollback()
+                flash('Error processing file')
+                return redirect(url_for('main.historical_data'))
+
+        # GET request - show upload form and existing data
+        historical_entries = HistoricalData.query.filter_by(user_id=current_user.id)\
+            .order_by(HistoricalData.date.desc())\
+            .limit(100)\
+            .all()
+
+        return render_template(
+            'historical_data.html',
+            entries=historical_entries
+        )
 
     except Exception as e:
-        logger.error(f"Error processing transactions: {str(e)}")
-        db.session.rollback()
-        raise
+        logger.error(f"Error in historical_data route: {str(e)}")
+        flash('An error occurred')
+        return redirect(url_for('main.dashboard'))
 
 @main.route('/')
 def index():
@@ -790,7 +827,7 @@ def generate_insights():
             'description': t.description,
             'amount': float(t.amount),
             'category': t.account.category if t.account else 'Uncategorized'
-        } for t in transactions]
+        } for tin transactions]
 
         # Generate insights using AI
         insights_generator = FinancialInsightsGenerator()
@@ -829,7 +866,7 @@ def _parse_insights(insights_text):
 
 def _extract_risk_factors(insights_text):
     """Extract risk factors fromAI insights"""
-        # TODO: Implement risk factor extraction
+        # TODO: Implement risk factorextraction
     return ["Risk analysis will be available in the next update"]
 
 def _extract_opportunities(insights_text):
@@ -1124,3 +1161,163 @@ class ICountant:
             success = False
             completed = False
         return success, message, completed
+
+@main.route('/historical-data', methods=['GET', 'POST'])
+@login_required
+def historical_data():
+    """Handle historical data upload and management."""
+    try:
+        if request.method == 'POST':
+            if 'file' not in request.files:
+                flash('No file uploaded')
+                return redirect(url_for('main.historical_data'))
+
+            file = request.files['file']
+            if not file.filename:
+                flash('No file selected')
+                return redirect(url_for('main.historical_data'))
+
+            if not file.filename.endswith(('.csv', '.xlsx')):
+                flash('Invalid file format. Please upload a CSV or Excel file.')
+                return redirect(url_for('main.historical_data'))
+
+            try:
+                # Read the file
+                if file.filename.endswith('.xlsx'):
+                    df = pd.read_excel(file)
+                else:
+                    df = pd.read_csv(file)
+
+                # Validate required columns
+                required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
+                if not all(col in df.columns for col in required_columns):
+                    flash('Invalid file format. Please ensure all required columns are present.')
+                    return redirect(url_for('main.historical_data'))
+
+                # Get available accounts for mapping
+                accounts = Account.query.filter_by(user_id=current_user.id).all()
+                account_map = {acc.name: acc.id for acc in accounts}
+
+                # Process each row
+                success_count = 0
+                error_count = 0
+
+                for _, row in df.iterrows():
+                    try:
+                        # Find account ID from name
+                        account_name = str(row['Account']).strip()
+                        account_id = account_map.get(account_name)
+
+                        if not account_id:
+                            logger.warning(f"Account not found: {account_name}")
+                            error_count += 1
+                            continue
+
+                        # Create historical data entry
+                        historical_entry = HistoricalData(
+                            date=pd.to_datetime(row['Date']).date(),
+                            description=str(row['Description']),
+                            amount=float(row['Amount']),
+                            explanation=str(row['Explanation']),
+                            account_id=account_id,
+                            user_id=current_user.id
+                        )
+                        db.session.add(historical_entry)
+                        success_count += 1
+
+                    except Exception as row_error:
+                        logger.error(f"Error processing row: {str(row_error)}")
+                        error_count += 1
+                        continue
+
+                db.session.commit()
+                flash(f'Successfully processed {success_count} entries. {error_count} entries had errors.')
+                return redirect(url_for('main.historical_data'))
+
+            except Exception as e:
+                logger.error(f"Error processing file: {str(e)}")
+                db.session.rollback()
+                flash('Error processing file')
+                return redirect(url_for('main.historical_data'))
+
+        # GET request - show upload form and existing data
+        historical_entries = HistoricalData.query.filter_by(user_id=current_user.id)\
+            .order_by(HistoricalData.date.desc())\
+            .limit(100)\
+            .all()
+
+        return render_template(
+            'historical_data.html',
+            entries=historical_entries
+        )
+
+    except Exception as e:
+        logger.error(f"Error in historical_data route: {str(e)}")
+        flash('An error occurred')
+        return redirect(url_for('main.dashboard'))
+
+def suggest_explanation(description, similar_transactions):
+    #Implementation for suggestion would go here. Placeholder for now.
+    return "Explanation suggestion will be available in the next update"
+
+def process_uploaded_file(file, status):
+    """Process the uploaded file and return dataframe and total rows."""
+    try:
+        if file.filename.endswith('.xlsx'):
+            df = pd.read_excel(file)
+        elif file.filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            raise ValueError('Invalid file format')
+
+        total_rows = len(df)
+        return df, total_rows
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
+        raise
+
+def init_upload_status(filename):
+    """Initialize the upload status dictionary."""
+    return {
+        'status': 'processing',
+        'filename': filename,
+        'total_rows': 0,
+        'processed_rows': 0,
+        'current_chunk': 0,
+        'progress': 0,
+        'last_update': datetime.utcnow().isoformat(),
+        'errors': []
+    }
+
+def process_transaction_rows(df, uploaded_file, user):
+    """Process transaction rows from dataframe."""
+    processed_rows = 0
+    error_rows = []
+
+    try:
+        for index, row in df.iterrows():
+            try:
+                transaction = Transaction(
+                    date=pd.to_datetime(row['Date']).date(),
+                    description=str(row['Description']),
+                    amount=float(row['Amount']),
+                    file_id=uploaded_file.id,
+                    user_id=user.id
+                )
+                db.session.add(transaction)
+                processed_rows += 1
+            except Exception as e:
+                error_rows.append({
+                    'row': index + 2,  # +2 for Excel row number (header + 1-based index)
+                    'error': str(e)
+                })
+
+        db.session.commit()
+        return processed_rows, error_rows
+
+    except Exception as e:
+        logger.error(f"Error processing transactions: {str(e)}")
+        db.session.rollback()
+        raise
+
+from predictive_utils import find_similar_transactions, TEXT_THRESHOLD, SEMANTIC_THRESHOLD

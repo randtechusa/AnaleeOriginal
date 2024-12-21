@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Historical Data Upload</h1>
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Upload Historical Data</h5>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('main.historical_data') }}" method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="file" class="form-label">Select Excel/CSV File</label>
+                            <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
+                            <div class="form-text">
+                                File must contain columns: Date, Description, Amount, Explanation, and Account
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Upload</button>
+                    </form>
+                </div>
+            </div>
+
+            {% if entries %}
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Recent Historical Entries</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Explanation</th>
+                                    <th>Account</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in entries %}
+                                <tr>
+                                    <td>{{ entry.date.strftime('%Y-%m-%d') }}</td>
+                                    <td>{{ entry.description }}</td>
+                                    <td>{{ "%.2f"|format(entry.amount) }}</td>
+                                    <td>{{ entry.explanation }}</td>
+                                    <td>{{ entry.account.name if entry.account else 'N/A' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

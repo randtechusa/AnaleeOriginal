@@ -302,8 +302,29 @@ class KeywordRule(db.Model):
     
     def __repr__(self):
         return f'<KeywordRule {self.keyword}: {self.category}>'
+
+
+class HistoricalData(db.Model):
+    """Model for storing historical transaction data used for training"""
+    __tablename__ = 'historical_data'
+
+    id = Column(Integer, primary_key=True)
+    date = Column(DateTime, nullable=False)
+    description = Column(String(200), nullable=False)
+    amount = Column(Float, nullable=False)
+    explanation = Column(String(200))
+    account_id = Column(Integer, ForeignKey('account.id'))
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
+    upload_date = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    account = relationship('Account', backref='historical_data')
+    user = relationship('User', backref='historical_data')
+
     def __repr__(self):
-        return f'<CompanySettings {self.company_name}>'
+        return f'<HistoricalData {self.date}: {self.description}>'
 
 @login_manager.user_loader
 def load_user(user_id):
