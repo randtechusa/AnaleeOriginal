@@ -44,6 +44,67 @@ def sanitize_text(text, max_length=200):
     text = re.sub(r'[^\w\s.,;:!?()-]', '', text)
     return text.strip()[:max_length]
 
+def validate_data_frame(df):
+    """Validate the structure and content of the uploaded data."""
+    errors = []
+    warnings = []
+    valid_rows = []  # Initialize valid_rows list
+
+    # Check required columns
+    required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        errors.append(f"Missing required columns: {', '.join(missing_columns)}")
+        return errors, warnings, valid_rows
+
+    # Validate each row
+    for idx, row in df.iterrows():
+        row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
+        row_errors = []
+
+        # Date validation
+        date = validate_date(row['Date'])
+        if not date:
+            row_errors.append(f"Invalid date format")
+
+        # Description validation
+        if not row['Description'] or not isinstance(row['Description'], str):
+            row_errors.append(f"Invalid or empty description")
+        elif len(str(row['Description'])) > 200:
+            warnings.append(f"Row {row_num}: Description will be truncated to 200 characters")
+
+        # Amount validation
+        amount = validate_amount(row['Amount'])
+        if amount is None:
+            row_errors.append(f"Invalid amount value")
+
+        # Explanation validation
+        if not row['Explanation'] or not isinstance(row['Explanation'], str):
+            row_errors.append(f"Invalid or empty explanation")
+        elif len(str(row['Explanation'])) > 200:
+            warnings.append(f"Row {row_num}: Explanation will be truncated to 200 characters")
+
+        # Account validation
+        if not row['Account'] or not isinstance(row['Account'], str):
+            row_errors.append(f"Invalid or empty account")
+
+        if row_errors:
+            errors.append(f"Row {row_num}: {'; '.join(row_errors)}")
+        else:
+            valid_rows.append(idx)
+
+    return errors, warnings, valid_rows
+
+def sanitize_data(row):
+    """Sanitize and standardize data before database insertion."""
+    return {
+        'date': validate_date(row['Date']),
+        'description': sanitize_text(row['Description']),
+        'amount': validate_amount(row['Amount']),
+        'explanation': sanitize_text(row['Explanation']),
+        'account': sanitize_text(row['Account'])
+    }
+
 def preview_data_frame(df):
     """Preview and validate the uploaded data without saving."""
     preview_results = {
