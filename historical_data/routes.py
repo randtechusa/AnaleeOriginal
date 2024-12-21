@@ -184,23 +184,34 @@ def preview_upload():
     """Preview uploaded file data without importing."""
     try:
         if 'file' not in request.files:
+            logger.error("No file part in request")
             return jsonify({'error': 'No file uploaded'}), 400
 
         file = request.files['file']
         if not file.filename:
+            logger.error("No selected file")
             return jsonify({'error': 'No file selected'}), 400
 
         if not validate_file_type(file.filename):
+            logger.error(f"Invalid file type: {file.filename}")
             return jsonify({'error': 'Invalid file format. Please upload a CSV or Excel file.'}), 400
 
         try:
-            # Read the file
+            # Read the file with explicit encoding for CSV
             if file.filename.endswith('.xlsx'):
-                df = pd.read_excel(file)
+                logger.info(f"Reading Excel file: {file.filename}")
+                df = pd.read_excel(file, engine='openpyxl')
             else:
-                df = pd.read_csv(file)
+                logger.info(f"Reading CSV file: {file.filename}")
+                # Try different encodings
+                try:
+                    df = pd.read_csv(file, encoding='utf-8')
+                except UnicodeDecodeError:
+                    file.seek(0)  # Reset file pointer
+                    df = pd.read_csv(file, encoding='latin1')
 
             # Get preview results
+            logger.info("Generating preview results")
             preview_results = preview_data_frame(df)
 
             # Add summary statistics
@@ -211,14 +222,15 @@ def preview_upload():
                 'warnings': len(preview_results['warnings'])
             }
 
+            logger.info("Preview generated successfully")
             return jsonify(preview_results)
 
         except Exception as e:
-            logger.error(f"Error processing file for preview: {str(e)}")
+            logger.error(f"Error processing file for preview: {str(e)}", exc_info=True)
             return jsonify({'error': f'Error processing file: {str(e)}'}), 500
 
     except Exception as e:
-        logger.error(f"Error in preview route: {str(e)}")
+        logger.error(f"Error in preview route: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @historical_data.route('/upload', methods=['GET', 'POST'])
