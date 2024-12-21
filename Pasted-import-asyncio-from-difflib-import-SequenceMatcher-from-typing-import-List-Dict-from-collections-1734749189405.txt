@@ -1,0 +1,110 @@
+import asyncio
+from difflib import SequenceMatcher
+from typing import List, Dict
+from collections import Counter
+
+class HybridProcessor:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    @staticmethod
+    def calculate_text_similarity(text1: str, text2: str) -> float:
+        """Calculate similarity between two texts using SequenceMatcher."""
+        return SequenceMatcher(None, text1, text2).ratio()
+
+    @staticmethod
+    def fuzzy_match(transactions: List[Dict], threshold: float = 0.7) -> List[Dict]:
+        """Fuzzy match descriptions and propagate explanations."""
+        for i, txn1 in enumerate(transactions):
+            for j, txn2 in enumerate(transactions):
+                if i != j:
+                    similarity = HybridProcessor.calculate_text_similarity(txn1['description'], txn2['description'])
+                    if similarity >= threshold and not txn2.get('explanation'):
+                        txn2['explanation'] = txn1['explanation']
+        return transactions
+
+    @staticmethod
+    def keyword_based_rules(transaction: Dict, keywords_to_accounts: Dict[str, str]) -> str:
+        """Match descriptions with specific keywords."""
+        for keyword, account in keywords_to_accounts.items():
+            if keyword.lower() in transaction['description'].lower():
+                return account
+        return None
+
+    @staticmethod
+    def analyze_frequency(transactions: List[Dict]) -> Dict[str, str]:
+        """Analyze frequent explanations for descriptions."""
+        explanation_counter = Counter(txn['explanation'] for txn in transactions if txn.get('explanation'))
+        return explanation_counter.most_common()
+
+    @staticmethod
+    def analyze_amount_patterns(transactions: List[Dict]) -> Dict:
+        """Detect patterns in transaction amounts."""
+        amount_patterns = Counter(txn['amount'] for txn in transactions if 'amount' in txn)
+        return dict(amount_patterns)
+
+    async def ai_predict(self, session, url: str, payload: Dict) -> Dict:
+        """Call AI for predictions."""
+        async with session.post(url, json=payload, headers={"Authorization": f"Bearer {self.api_key}"}) as response:
+            if response.status == 200:
+                return await response.json()
+            return {"error": response.status}
+
+    async def process_transactions(
+        self,
+        transactions: List[Dict],
+        ai_url: str,
+        keywords_to_accounts: Dict[str, str]
+    ) -> List[Dict]:
+        """
+        Hybrid approach to process transactions:
+        1. Use traditional pattern-matching techniques first.
+        2. Fall back to AI predictions when patterns aren't clear.
+        """
+        # Step 1: Pattern-based recognition
+        transactions = self.fuzzy_match(transactions)
+        for txn in transactions:
+            if not txn.get("account"):
+                txn['account'] = self.keyword_based_rules(txn, keywords_to_accounts)
+
+        # Step 2: Database-driven suggestions
+        freq_analysis = self.analyze_frequency(transactions)
+        amount_analysis = self.analyze_amount_patterns(transactions)
+
+        # Step 3: Fallback to AI for unresolved cases
+        unresolved_transactions = [txn for txn in transactions if not txn.get("account")]
+        async with aiohttp.ClientSession() as session:
+            tasks = [
+                self.ai_predict(session, ai_url, {"description": txn["description"]})
+                for txn in unresolved_transactions
+            ]
+            ai_results = await asyncio.gather(*tasks)
+            for txn, result in zip(unresolved_transactions, ai_results):
+                if "suggested_account" in result:
+                    txn["account"] = result["suggested_account"]
+
+        return transactions
+
+# Example usage
+async def main():
+    transactions = [
+        {"description": "Office supplies purchase", "amount": 200},
+        {"description": "Electricity bill payment", "amount": 150},
+        {"description": "Payment for office supplies", "amount": 200},
+    ]
+    keywords_to_accounts = {
+        "office supplies": "Office Expenses",
+        "electricity": "Utility Expenses"
+    }
+
+    api_key = "your_api_key"
+    ai_url = "https://api.openai.com/v1/account_suggestions"
+
+    processor = HybridProcessor(api_key)
+    transactions = await processor.process_transactions(transactions, ai_url, keywords_to_accounts)
+    for txn in transactions:
+        print(txn)
+
+# Run the example
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -9,7 +9,8 @@ from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
 from historical_data import historical_data as historical_data_blueprint
-from errors import errors as errors_blueprint  # Import error monitoring blueprint
+from errors import errors as errors_blueprint
+from predictions.routes import predictions as predictions_blueprint  # Add predictions blueprint import
 
 # Configure logging with more detailed error reporting
 logging.basicConfig(
@@ -31,7 +32,6 @@ load_dotenv()
 # Initialize Flask extensions
 migrate = Migrate()
 scheduler = APScheduler()
-
 
 def create_app(env=os.environ.get('FLASK_ENV', 'production')):
     """Create and configure the Flask application"""
@@ -102,7 +102,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 logger.info("Registering error monitoring blueprint")
                 app.register_blueprint(errors_blueprint)
 
-                logger.info("Blueprints registered successfully")
+                # Register predictions blueprint
+                logger.info("Registering predictions blueprint with URL prefix: /predictions")
+                app.register_blueprint(predictions_blueprint, url_prefix='/predictions')
+
+                logger.info("All blueprints registered successfully")
             except Exception as blueprint_error:
                 logger.error(f"Error registering blueprints: {str(blueprint_error)}")
                 raise
@@ -113,7 +117,6 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
     except Exception as e:
         logger.error(f"Critical error in application creation: {str(e)}")
         return None
-
 
 if __name__ == '__main__':
     try:

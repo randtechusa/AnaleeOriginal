@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Financial Trends Analysis</h2>
+                    <p class="text-muted">AI-Powered Predictive Insights</p>
+                </div>
+                <div class="card-body">
+                    {% if error %}
+                        <div class="alert alert-danger">{{ error }}</div>
+                    {% else %}
+                        <!-- Period Selection -->
+                        <div class="mb-4">
+                            <form method="get" class="form-inline">
+                                <label for="months" class="mr-2">Analysis Period:</label>
+                                <select name="months" id="months" class="form-control mr-2" onchange="this.form.submit()">
+                                    <option value="3">Last 3 months</option>
+                                    <option value="6">Last 6 months</option>
+                                    <option value="12" selected>Last 12 months</option>
+                                    <option value="24">Last 24 months</option>
+                                </select>
+                            </form>
+                        </div>
+
+                        <!-- Key Metrics -->
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h5 class="card-title">Transaction Volume</h5>
+                                        <p class="card-text">{{ analysis.metrics.total_transactions }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h5 class="card-title">Average Transaction</h5>
+                                        <p class="card-text">${{ "%.2f"|format(analysis.metrics.average_transaction|float) }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h5 class="card-title">Growth Rate</h5>
+                                        <p class="card-text">{{ "%.1f"|format(analysis.metrics.monthly_growth_rate|float) }}%</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Predictions -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h4>Predictions</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h5>Next Month Prediction</h5>
+                                        <p>${{ "%.2f"|format(analysis.predictions.next_month_prediction|float) }}</p>
+                                        <div class="progress">
+                                            <div class="progress-bar" role="progressbar" 
+                                                 style="width: {{ analysis.predictions.confidence }}%"
+                                                 aria-valuenow="{{ analysis.predictions.confidence }}" 
+                                                 aria-valuemin="0" aria-valuemax="100">
+                                                {{ "%.0f"|format(analysis.predictions.confidence) }}% Confidence
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h5>Trend Analysis</h5>
+                                        <p>Current Trend: {{ analysis.predictions.trend|title }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AI Insights -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h4>AI Insights</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <h5>Trends</h5>
+                                        <ul class="list-unstyled">
+                                            {% for trend in analysis.insights.trends %}
+                                                <li class="mb-2">{{ trend }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <h5>Recommendations</h5>
+                                        <ul class="list-unstyled">
+                                            {% for rec in analysis.insights.recommendations %}
+                                                <li class="mb-2">{{ rec }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <h5>Risk Factors</h5>
+                                        <ul class="list-unstyled">
+                                            {% for risk in analysis.insights.risk_factors %}
+                                                <li class="mb-2">{{ risk }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Add any custom JavaScript for updating predictions dynamically
+    function updatePredictions() {
+        const months = document.getElementById('months').value;
+        fetch(`/api/predictions?months=${months}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Update UI with new predictions
+                    // Implementation will be added based on needs
+                }
+            })
+            .catch(error => console.error('Error updating predictions:', error));
+    }
+</script>
+{% endblock %}
