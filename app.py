@@ -8,9 +8,6 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
-from historical_data import historical_data as historical_data_blueprint
-from errors import errors as errors_blueprint
-from predictions.routes import predictions as predictions_blueprint  # Add predictions blueprint import
 
 # Configure logging with more detailed error reporting
 logging.basicConfig(
@@ -90,6 +87,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(reports_blueprint, url_prefix='/reports')
 
                 # Register historical data blueprint (protected core feature)
+                from historical_data import historical_data as historical_data_blueprint
                 logger.info("Registering historical data blueprint with URL prefix: /historical-data")
                 app.register_blueprint(historical_data_blueprint)
 
@@ -99,10 +97,12 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(chat_blueprint)
 
                 # Register error monitoring blueprint
+                from errors import errors as errors_blueprint
                 logger.info("Registering error monitoring blueprint")
                 app.register_blueprint(errors_blueprint)
 
                 # Register predictions blueprint
+                from predictions.routes import predictions as predictions_blueprint
                 logger.info("Registering predictions blueprint with URL prefix: /predictions")
                 app.register_blueprint(predictions_blueprint, url_prefix='/predictions')
 
@@ -129,7 +129,7 @@ if __name__ == '__main__':
             sys.exit(1)
 
         # Get port and configure server
-        port = 5000  # Force port 5000 for Replit
+        port = int(os.environ.get('PORT', 5000))
         logger.info(f"Configuring server to run on port {port}")
 
         # Start the server
