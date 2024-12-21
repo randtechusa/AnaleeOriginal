@@ -10,6 +10,61 @@ from . import historical_data
 
 logger = logging.getLogger(__name__)
 
+def validate_file_type(filename):
+    """Validate if the uploaded file is CSV or Excel."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'csv', 'xlsx'}
+
+def validate_data_frame(df):
+    """Validate the structure and content of the uploaded data."""
+    errors = []
+
+    # Check required columns
+    required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        errors.append(f"Missing required columns: {', '.join(missing_columns)}")
+        return errors
+
+    # Validate each column
+    for idx, row in df.iterrows():
+        row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
+
+        # Date validation
+        try:
+            pd.to_datetime(row['Date'])
+        except (ValueError, TypeError):
+            errors.append(f"Row {row_num}: Invalid date format")
+
+        # Description validation
+        if not isinstance(row['Description'], str) or not row['Description'].strip():
+            errors.append(f"Row {row_num}: Invalid or empty description")
+
+        # Amount validation
+        try:
+            float(row['Amount'])
+        except (ValueError, TypeError):
+            errors.append(f"Row {row_num}: Invalid amount value")
+
+        # Explanation validation
+        if not isinstance(row['Explanation'], str) or not row['Explanation'].strip():
+            errors.append(f"Row {row_num}: Invalid or empty explanation")
+
+        # Account validation (will be checked against database later)
+        if not isinstance(row['Account'], str) or not row['Account'].strip():
+            errors.append(f"Row {row_num}: Invalid or empty account")
+
+    return errors
+
+def sanitize_data(row):
+    """Sanitize and standardize data before database insertion."""
+    return {
+        'date': pd.to_datetime(row['Date']).date(),
+        'description': str(row['Description']).strip()[:200],  # Limit to 200 chars
+        'amount': float(row['Amount']),
+        'explanation': str(row['Explanation']).strip()[:200],  # Limit to 200 chars
+        'account': str(row['Account']).strip()
+    }
+
 @historical_data.route('/', methods=['GET', 'POST'])
 @login_required
 def upload():
@@ -25,7 +80,7 @@ def upload():
                 flash('No file selected', 'error')
                 return redirect(url_for('historical_data.upload'))
 
-            if not file.filename.endswith(('.csv', '.xlsx')):
+            if not validate_file_type(file.filename):
                 flash('Invalid file format. Please upload a CSV or Excel file.', 'error')
                 return redirect(url_for('historical_data.upload'))
 
@@ -36,12 +91,12 @@ def upload():
                 else:
                     df = pd.read_csv(file)
 
-                # Validate required columns
-                required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
-                missing_columns = [col for col in required_columns if col not in df.columns]
-                
-                if missing_columns:
-                    flash(f'Missing required columns: {", ".join(missing_columns)}', 'error')
+                # Validate data frame structure and content
+                validation_errors = validate_data_frame(df)
+                if validation_errors:
+                    for error in validation_errors[:5]:  # Show first 5 errors
+                        flash(error, 'error')
+                    logger.error(f"Validation errors in upload: {validation_errors}")
                     return redirect(url_for('historical_data.upload'))
 
                 # Get available accounts for mapping
@@ -55,35 +110,22 @@ def upload():
 
                 for idx, row in df.iterrows():
                     try:
-                        # Validate and clean data
-                        account_name = str(row['Account']).strip()
-                        account_id = account_map.get(account_name)
+                        # Sanitize data
+                        clean_data = sanitize_data(row)
 
+                        # Validate account exists
+                        account_id = account_map.get(clean_data['account'])
                         if not account_id:
                             error_count += 1
-                            errors.append(f"Row {idx + 2}: Account not found: {account_name}")
-                            continue
-
-                        try:
-                            amount = float(row['Amount'])
-                        except (ValueError, TypeError):
-                            error_count += 1
-                            errors.append(f"Row {idx + 2}: Invalid amount value")
-                            continue
-
-                        try:
-                            date = pd.to_datetime(row['Date']).date()
-                        except (ValueError, TypeError):
-                            error_count += 1
-                            errors.append(f"Row {idx + 2}: Invalid date format")
+                            errors.append(f"Row {idx + 2}: Account not found: {clean_data['account']}")
                             continue
 
                         # Create historical data entry
                         historical_entry = HistoricalData(
-                            date=date,
-                            description=str(row['Description']),
-                            amount=amount,
-                            explanation=str(row['Explanation']),
+                            date=clean_data['date'],
+                            description=clean_data['description'],
+                            amount=clean_data['amount'],
+                            explanation=clean_data['explanation'],
                             account_id=account_id,
                             user_id=current_user.id
                         )
@@ -98,13 +140,13 @@ def upload():
 
                 if success_count > 0:
                     db.session.commit()
-                    
+
                 flash(f'Successfully processed {success_count} entries.', 'success')
                 if error_count > 0:
                     flash(f'{error_count} entries had errors. Check logs for details.', 'warning')
                     for error in errors[:5]:  # Show first 5 errors
                         flash(error, 'error')
-                
+
                 return redirect(url_for('historical_data.upload'))
 
             except Exception as e:
