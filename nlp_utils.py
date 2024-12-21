@@ -16,7 +16,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global client instance with better state management
+# Global client instance
 _openai_client = None
 _last_client_error = None
 _last_client_init = None
@@ -56,31 +56,9 @@ def get_openai_client() -> Optional[OpenAI]:
         # Initialize new client with updated syntax
         _openai_client = OpenAI(api_key=api_key)
         _last_client_init = time.time()
+        logger.info("OpenAI client initialized successfully")
 
-        # Test the client with a minimal request
-        try:
-            _openai_client.models.list(limit=1)
-            logger.info("OpenAI client initialized and tested successfully")
-            _client_error_count = 0
-            _last_client_error = None
-            return _openai_client
-
-        except Exception as e:
-            error_msg = str(e).lower()
-            if "rate limit" in error_msg:
-                logger.warning(f"Rate limit during initialization: {str(e)}")
-                time.sleep(5)  # Basic backoff
-                return _openai_client
-            elif "invalid api key" in error_msg:
-                logger.error("Invalid API key configuration")
-                _last_client_error = "Invalid API key"
-            else:
-                logger.error(f"Client test failed: {str(e)}")
-                _last_client_error = str(e)
-
-            _client_error_count += 1
-            _openai_client = None
-            return None
+        return _openai_client
 
     except Exception as e:
         logger.error(f"Failed to initialize OpenAI client: {str(e)}")
