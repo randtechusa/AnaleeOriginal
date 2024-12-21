@@ -183,7 +183,7 @@ class FinancialInsightsGenerator:
     def _generate_fallback_insights(self, transactions: List[Dict]) -> Dict:
         """Generate basic insights without AI when API is unavailable."""
         try:
-            if not transactions:
+            if not transactions or not isinstance(transactions, list):
                 return {
                     'success': True,
                     'insights': "No transactions to analyze",
@@ -196,15 +196,26 @@ class FinancialInsightsGenerator:
                     }
                 }
 
-            total_income = sum(t['amount'] for t in transactions if t['amount'] > 0)
-            total_expenses = sum(abs(t['amount']) for t in transactions if t['amount'] < 0)
+            # Ensure we have valid transaction data
+            if isinstance(transactions[0], dict):
+                latest = transactions[0]
+                amount = latest.get('amount', 0)
+            else:
+                logger.error("Invalid transaction data format")
+                return {
+                    'success': False,
+                    'error': "Invalid transaction data format",
+                    'analysis_type': 'error'
+                }
+
+            total_income = sum(t.get('amount', 0) for t in transactions if t.get('amount', 0) > 0)
+            total_expenses = sum(abs(t.get('amount', 0)) for t in transactions if t.get('amount', 0) < 0)
             net_change = total_income - total_expenses
 
-            latest = transactions[0]
-            category_guess = "expense" if latest.get('amount', 0) < 0 else "income"
+            category_guess = "expense" if amount < 0 else "income"
 
             insights = (
-                f"Basic Financial Summary:\n"
+                f"Basic Financial Analysis:\n"
                 f"- Total Income: ${total_income:,.2f}\n"
                 f"- Total Expenses: ${total_expenses:,.2f}\n"
                 f"- Net Change: ${net_change:,.2f}\n\n"
@@ -220,7 +231,7 @@ class FinancialInsightsGenerator:
                 'category_suggestion': {
                     'category': category_guess,
                     'confidence': 0.5,
-                    'explanation': f"Basic categorization based on amount being {'negative' if latest.get('amount', 0) < 0 else 'positive'}"
+                    'explanation': f"Basic categorization based on amount being {'negative' if amount < 0 else 'positive'}"
                 }
             }
 
