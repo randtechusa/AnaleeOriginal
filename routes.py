@@ -341,9 +341,22 @@ def company_settings():
         months=months
     )
 
-@main.route('/analyze/<int:file_id>', methods=['GET', 'POST'])
+@main.route('/analyze')
+@login_required
+def analyze_list():
+    """Show list of files available for analysis"""
+    try:
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+        return render_template('analyze_list.html', files=files)
+    except Exception as e:
+        logger.error(f"Error loading files for analysis: {str(e)}")
+        flash('Error loading files', 'error')
+        return redirect(url_for('main.dashboard'))
+
+@main.route('/analyze/<int:file_id>')
 @login_required
 def analyze(file_id):
+    """Analyze specific file transactions"""
     logger.info(f"Starting analysis for file_id: {file_id} for user {current_user.id}")
 
     try:
@@ -366,7 +379,7 @@ def analyze(file_id):
             flash('File not found or unauthorized access')
             return redirect(url_for('main.upload'))
 
-        # Load ALL transactions for the file, not just unprocessed ones
+        # Load ALL transactions for the file
         try:
             transactions = Transaction.query.filter_by(
                 file_id=file_id,
@@ -816,7 +829,10 @@ def generate_insights():
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
 
+        # Get current financial year dates
         fy_dates = company_settings.get_financial_year()
+
+        # Get transactions for analysis
         transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.date.between(fy_dates['start_date'], fy_dates['end_date'])
