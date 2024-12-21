@@ -1,7 +1,7 @@
 import logging
 import pandas as pd
 from datetime import datetime
-from flask import request, render_template, flash, redirect, url_for
+from flask import request, render_template, flash, redirect, url_for, jsonify
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 import re
@@ -44,66 +44,121 @@ def sanitize_text(text, max_length=200):
     text = re.sub(r'[^\w\s.,;:!?()-]', '', text)
     return text.strip()[:max_length]
 
-def validate_data_frame(df):
-    """Validate the structure and content of the uploaded data."""
-    errors = []
-    warnings = []
-    valid_rows = []  # Initialize valid_rows even when returning early
+def preview_data_frame(df):
+    """Preview and validate the uploaded data without saving."""
+    preview_results = {
+        'valid_rows': [],
+        'invalid_rows': [],
+        'warnings': [],
+        'total_rows': len(df),
+        'columns_found': list(df.columns),
+        'sample_data': []
+    }
 
     # Check required columns
     required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
-        errors.append(f"Missing required columns: {', '.join(missing_columns)}")
-        return errors, warnings, valid_rows  # Return all three values consistently
+        preview_results['invalid_rows'].append({
+            'row': 0,
+            'error': f"Missing required columns: {', '.join(missing_columns)}"
+        })
+        return preview_results
 
     # Validate each row
     for idx, row in df.iterrows():
         row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
-        row_errors = []
+        row_issues = []
+        row_warnings = []
 
-        # Date validation
+        # Validate each field
         date = validate_date(row['Date'])
         if not date:
-            row_errors.append(f"Invalid date format")
+            row_issues.append("Invalid date format")
 
-        # Description validation
         if not row['Description'] or not isinstance(row['Description'], str):
-            row_errors.append(f"Invalid or empty description")
+            row_issues.append("Invalid or empty description")
         elif len(str(row['Description'])) > 200:
-            warnings.append(f"Row {row_num}: Description will be truncated to 200 characters")
+            row_warnings.append("Description will be truncated to 200 characters")
 
-        # Amount validation
         amount = validate_amount(row['Amount'])
         if amount is None:
-            row_errors.append(f"Invalid amount value")
+            row_issues.append("Invalid amount value")
 
-        # Explanation validation
-        if not row['Explanation'] or not isinstance(row['Explanation'], str):
-            row_errors.append(f"Invalid or empty explanation")
-        elif len(str(row['Explanation'])) > 200:
-            warnings.append(f"Row {row_num}: Explanation will be truncated to 200 characters")
+        # Collect row data for preview
+        row_data = {
+            'row_number': row_num,
+            'date': str(row['Date']),
+            'description': str(row['Description'])[:200],
+            'amount': str(row['Amount']),
+            'explanation': str(row.get('Explanation', ''))[:200],
+            'account': str(row.get('Account', '')),
+            'is_valid': len(row_issues) == 0
+        }
 
-        # Account validation
-        if not row['Account'] or not isinstance(row['Account'], str):
-            row_errors.append(f"Invalid or empty account")
-
-        if row_errors:
-            errors.append(f"Row {row_num}: {'; '.join(row_errors)}")
+        if row_issues:
+            preview_results['invalid_rows'].append({
+                'row': row_num,
+                'data': row_data,
+                'errors': row_issues
+            })
         else:
-            valid_rows.append(idx)
+            preview_results['valid_rows'].append(row_data)
 
-    return errors, warnings, valid_rows
+        if row_warnings:
+            preview_results['warnings'].append({
+                'row': row_num,
+                'warnings': row_warnings
+            })
 
-def sanitize_data(row):
-    """Sanitize and standardize data before database insertion."""
-    return {
-        'date': validate_date(row['Date']),
-        'description': sanitize_text(row['Description']),
-        'amount': validate_amount(row['Amount']),
-        'explanation': sanitize_text(row['Explanation']),
-        'account': sanitize_text(row['Account'])
-    }
+        # Add to sample data (first 5 rows)
+        if idx < 5:
+            preview_results['sample_data'].append(row_data)
+
+    return preview_results
+
+@historical_data.route('/preview', methods=['POST'])
+@login_required
+def preview_upload():
+    """Preview uploaded file data without importing."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+        if not file.filename:
+            return jsonify({'error': 'No file selected'}), 400
+
+        if not validate_file_type(file.filename):
+            return jsonify({'error': 'Invalid file format. Please upload a CSV or Excel file.'}), 400
+
+        try:
+            # Read the file
+            if file.filename.endswith('.xlsx'):
+                df = pd.read_excel(file)
+            else:
+                df = pd.read_csv(file)
+
+            # Get preview results
+            preview_results = preview_data_frame(df)
+
+            # Add summary statistics
+            preview_results['summary'] = {
+                'total_rows': len(df),
+                'valid_rows': len(preview_results['valid_rows']),
+                'invalid_rows': len(preview_results['invalid_rows']),
+                'warnings': len(preview_results['warnings'])
+            }
+
+            return jsonify(preview_results)
+
+        except Exception as e:
+            logger.error(f"Error processing file for preview: {str(e)}")
+            return jsonify({'error': f'Error processing file: {str(e)}'}), 500
+
+    except Exception as e:
+        logger.error(f"Error in preview route: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required

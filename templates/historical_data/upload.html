@@ -10,7 +10,7 @@
     <div class="card mb-4">
         <div class="card-body">
             <h5 class="card-title">Upload Historical Data</h5>
-            <form method="POST" enctype="multipart/form-data">
+            <form id="uploadForm" method="POST" enctype="multipart/form-data">
                 <div class="mb-3">
                     <label for="file" class="form-label">Select File (CSV or Excel)</label>
                     <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
@@ -18,8 +18,85 @@
                         File must contain the following columns: Date, Description, Amount, Explanation, Account
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary">Upload</button>
+                <button type="button" class="btn btn-primary" id="previewBtn">Preview Data</button>
+                <button type="submit" class="btn btn-success" id="importBtn" disabled>Import Data</button>
             </form>
+        </div>
+    </div>
+
+    <!-- Preview Section -->
+    <div id="previewSection" class="card mb-4 d-none">
+        <div class="card-body">
+            <h5 class="card-title">Data Preview</h5>
+
+            <!-- Summary Stats -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Total Rows</h6>
+                            <p class="card-text" id="totalRows">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <h6 class="card-title">Valid Rows</h6>
+                            <p class="card-text" id="validRows">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-danger text-white">
+                        <div class="card-body">
+                            <h6 class="card-title">Invalid Rows</h6>
+                            <p class="card-text" id="invalidRows">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-warning">
+                        <div class="card-body">
+                            <h6 class="card-title">Warnings</h6>
+                            <p class="card-text" id="warningCount">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Column Validation -->
+            <div class="mb-4">
+                <h6>Column Validation</h6>
+                <div id="columnValidation"></div>
+            </div>
+
+            <!-- Sample Data Table -->
+            <div class="mb-4">
+                <h6>Sample Data Preview</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm" id="sampleDataTable">
+                        <thead>
+                            <tr>
+                                <th>Row</th>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Amount</th>
+                                <th>Explanation</th>
+                                <th>Account</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Validation Issues -->
+            <div id="validationIssues">
+                <h6>Validation Issues</h6>
+                <div id="issuesList"></div>
+            </div>
         </div>
     </div>
 
@@ -60,4 +137,118 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const uploadForm = document.getElementById('uploadForm');
+    const previewBtn = document.getElementById('previewBtn');
+    const importBtn = document.getElementById('importBtn');
+    const previewSection = document.getElementById('previewSection');
+    const fileInput = document.getElementById('file');
+
+    // Preview button click handler
+    previewBtn.addEventListener('click', async function() {
+        if (!fileInput.files.length) {
+            alert('Please select a file first');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        try {
+            const response = await fetch('/historical-data/preview', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                displayPreview(data);
+                importBtn.disabled = false;
+            } else {
+                alert(data.error || 'Error previewing file');
+            }
+        } catch (error) {
+            console.error('Preview error:', error);
+            alert('Error previewing file');
+        }
+    });
+
+    function displayPreview(data) {
+        previewSection.classList.remove('d-none');
+
+        // Update summary stats
+        document.getElementById('totalRows').textContent = data.total_rows;
+        document.getElementById('validRows').textContent = data.valid_rows.length;
+        document.getElementById('invalidRows').textContent = data.invalid_rows.length;
+        document.getElementById('warningCount').textContent = data.warnings.length;
+
+        // Display column validation
+        const columnValidation = document.getElementById('columnValidation');
+        const requiredColumns = ['Date', 'Description', 'Amount', 'Explanation', 'Account'];
+        const columnHtml = requiredColumns.map(col => {
+            const found = data.columns_found.includes(col);
+            return `
+                <span class="badge ${found ? 'bg-success' : 'bg-danger'} me-2">
+                    ${col} ${found ? '✓' : '✗'}
+                </span>
+            `;
+        }).join('');
+        columnValidation.innerHTML = columnHtml;
+
+        // Display sample data
+        const sampleTable = document.getElementById('sampleDataTable').getElementsByTagName('tbody')[0];
+        sampleTable.innerHTML = '';
+        data.sample_data.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${row.row_number}</td>
+                <td>${row.date}</td>
+                <td>${row.description}</td>
+                <td>${row.amount}</td>
+                <td>${row.explanation}</td>
+                <td>${row.account}</td>
+                <td>
+                    <span class="badge ${row.is_valid ? 'bg-success' : 'bg-danger'}">
+                        ${row.is_valid ? 'Valid' : 'Invalid'}
+                    </span>
+                </td>
+            `;
+            sampleTable.appendChild(tr);
+        });
+
+        // Display validation issues
+        const issuesList = document.getElementById('issuesList');
+        issuesList.innerHTML = '';
+        if (data.invalid_rows.length > 0) {
+            const ul = document.createElement('ul');
+            ul.className = 'list-unstyled';
+            data.invalid_rows.forEach(issue => {
+                const li = document.createElement('li');
+                li.className = 'text-danger mb-2';
+                li.innerHTML = `
+                    <strong>Row ${issue.row}:</strong> 
+                    ${issue.errors.join(', ')}
+                `;
+                ul.appendChild(li);
+            });
+            issuesList.appendChild(ul);
+        } else {
+            issuesList.innerHTML = '<p class="text-success">No validation issues found.</p>';
+        }
+
+        // Scroll to preview section
+        previewSection.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Reset preview when file changes
+    fileInput.addEventListener('change', function() {
+        previewSection.classList.add('d-none');
+        importBtn.disabled = true;
+    });
+});
+</script>
 {% endblock %}
