@@ -9,6 +9,7 @@ from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
 from historical_data import historical_data as historical_data_blueprint
+from errors import errors as errors_blueprint  # Import error monitoring blueprint
 
 # Configure logging with more detailed error reporting
 logging.basicConfig(
@@ -88,14 +89,18 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 from reports import reports as reports_blueprint
                 app.register_blueprint(reports_blueprint, url_prefix='/reports')
 
-                # Register historical data blueprint
+                # Register historical data blueprint (protected core feature)
                 logger.info("Registering historical data blueprint with URL prefix: /historical-data")
                 app.register_blueprint(historical_data_blueprint)
 
-                # Register chat blueprint
+                # Register chat blueprint (protected core feature)
                 from chat.routes import chat as chat_blueprint
                 logger.info("Registering chat blueprint")
                 app.register_blueprint(chat_blueprint)
+
+                # Register error monitoring blueprint
+                logger.info("Registering error monitoring blueprint")
+                app.register_blueprint(errors_blueprint)
 
                 logger.info("Blueprints registered successfully")
             except Exception as blueprint_error:
@@ -123,7 +128,6 @@ if __name__ == '__main__':
         # Get port and configure server
         port = 5000  # Force port 5000 for Replit
         logger.info(f"Configuring server to run on port {port}")
-
 
         # Start the server
         logger.info(f"Starting Flask application on http://0.0.0.0:{port}")

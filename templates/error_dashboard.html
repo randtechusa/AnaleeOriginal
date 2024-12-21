@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">System Status Dashboard</h5>
+                </div>
+                <div class="card-body">
+                    <!-- AI Service Status -->
+                    <div class="mb-4">
+                        <h6>AI Service Status</h6>
+                        <div class="status-indicator p-3 rounded 
+                            {% if ai_status.consecutive_failures == 0 %}
+                                bg-success text-white
+                            {% elif ai_status.consecutive_failures < 3 %}
+                                bg-warning
+                            {% else %}
+                                bg-danger text-white
+                            {% endif %}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>Status: 
+                                    {% if ai_status.consecutive_failures == 0 %}
+                                        Operational
+                                    {% elif ai_status.consecutive_failures < 3 %}
+                                        Degraded Performance
+                                    {% else %}
+                                        Service Disruption
+                                    {% endif %}
+                                </span>
+                                <span class="small">Last Updated: {{ ai_status.last_update }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error Statistics -->
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2 text-muted">Total Errors (24h)</h6>
+                                    <h2 class="card-title mb-0">{{ ai_status.error_count }}</h2>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2 text-muted">Last Success</h6>
+                                    <p class="card-text">{{ ai_status.last_success or 'No successful operations yet' }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2 text-muted">Service Uptime</h6>
+                                    <p class="card-text">{{ uptime }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Errors -->
+                    <div class="mb-4">
+                        <h6>Recent Errors</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Type</th>
+                                        <th>Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if recent_errors %}
+                                        {% for error in recent_errors %}
+                                        <tr>
+                                            <td>{{ error.timestamp }}</td>
+                                            <td><span class="badge bg-danger">{{ error.type }}</span></td>
+                                            <td>{{ error.message }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="3" class="text-center">No recent errors</td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- System Recommendations -->
+                    {% if recommendations %}
+                    <div class="alert alert-info">
+                        <h6>System Recommendations</h6>
+                        <ul class="mb-0">
+                            {% for rec in recommendations %}
+                            <li>{{ rec }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.status-indicator {
+    transition: all 0.3s ease;
+}
+.badge {
+    font-size: 0.8em;
+}
+</style>
+{% endblock %}
