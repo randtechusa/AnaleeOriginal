@@ -202,9 +202,112 @@ def financial_position():
         if not company_settings:
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
-            
-        return render_template('reports/financial_position.html')
-        
+
+        # Get the earliest and latest transaction dates
+        date_range = db.session.query(
+            func.min(Transaction.date).label('min_date'),
+            func.max(Transaction.date).label('max_date')
+        ).filter(Transaction.user_id == current_user.id).first()
+
+        # Set default dates if no transactions exist
+        min_date = date_range.min_date or datetime.now()
+        max_date = date_range.max_date or datetime.now()
+
+        # Get available financial years based on data range
+        financial_years = set()
+        transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+        for t in transactions:
+            if t.date.month > company_settings.financial_year_end:
+                financial_years.add(t.date.year)
+            else:
+                financial_years.add(t.date.year - 1)
+        financial_years = sorted(list(financial_years))
+
+        # Default to current financial year if none selected
+        if not financial_years:
+            current_date = datetime.now()
+            if current_date.month > company_settings.financial_year_end:
+                financial_years = [current_date.year]
+            else:
+                financial_years = [current_date.year - 1]
+
+        # Determine filtering mode and dates
+        period_type = request.args.get('period_type', 'fy')
+        selected_fy = None
+
+        if period_type == 'custom':
+            # Custom period filtering
+            from_date = request.args.get('from_date')
+            to_date = request.args.get('to_date')
+
+            if from_date:
+                from_date = datetime.strptime(from_date, '%Y-%m-%d').date()
+            else:
+                from_date = min_date
+
+            if to_date:
+                to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
+            else:
+                to_date = max_date
+        else:
+            # Financial year filtering
+            selected_fy = request.args.get('financial_year')
+            if selected_fy:
+                selected_fy = int(selected_fy)
+            else:
+                selected_fy = max(financial_years)
+
+            # Calculate FY dates based on settings
+            fy_end_month = company_settings.financial_year_end
+            if fy_end_month == 12:
+                from_date = datetime(selected_fy, 1, 1).date()
+                to_date = datetime(selected_fy, 12, 31).date()
+            else:
+                from_date = datetime(selected_fy, fy_end_month + 1, 1).date()
+                last_day = get_last_day_of_month(selected_fy + 1, fy_end_month)
+                to_date = datetime(selected_fy + 1, fy_end_month, last_day).date()
+
+        # Get accounts with their transactions for the period
+        accounts = Account.query.filter_by(user_id=current_user.id).all()
+
+        # Initialize asset and liability accounts with balances
+        asset_accounts = []
+        liability_accounts = []
+        total_assets = 0
+        total_liabilities = 0
+
+        for account in accounts:
+            # Calculate account balance for the period
+            balance = db.session.query(func.sum(Transaction.amount)).filter(
+                Transaction.account_id == account.id,
+                Transaction.date <= to_date
+            ).scalar() or 0
+
+            account_data = {
+                'name': account.name,
+                'balance': abs(balance)  # Always show positive numbers in report
+            }
+
+            # Categorize accounts
+            if account.category in ['Asset', 'Current Asset', 'Fixed Asset']:
+                asset_accounts.append(account_data)
+                total_assets += balance if balance > 0 else 0
+            elif account.category in ['Liability', 'Current Liability', 'Long Term Liability']:
+                liability_accounts.append(account_data)
+                total_liabilities += abs(balance) if balance < 0 else 0
+
+        return render_template('reports/financial_position.html',
+                             start_date=from_date,
+                             end_date=to_date,
+                             min_date=min_date,
+                             max_date=max_date,
+                             financial_years=financial_years,
+                             current_fy=selected_fy,
+                             asset_accounts=asset_accounts,
+                             liability_accounts=liability_accounts,
+                             total_assets=total_assets,
+                             total_liabilities=total_liabilities)
+
     except Exception as e:
         logger.error(f"Error generating financial position: {str(e)}")
         flash('Error generating financial position statement')
