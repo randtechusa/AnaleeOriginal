@@ -48,16 +48,16 @@ def validate_data_frame(df):
     """Validate the structure and content of the uploaded data."""
     errors = []
     warnings = []
+    valid_rows = []  # Initialize valid_rows even when returning early
 
     # Check required columns
     required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
         errors.append(f"Missing required columns: {', '.join(missing_columns)}")
-        return errors, warnings
+        return errors, warnings, valid_rows  # Return all three values consistently
 
     # Validate each row
-    valid_rows = []
     for idx, row in df.iterrows():
         row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
         row_errors = []
