@@ -107,6 +107,7 @@ def sanitize_data(row):
 
 def preview_data_frame(df):
     """Preview and validate the uploaded data without saving."""
+    logger.info("Starting data preview validation")
     preview_results = {
         'valid_rows': [],
         'invalid_rows': [],
@@ -120,62 +121,84 @@ def preview_data_frame(df):
     required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
+        logger.warning(f"Missing required columns: {missing_columns}")
         preview_results['invalid_rows'].append({
             'row': 0,
-            'error': f"Missing required columns: {', '.join(missing_columns)}"
+            'errors': [f"Missing required columns: {', '.join(missing_columns)}"]
         })
         return preview_results
 
     # Validate each row
     for idx, row in df.iterrows():
-        row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
-        row_issues = []
-        row_warnings = []
+        try:
+            row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
+            row_issues = []
+            row_warnings = []
 
-        # Validate each field
-        date = validate_date(row['Date'])
-        if not date:
-            row_issues.append("Invalid date format")
+            # Date validation
+            date = validate_date(row['Date'])
+            if not date:
+                row_issues.append("Invalid date format")
 
-        if not row['Description'] or not isinstance(row['Description'], str):
-            row_issues.append("Invalid or empty description")
-        elif len(str(row['Description'])) > 200:
-            row_warnings.append("Description will be truncated to 200 characters")
+            # Description validation
+            if pd.isna(row['Description']) or not str(row['Description']).strip():
+                row_issues.append("Invalid or empty description")
+            elif len(str(row['Description'])) > 200:
+                row_warnings.append("Description will be truncated to 200 characters")
 
-        amount = validate_amount(row['Amount'])
-        if amount is None:
-            row_issues.append("Invalid amount value")
+            # Amount validation
+            amount = validate_amount(row['Amount'])
+            if amount is None:
+                row_issues.append("Invalid amount value")
 
-        # Collect row data for preview
-        row_data = {
-            'row_number': row_num,
-            'date': str(row['Date']),
-            'description': str(row['Description'])[:200],
-            'amount': str(row['Amount']),
-            'explanation': str(row.get('Explanation', ''))[:200],
-            'account': str(row.get('Account', '')),
-            'is_valid': len(row_issues) == 0
-        }
+            # Explanation validation
+            if pd.isna(row['Explanation']) or not str(row['Explanation']).strip():
+                row_issues.append("Invalid or empty explanation")
+            elif len(str(row['Explanation'])) > 200:
+                row_warnings.append("Explanation will be truncated to 200 characters")
 
-        if row_issues:
+            # Account validation
+            if pd.isna(row['Account']) or not str(row['Account']).strip():
+                row_issues.append("Invalid or empty account")
+
+            # Collect row data for preview
+            row_data = {
+                'row_number': row_num,
+                'date': str(row['Date']),
+                'description': str(row['Description'])[:200] if not pd.isna(row['Description']) else '',
+                'amount': str(row['Amount']) if not pd.isna(row['Amount']) else '',
+                'explanation': str(row['Explanation'])[:200] if not pd.isna(row['Explanation']) else '',
+                'account': str(row['Account']) if not pd.isna(row['Account']) else '',
+                'is_valid': len(row_issues) == 0
+            }
+
+            if row_issues:
+                preview_results['invalid_rows'].append({
+                    'row': row_num,
+                    'data': row_data,
+                    'errors': row_issues
+                })
+            else:
+                preview_results['valid_rows'].append(row_data)
+
+            if row_warnings:
+                preview_results['warnings'].append({
+                    'row': row_num,
+                    'warnings': row_warnings
+                })
+
+            # Add to sample data (first 5 rows)
+            if idx < 5:
+                preview_results['sample_data'].append(row_data)
+
+        except Exception as e:
+            logger.error(f"Error processing row {idx + 2}: {str(e)}", exc_info=True)
             preview_results['invalid_rows'].append({
-                'row': row_num,
-                'data': row_data,
-                'errors': row_issues
-            })
-        else:
-            preview_results['valid_rows'].append(row_data)
-
-        if row_warnings:
-            preview_results['warnings'].append({
-                'row': row_num,
-                'warnings': row_warnings
+                'row': idx + 2,
+                'errors': [f"Error processing row: {str(e)}"]
             })
 
-        # Add to sample data (first 5 rows)
-        if idx < 5:
-            preview_results['sample_data'].append(row_data)
-
+    logger.info(f"Preview validation complete. Found {len(preview_results['valid_rows'])} valid rows and {len(preview_results['invalid_rows'])} invalid rows")
     return preview_results
 
 @historical_data.route('/preview', methods=['POST'])
@@ -209,6 +232,11 @@ def preview_upload():
                 except UnicodeDecodeError:
                     file.seek(0)  # Reset file pointer
                     df = pd.read_csv(file, encoding='latin1')
+
+            # Handle empty dataframe
+            if df.empty:
+                logger.error("Empty file uploaded")
+                return jsonify({'error': 'The uploaded file is empty'}), 400
 
             # Get preview results
             logger.info("Generating preview results")
