@@ -25,4 +25,6 @@ dependencies = [
     "alembic",
     "flask-wtf>=1.2.2",
     "python-levenshtein>=0.26.1",
+    "numpy>=2.2.0",
+    "scikit-learn>=1.6.0",
 ]
