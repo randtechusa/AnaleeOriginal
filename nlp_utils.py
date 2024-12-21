@@ -16,7 +16,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global client instance
+# Global client instance with improved state tracking
 _openai_client = None
 _last_client_error = None
 _last_client_init = None
@@ -27,6 +27,8 @@ CLIENT_RETRY_INTERVAL = 300  # 5 minutes
 def get_openai_client() -> Optional[OpenAI]:
     """
     Get OpenAI client with improved error handling and state tracking
+    Returns:
+        Optional[OpenAI]: Initialized OpenAI client or None if initialization fails
     """
     global _openai_client, _last_client_error, _last_client_init, _client_error_count
 
@@ -43,29 +45,46 @@ def get_openai_client() -> Optional[OpenAI]:
         if _last_client_init and (time.time() - _last_client_init) > CLIENT_RETRY_INTERVAL:
             _client_error_count = 0
 
-        # Check for API key
+        # Return existing client if available
+        if _openai_client is not None:
+            return _openai_client
+
+        # Get API key from environment
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
             logger.error("OpenAI API key not found in environment variables")
             return None
 
-        # Return existing client if available
-        if _openai_client is not None:
-            return _openai_client
-
-        # Initialize new client with updated syntax
+        # Initialize new client with proper configuration
         _openai_client = OpenAI(api_key=api_key)
         _last_client_init = time.time()
-        logger.info("OpenAI client initialized successfully")
 
-        return _openai_client
+        # Test the client with a simple request
+        try:
+            _openai_client.models.list(limit=1)
+            logger.info("OpenAI client initialized and tested successfully")
+            return _openai_client
+        except Exception as e:
+            logger.error(f"Client test failed: {str(e)}")
+            _openai_client = None
+            raise
+
+    except RateLimitError as e:
+        _last_client_error = str(e)
+        logger.warning(f"Rate limit error during client initialization: {_last_client_error}")
+        raise
+
+    except APIError as e:
+        _last_client_error = str(e)
+        logger.error(f"OpenAI API error during client initialization: {_last_client_error}")
+        raise
 
     except Exception as e:
-        logger.error(f"Failed to initialize OpenAI client: {str(e)}")
         _last_client_error = str(e)
-        _client_error_count += 1
-        _openai_client = None
-        return None
+        logger.error(f"Unexpected error during client initialization: {_last_client_error}")
+        raise
+
+    return None
 
 # Rate limiting configuration
 RATE_LIMIT_REQUESTS = 50  # requests per minute
