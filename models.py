@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class User(UserMixin, db.Model):
     __tablename__ = 'user'
-    
+
     id = Column(Integer, primary_key=True)
     username = Column(String(64), unique=True, nullable=False)
     email = Column(String(120), unique=True, nullable=False)
@@ -121,7 +121,7 @@ class User(UserMixin, db.Model):
             {'link': '1400', 'name': 'Prepaid Expenses', 'category': 'Assets', 'sub_category': 'Current Assets', 'account_code': '1400'},
             {'link': '1500', 'name': 'Fixed Assets', 'category': 'Assets', 'sub_category': 'Non-Current Assets', 'account_code': '1500'},
             {'link': '1600', 'name': 'Accumulated Depreciation', 'category': 'Assets', 'sub_category': 'Non-Current Assets', 'account_code': '1600'},
-            
+
             # Liabilities (2000-2999)
             {'link': '2000', 'name': 'Liabilities', 'category': 'Liabilities', 'sub_category': 'Current Liabilities', 'account_code': '2000'},
             {'link': '2100', 'name': 'Accounts Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities', 'account_code': '2100'},
@@ -129,20 +129,20 @@ class User(UserMixin, db.Model):
             {'link': '2300', 'name': 'Income Tax Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities', 'account_code': '2300'},
             {'link': '2400', 'name': 'Sales Tax Payable', 'category': 'Liabilities', 'sub_category': 'Current Liabilities', 'account_code': '2400'},
             {'link': '2500', 'name': 'Long-term Debt', 'category': 'Liabilities', 'sub_category': 'Non-Current Liabilities', 'account_code': '2500'},
-            
+
             # Equity (3000-3999)
             {'link': '3000', 'name': 'Equity', 'category': 'Equity', 'sub_category': 'Owner Equity', 'account_code': '3000'},
             {'link': '3100', 'name': 'Common Stock', 'category': 'Equity', 'sub_category': 'Owner Equity', 'account_code': '3100'},
             {'link': '3200', 'name': 'Retained Earnings', 'category': 'Equity', 'sub_category': 'Owner Equity', 'account_code': '3200'},
             {'link': '3300', 'name': 'Dividends', 'category': 'Equity', 'sub_category': 'Owner Equity', 'account_code': '3300'},
-            
+
             # Income (4000-4999)
             {'link': '4000', 'name': 'Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue', 'account_code': '4000'},
             {'link': '4100', 'name': 'Sales Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue', 'account_code': '4100'},
             {'link': '4200', 'name': 'Service Revenue', 'category': 'Income', 'sub_category': 'Operating Revenue', 'account_code': '4200'},
             {'link': '4300', 'name': 'Interest Income', 'category': 'Income', 'sub_category': 'Non-Operating Revenue', 'account_code': '4300'},
             {'link': '4400', 'name': 'Other Income', 'category': 'Income', 'sub_category': 'Non-Operating Revenue', 'account_code': '4400'},
-            
+
             # Expenses (5000-5999)
             {'link': '5000', 'name': 'Expenses', 'category': 'Expenses', 'sub_category': 'Operating Expenses', 'account_code': '5000'},
             {'link': '5100', 'name': 'Cost of Goods Sold', 'category': 'Expenses', 'sub_category': 'Operating Expenses', 'account_code': '5100'},
@@ -154,7 +154,7 @@ class User(UserMixin, db.Model):
             {'link': '5700', 'name': 'Interest Expense', 'category': 'Expenses', 'sub_category': 'Non-Operating Expenses', 'account_code': '5700'},
             {'link': '5800', 'name': 'Other Expenses', 'category': 'Expenses', 'sub_category': 'Non-Operating Expenses', 'account_code': '5800'}
         ]
-        
+
         try:
             # Start a new transaction
             for account_data in default_accounts:
@@ -171,10 +171,10 @@ class User(UserMixin, db.Model):
                 except Exception as account_error:
                     logger.error(f"Error creating account {account_data['name']}: {str(account_error)}")
                     raise
-            
+
             db.session.commit()
             logger.info(f"Successfully created default Chart of Accounts for user {user_id}")
-            
+
         except Exception as e:
             logger.error(f"Error creating default accounts for user {user_id}: {str(e)}")
             db.session.rollback()
@@ -184,12 +184,12 @@ class User(UserMixin, db.Model):
 
 class UploadedFile(db.Model):
     __tablename__ = 'uploaded_file'
-    
+
     id = Column(Integer, primary_key=True)
     filename = Column(String(255), nullable=False)
     upload_date = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
-    
+
     # Relationships
     transactions = relationship('Transaction', backref='file', lazy=True)
 
@@ -207,7 +207,7 @@ class Transaction(db.Model):
     ai_category = Column(String(50))
     ai_confidence = Column(Float)
     ai_explanation = Column(String(200))
-    explanation = Column(String(200))  
+    explanation = Column(String(200))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -220,7 +220,7 @@ class Transaction(db.Model):
 
 class Account(db.Model):
     __tablename__ = 'account'
-    
+
     id = Column(Integer, primary_key=True)
     link = Column(String(20), nullable=False)
     category = Column(String(100), nullable=False)
@@ -237,7 +237,7 @@ class Account(db.Model):
 
 class CompanySettings(db.Model):
     __tablename__ = 'company_settings'
-    
+
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
     company_name = Column(String(200), nullable=False)
@@ -255,7 +255,7 @@ class CompanySettings(db.Model):
         Financial year starts from month after financial_year_end and ends on financial_year_end of next year."""
         if date is None and year is None:
             date = datetime.utcnow()
-        
+
         if year is not None:
             # If year is provided, use it as the start year
             start_year = year
@@ -266,14 +266,14 @@ class CompanySettings(db.Model):
                 start_year = date.year
             else:
                 start_year = date.year - 1
-        
+
         end_year = start_year + 1
-        
+
         # Start date is always the first day of the month after financial_year_end
         start_month = self.financial_year_end + 1 if self.financial_year_end < 12 else 1
         start_year_adj = start_year if self.financial_year_end < 12 else start_year + 1
         start_date = datetime(start_year_adj, start_month, 1)
-        
+
         # End date is the last day of financial_year_end month in the next year
         if self.financial_year_end == 2:
             # Handle February and leap years
@@ -282,9 +282,9 @@ class CompanySettings(db.Model):
             last_day = 30
         else:
             last_day = 31
-            
+
         end_date = datetime(end_year, self.financial_year_end, last_day)
-        
+
         return {
             'start_date': start_date,
             'end_date': end_date,
@@ -295,7 +295,7 @@ class CompanySettings(db.Model):
 class KeywordRule(db.Model):
     """Model for storing keyword-based categorization rules"""
     __tablename__ = 'keyword_rule'
-    
+
     id = Column(Integer, primary_key=True)
     keyword = Column(String(200), nullable=False)
     category = Column(String(100), nullable=False)
@@ -304,7 +304,7 @@ class KeywordRule(db.Model):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     def __repr__(self):
         return f'<KeywordRule {self.keyword}: {self.category}>'
 
@@ -477,9 +477,6 @@ class FinancialGoal(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
-    user = relationship('User', backref='financial_goals')
-
     def calculate_progress(self):
         """Calculate current progress as percentage"""
         if self.target_amount == 0:
@@ -502,6 +499,3 @@ class FinancialGoal(db.Model):
 
     def __repr__(self):
         return f'<FinancialGoal {self.name}: {self.current_amount}/{self.target_amount}>'
-
-# Add relationship to User model
-User.financial_goals = relationship('FinancialGoal', backref='user', lazy=True, cascade='all, delete-orphan')
