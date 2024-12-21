@@ -4,6 +4,8 @@ from datetime import datetime
 from flask import request, render_template, flash, redirect, url_for
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
+import re
+from decimal import Decimal, InvalidOperation
 
 from models import db, Account, HistoricalData
 from . import historical_data
@@ -15,55 +17,92 @@ def validate_file_type(filename):
     """Validate if the uploaded file is CSV or Excel."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'csv', 'xlsx'}
 
+def validate_date(date_str):
+    """Validate and parse date string."""
+    try:
+        return pd.to_datetime(date_str).date()
+    except Exception:
+        return None
+
+def validate_amount(amount_str):
+    """Validate and convert amount string to Decimal."""
+    try:
+        # Remove any currency symbols and whitespace
+        cleaned = re.sub(r'[^\d.-]', '', str(amount_str))
+        amount = Decimal(cleaned)
+        if -1000000000 <= amount <= 1000000000:  # Reasonable limits
+            return amount
+        return None
+    except (InvalidOperation, TypeError):
+        return None
+
+def sanitize_text(text, max_length=200):
+    """Sanitize and truncate text input."""
+    if not isinstance(text, str):
+        text = str(text)
+    # Remove any special characters except basic punctuation
+    text = re.sub(r'[^\w\s.,;:!?()-]', '', text)
+    return text.strip()[:max_length]
+
 def validate_data_frame(df):
     """Validate the structure and content of the uploaded data."""
     errors = []
+    warnings = []
 
     # Check required columns
     required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
         errors.append(f"Missing required columns: {', '.join(missing_columns)}")
-        return errors
+        return errors, warnings
 
-    # Validate each column
+    # Validate each row
+    valid_rows = []
     for idx, row in df.iterrows():
         row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
+        row_errors = []
 
         # Date validation
-        try:
-            pd.to_datetime(row['Date'])
-        except (ValueError, TypeError):
-            errors.append(f"Row {row_num}: Invalid date format")
+        date = validate_date(row['Date'])
+        if not date:
+            row_errors.append(f"Invalid date format")
 
         # Description validation
-        if not isinstance(row['Description'], str) or not row['Description'].strip():
-            errors.append(f"Row {row_num}: Invalid or empty description")
+        if not row['Description'] or not isinstance(row['Description'], str):
+            row_errors.append(f"Invalid or empty description")
+        elif len(str(row['Description'])) > 200:
+            warnings.append(f"Row {row_num}: Description will be truncated to 200 characters")
 
         # Amount validation
-        try:
-            float(row['Amount'])
-        except (ValueError, TypeError):
-            errors.append(f"Row {row_num}: Invalid amount value")
+        amount = validate_amount(row['Amount'])
+        if amount is None:
+            row_errors.append(f"Invalid amount value")
 
         # Explanation validation
-        if not isinstance(row['Explanation'], str) or not row['Explanation'].strip():
-            errors.append(f"Row {row_num}: Invalid or empty explanation")
+        if not row['Explanation'] or not isinstance(row['Explanation'], str):
+            row_errors.append(f"Invalid or empty explanation")
+        elif len(str(row['Explanation'])) > 200:
+            warnings.append(f"Row {row_num}: Explanation will be truncated to 200 characters")
 
-        # Account validation (will be checked against database later)
-        if not isinstance(row['Account'], str) or not row['Account'].strip():
-            errors.append(f"Row {row_num}: Invalid or empty account")
+        # Account validation
+        if not row['Account'] or not isinstance(row['Account'], str):
+            row_errors.append(f"Invalid or empty account")
 
-    return errors
+        if row_errors:
+            errors.append(f"Row {row_num}: {'; '.join(row_errors)}")
+        else:
+            valid_rows.append(idx)
+
+    return errors, warnings, valid_rows
 
 def sanitize_data(row):
     """Sanitize and standardize data before database insertion."""
     return {
-        'date': pd.to_datetime(row['Date']).date(),
-        'description': str(row['Description']).strip()[:200],  # Limit to 200 chars
-        'amount': float(row['Amount']),
-        'explanation': str(row['Explanation']).strip()[:200],  # Limit to 200 chars
-        'account': str(row['Account']).strip()
+        'date': validate_date(row['Date']),
+        'description': sanitize_text(row['Description']),
+        'amount': validate_amount(row['Amount']),
+        'explanation': sanitize_text(row['Explanation']),
+        'account': sanitize_text(row['Account'])
     }
 
 @historical_data.route('/', methods=['GET', 'POST'])
@@ -93,10 +132,12 @@ def upload():
                     df = pd.read_csv(file)
 
                 # Validate data frame structure and content
-                validation_errors = validate_data_frame(df)
+                validation_errors, warnings, valid_rows = validate_data_frame(df)
                 if validation_errors:
                     for error in validation_errors[:5]:  # Show first 5 errors
                         flash(error, 'error')
+                    for warning in warnings[:5]:
+                        flash(warning, 'warning')
                     logger.error(f"Validation errors in upload: {validation_errors}")
                     return redirect(url_for('historical_data.upload'))
 
@@ -113,7 +154,8 @@ def upload():
                 ai_helper = HistoricalDataAI()
                 processed_data = []
 
-                for idx, row in df.iterrows():
+                for idx in valid_rows:
+                    row = df.iloc[idx]
                     try:
                         # Sanitize data
                         clean_data = sanitize_data(row)
@@ -172,9 +214,9 @@ def upload():
                 return redirect(url_for('historical_data.upload'))
 
         # GET request - show upload form and existing data
-        historical_entries = HistoricalData.query.filter_by(user_id=current_user.id)\
-            .order_by(HistoricalData.date.desc())\
-            .limit(100)\
+        historical_entries = HistoricalData.query.filter_by(user_id=current_user.id) \
+            .order_by(HistoricalData.date.desc()) \
+            .limit(100) \
             .all()
 
         return render_template(
