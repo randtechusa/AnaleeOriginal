@@ -8,10 +8,18 @@
             <div class="card">
                 <div class="card-header">
                     <h5 class="card-title mb-0">Financial Assistant</h5>
+                    {% if unanalyzed_count is defined and unanalyzed_count > 0 %}
+                    <div class="alert alert-warning mt-2 mb-0">
+                        There are {{ unanalyzed_count }} transactions that need analysis.
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="card-body" id="chat-messages" style="height: 500px; overflow-y: auto;">
                     <div class="chat-history">
                         <!-- Messages will be dynamically loaded here -->
+                        {% if error %}
+                        <div class="alert alert-danger">{{ error }}</div>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="card-footer">
@@ -23,7 +31,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Financial Context Area -->
         <div class="col-md-4">
             <div class="card">
@@ -52,20 +60,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatForm = document.getElementById('chat-form');
     const messageInput = document.getElementById('message-input');
     const chatMessages = document.getElementById('chat-messages');
-    
+
     // Load initial chat history and financial context
     loadChatHistory();
     loadFinancialContext();
-    
+
     chatForm.addEventListener('submit', async function(e) {
         e.preventDefault();
         const message = messageInput.value.trim();
         if (!message) return;
-        
+
         // Add user message to chat
         appendMessage('user', message);
         messageInput.value = '';
-        
+
         try {
             const response = await fetch('/chat/send', {
                 method: 'POST',
@@ -74,7 +82,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 body: JSON.stringify({ message: message })
             });
-            
+
             const data = await response.json();
             if (data.success) {
                 appendMessage('assistant', data.response);
@@ -82,14 +90,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     updateFinancialContext(data.context_update);
                 }
             } else {
-                appendMessage('system', 'Sorry, I encountered an error. Please try again.');
+                appendMessage('system', 'Sorry, I encountered an error: ' + (data.error || 'Please try again.'));
             }
         } catch (error) {
             console.error('Error:', error);
             appendMessage('system', 'Sorry, I encountered an error. Please try again.');
         }
     });
-    
+
     function appendMessage(sender, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `chat-message ${sender}-message mb-3`;
@@ -101,7 +109,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chatMessages.querySelector('.chat-history').appendChild(messageDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
-    
+
     async function loadChatHistory() {
         try {
             const response = await fetch('/chat/history');
@@ -113,9 +121,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         } catch (error) {
             console.error('Error loading chat history:', error);
+            appendMessage('system', 'Error loading chat history');
         }
     }
-    
+
     async function loadFinancialContext() {
         try {
             const response = await fetch('/chat/context');
@@ -125,23 +134,26 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         } catch (error) {
             console.error('Error loading financial context:', error);
+            const summaryDiv = document.getElementById('financial-summary');
+            summaryDiv.innerHTML = '<div class="alert alert-danger">Error loading financial context</div>';
         }
     }
-    
+
     function updateFinancialContext(context) {
         const summaryDiv = document.getElementById('financial-summary');
         const transactionsDiv = document.getElementById('recent-transactions');
-        
+
         // Update summary
         summaryDiv.innerHTML = `
             <div class="mb-3">
                 <h6>Current Month Overview</h6>
-                <p class="mb-1">Income: $${context.income}</p>
-                <p class="mb-1">Expenses: $${context.expenses}</p>
-                <p class="mb-1">Balance: $${context.balance}</p>
+                <p class="mb-1">Income: $${context.income.toLocaleString()}</p>
+                <p class="mb-1">Expenses: $${context.expenses.toLocaleString()}</p>
+                <p class="mb-1">Balance: $${context.balance.toLocaleString()}</p>
+                ${context.unanalyzed_count ? `<p class="text-warning">Unanalyzed Transactions: ${context.unanalyzed_count}</p>` : ''}
             </div>
         `;
-        
+
         // Update transactions
         let transactionsHtml = '<h6>Recent Transactions</h6>';
         context.recent_transactions.forEach(tx => {
@@ -150,10 +162,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="d-flex justify-content-between">
                         <span>${tx.description}</span>
                         <span class="${tx.amount >= 0 ? 'text-success' : 'text-danger'}">
-                            $${Math.abs(tx.amount)}
+                            $${Math.abs(tx.amount).toLocaleString()}
                         </span>
                     </div>
-                    <div class="text-muted smaller">${tx.date}</div>
+                    <div class="text-muted smaller">
+                        ${tx.date} - ${tx.category}
+                        ${!tx.analyzed ? '<span class="badge bg-warning">Unanalyzed</span>' : ''}
+                    </div>
                 </div>
             `;
         });
@@ -188,6 +203,11 @@ document.addEventListener('DOMContentLoaded', function() {
     max-width: 80%;
     margin: 0 auto;
     text-align: center;
+}
+
+.badge {
+    font-size: 0.75em;
+    margin-left: 0.5em;
 }
 </style>
 {% endblock %}
