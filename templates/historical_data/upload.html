@@ -5,7 +5,7 @@
 {% block content %}
 <div class="container mt-4">
     <h2>Historical Data Upload</h2>
-    
+
     <!-- Upload Form -->
     <div class="card mb-4">
         <div class="card-body">
@@ -44,7 +44,9 @@
                         <tr>
                             <td>{{ entry.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ entry.description }}</td>
-                            <td>{{ "%.2f"|format(entry.amount) }}</td>
+                            <td class="text-{{ 'success' if entry.amount > 0 else 'danger' }}">
+                                {{ "%.2f"|format(entry.amount) }}
+                            </td>
                             <td>{{ entry.explanation }}</td>
                             <td>{{ entry.account.name if entry.account else 'N/A' }}</td>
                         </tr>

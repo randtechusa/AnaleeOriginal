@@ -105,7 +105,7 @@ def sanitize_data(row):
         'account': sanitize_text(row['Account'])
     }
 
-@historical_data.route('/', methods=['GET', 'POST'])
+@historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
     """Handle historical data upload and management."""
