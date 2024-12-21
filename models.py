@@ -338,3 +338,44 @@ def load_user(user_id):
     except Exception as e:
         logger.error(f"Error loading user {user_id}: {str(e)}")
         return None
+
+class AlertConfiguration(db.Model):
+    """Model for storing user-defined alert configurations"""
+    __tablename__ = 'alert_configuration'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
+    name = Column(String(100), nullable=False)
+    alert_type = Column(String(50), nullable=False)  # transaction, balance, pattern
+    threshold_type = Column(String(50), nullable=False)  # amount, percentage, count
+    threshold_value = Column(Float, nullable=False)
+    is_active = Column(Boolean, default=True)
+    notification_method = Column(String(50), default='web')  # web, email
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship('User', backref='alert_configurations')
+
+    def __repr__(self):
+        return f'<AlertConfiguration {self.name}: {self.alert_type}>'
+
+class AlertHistory(db.Model):
+    """Model for storing detected anomalies and alert history"""
+    __tablename__ = 'alert_history'
+
+    id = Column(Integer, primary_key=True)
+    alert_config_id = Column(Integer, ForeignKey('alert_configuration.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
+    alert_message = Column(Text, nullable=False)
+    severity = Column(String(20), nullable=False)  # low, medium, high
+    status = Column(String(20), default='new')  # new, acknowledged, resolved
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    alert_config = relationship('AlertConfiguration', backref='alert_history')
+    user = relationship('User', backref='alert_history')
+
+    def __repr__(self):
+        return f'<AlertHistory {self.severity}: {self.alert_message[:50]}>'

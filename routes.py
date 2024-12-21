@@ -10,9 +10,10 @@ import pandas as pd
 
 from models import (
     db, User, Account, Transaction, UploadedFile, 
-    CompanySettings, HistoricalData
+    CompanySettings, HistoricalData, AlertHistory, AlertConfiguration
 )
 from ai_insights import FinancialInsightsGenerator
+from alert_system import AlertSystem # Assuming this class is defined elsewhere
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -808,26 +809,27 @@ def _extract_recommendations(insights_text):
     # TODO: Implement recommendation extraction
     return ["Strategic recommendations will be available in the next update"]
 
-def _analyze_cash_flow(transactions):
-    """Analyze cash flow patterns"""
+def _analyze_cash_flow(transaction_data):
+    """Analyze cash flow patterns from transaction data"""
     try:
-        total_inflow = sum(t['amount'] for t in transactions if t['amount'] > 0)
-        total_outflow = sum(abs(t['amount']) for t in transactions if t['amount'] < 0)
+        total_inflow = sum(t['amount'] for t in transaction_data if t['amount'] > 0)
+        total_outflow = abs(sum(t['amount'] for t in transaction_data if t['amount'] < 0))
         net_flow = total_inflow - total_outflow
 
         return {
             'current_status': f"Net cash flow: ${net_flow:,.2f}",
             'projected_trend': "Trend analysis will be available in the next update",
-            'key_drivers': [                f"Total inflow: ${total_inflow:,.2f}",
-                    f"Total outflow: ${total_outflow:,.2f}"
-                ],
+            'key_drivers': [
+                f"Total inflow: ${total_inflow:,.2f}",
+                f"Total outflow: ${total_outflow:,.2f}"
+            ],
             'improvement_suggestions': ["Cash flow optimization suggestions will be available in the next update"]
-                }
+        }
     except Exception as e:
         logger.error(f"Error analyzing cash flow: {str(e)}")
         return {
-            'current_status': '',
-            'projected_trend': '',
+            'current_status': "Unable to analyze cash flow",
+            'projected_trend': "Analysis unavailable",
             'key_drivers': [],
             'improvement_suggestions': []
         }
@@ -1276,3 +1278,98 @@ def system_maintenance():
         logger.error(f"Error in system maintenance: {str(e)}")
         flash('Error checking system health')
         return redirect(url_for('main.dashboard'))
+
+@main.route('/alerts')
+@login_required
+def alert_dashboard():
+    """Display financial alert dashboard with configurations and active alerts"""
+    try:
+        # Get active alerts and configurations for the user
+        active_alerts = AlertHistory.query.filter(
+            AlertHistory.user_id == current_user.id,
+            AlertHistory.status != 'resolved'
+        ).order_by(AlertHistory.created_at.desc()).all()
+
+        configurations = AlertConfiguration.query.filter_by(
+            user_id=current_user.id
+        ).order_by(AlertConfiguration.created_at.desc()).all()
+
+        return render_template('alerts/alert_dashboard.html',
+                             active_alerts=active_alerts,
+                             configurations=configurations)
+
+    except Exception as e:
+        logger.error(f"Error loading alert dashboard: {str(e)}")
+        flash('Error loading alert dashboard')
+        return redirect(url_for('main.dashboard'))
+
+@main.route('/alerts/create', methods=['POST'])
+@login_required
+def create_alert_config():
+    """Create new alert configuration"""
+    try:
+        config = AlertConfiguration(
+            user_id=current_user.id,
+            name=request.form['name'],
+            alert_type=request.form['alert_type'],
+            threshold_type=request.form['threshold_type'],
+            threshold_value=float(request.form['threshold_value']),
+            notification_method=request.form.get('notification_method', 'web')
+        )
+        db.session.add(config)
+        db.session.commit()
+        flash('Alert configuration created successfully')
+        return redirect(url_for('main.alert_dashboard'))
+
+    except ValueError as ve:
+        logger.error(f"Invalid alert configuration values: {str(ve)}")
+        flash('Invalid configuration values')
+        return redirect(url_for('main.alert_dashboard'))
+    except Exception as e:
+        logger.error(f"Error creating alert configuration: {str(e)}")
+        db.session.rollback()
+        flash('Error creating alert configuration')
+        return redirect(url_for('main.alert_dashboard'))
+
+@main.route('/alerts/acknowledge/<int:alert_id>', methods=['POST'])
+@login_required
+def acknowledge_alert(alert_id):
+    """Mark an alert as acknowledged"""
+    try:
+        alert_system = AlertSystem()
+        success = alert_system.acknowledge_alert(alert_id, current_user.id)
+
+        if success:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Alert not found or unauthorized'}), 404
+
+    except Exception as e:
+        logger.error(f"Error acknowledging alert: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/alerts/check')
+@login_required
+def check_alerts():
+    """Check for new anomalies and generate alerts"""
+    try:
+        alert_system = AlertSystem()
+        anomalies = alert_system.check_anomalies(current_user.id)
+
+        created_alerts = []
+        for anomaly in anomalies:
+            alert = alert_system.create_alert(
+                user_id=current_user.id,
+                anomaly=anomaly,
+                config_id=anomaly.get('config_id')
+            )
+            if alert:
+                created_alerts.append(alert)
+
+        return jsonify({
+            'success': True,
+            'alerts_created': len(created_alerts)
+        })
+
+    except Exception as e:
+        logger.error(f"Error checking alerts: {str(e)}")
+        return jsonify({'error': str(e)}), 500

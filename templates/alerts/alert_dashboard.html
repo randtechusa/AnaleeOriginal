@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Financial Alert Dashboard</h5>
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newAlertModal">
+                        <i class="fas fa-plus"></i> New Alert
+                    </button>
+                </div>
+                <div class="card-body">
+                    <!-- Active Alerts Section -->
+                    <div class="mb-4">
+                        <h6>Active Alerts</h6>
+                        {% if active_alerts %}
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Severity</th>
+                                        <th>Message</th>
+                                        <th>Status</th>
+                                        <th>Detected</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for alert in active_alerts %}
+                                    <tr>
+                                        <td>
+                                            <span class="badge bg-{{ 'danger' if alert.severity == 'high' else 'warning' if alert.severity == 'medium' else 'info' }}">
+                                                {{ alert.severity|upper }}
+                                            </span>
+                                        </td>
+                                        <td>{{ alert.alert_message }}</td>
+                                        <td>{{ alert.status|title }}</td>
+                                        <td>{{ alert.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                        <td>
+                                            {% if alert.status == 'new' %}
+                                            <button class="btn btn-sm btn-outline-primary acknowledge-btn" 
+                                                    data-alert-id="{{ alert.id }}">
+                                                Acknowledge
+                                            </button>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info">
+                            No active alerts at this time.
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Alert Configurations Section -->
+                    <div class="mb-4">
+                        <h6>Alert Configurations</h6>
+                        {% if configurations %}
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Type</th>
+                                        <th>Threshold</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for config in configurations %}
+                                    <tr>
+                                        <td>{{ config.name }}</td>
+                                        <td>{{ config.alert_type|title }}</td>
+                                        <td>{{ config.threshold_type|title }}: {{ config.threshold_value }}</td>
+                                        <td>
+                                            <span class="badge {{ 'bg-success' if config.is_active else 'bg-secondary' }}">
+                                                {{ 'Active' if config.is_active else 'Inactive' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary edit-config-btn"
+                                                    data-config-id="{{ config.id }}">
+                                                Edit
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info">
+                            No alert configurations defined.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Alert Configuration Modal -->
+<div class="modal fade" id="newAlertModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">New Alert Configuration</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="newAlertForm" method="POST" action="{{ url_for('main.create_alert_config') }}">
+                    <div class="mb-3">
+                        <label for="alertName" class="form-label">Alert Name</label>
+                        <input type="text" class="form-control" id="alertName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="alertType" class="form-label">Alert Type</label>
+                        <select class="form-select" id="alertType" name="alert_type" required>
+                            <option value="transaction">Transaction Amount</option>
+                            <option value="balance">Account Balance</option>
+                            <option value="pattern">Transaction Pattern</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="thresholdType" class="form-label">Threshold Type</label>
+                        <select class="form-select" id="thresholdType" name="threshold_type" required>
+                            <option value="amount">Amount</option>
+                            <option value="percentage">Percentage</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="thresholdValue" class="form-label">Threshold Value</label>
+                        <input type="number" class="form-control" id="thresholdValue" name="threshold_value" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="notificationMethod" class="form-label">Notification Method</label>
+                        <select class="form-select" id="notificationMethod" name="notification_method">
+                            <option value="web">Web Only</option>
+                            <option value="email">Email</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="newAlertForm" class="btn btn-primary">Create Alert</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle alert acknowledgment
+    document.querySelectorAll('.acknowledge-btn').forEach(button => {
+        button.addEventListener('click', async function() {
+            const alertId = this.dataset.alertId;
+            try {
+                const response = await fetch(`/alerts/acknowledge/${alertId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    throw new Error('Failed to acknowledge alert');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to acknowledge alert');
+            }
+        });
+    });
+
+    // Form validation and submission
+    const newAlertForm = document.getElementById('newAlertForm');
+    if (newAlertForm) {
+        newAlertForm.addEventListener('submit', function(e) {
+            if (!this.checkValidity()) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            this.classList.add('was-validated');
+        });
+    }
+});
+</script>
+{% endblock %}
