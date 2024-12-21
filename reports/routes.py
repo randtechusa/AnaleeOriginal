@@ -5,10 +5,11 @@ general ledger, and trial balance.
 """
 
 import logging
+import calendar
+from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, Transaction, Account, CompanySettings
-from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.sql import func
 
@@ -18,6 +19,17 @@ logger = logging.getLogger(__name__)
 
 # Import the blueprint instance from __init__.py
 from . import reports
+
+def get_last_day_of_month(year: int, month: int) -> int:
+    """
+    Helper function to get the last day of a given month
+    Args:
+        year (int): The year
+        month (int): The month (1-12)
+    Returns:
+        int: The last day of the month
+    """
+    return calendar.monthrange(year, month)[1]
 
 @reports.route('/cashbook')
 @login_required
@@ -51,8 +63,17 @@ def cashbook():
                 financial_years.add(t.date.year - 1)
         financial_years = sorted(list(financial_years))
 
+        # Default to current financial year if none selected
+        if not financial_years:
+            current_date = datetime.now()
+            if current_date.month > company_settings.financial_year_end:
+                financial_years = [current_date.year]
+            else:
+                financial_years = [current_date.year - 1]
+
         # Determine filtering mode and dates
         period_type = request.args.get('period_type', 'fy')
+        selected_fy = None
 
         if period_type == 'custom':
             # Custom period filtering
@@ -74,17 +95,17 @@ def cashbook():
             if selected_fy:
                 selected_fy = int(selected_fy)
             else:
-                # Default to most recent financial year
-                selected_fy = max(financial_years) if financial_years else datetime.now().year
+                selected_fy = max(financial_years)
 
             # Calculate FY dates based on settings
-            if company_settings.financial_year_end == 12:
+            fy_end_month = company_settings.financial_year_end
+            if fy_end_month == 12:
                 from_date = datetime(selected_fy, 1, 1).date()
                 to_date = datetime(selected_fy, 12, 31).date()
             else:
-                from_date = datetime(selected_fy, company_settings.financial_year_end + 1, 1).date()
-                to_date = datetime(selected_fy + 1, company_settings.financial_year_end, 
-                                 company_settings.get_last_day_of_month(company_settings.financial_year_end)).date()
+                from_date = datetime(selected_fy, fy_end_month + 1, 1).date()
+                last_day = get_last_day_of_month(selected_fy + 1, fy_end_month)
+                to_date = datetime(selected_fy + 1, fy_end_month, last_day).date()
 
         # Get transactions for the specified period
         transactions = Transaction.query.filter(
@@ -99,7 +120,7 @@ def cashbook():
                              min_date=min_date,
                              max_date=max_date,
                              financial_years=financial_years,
-                             current_fy=selected_fy if period_type == 'fy' else None)
+                             current_fy=selected_fy)
 
     except Exception as e:
         logger.error(f"Error generating cashbook report: {str(e)}")
