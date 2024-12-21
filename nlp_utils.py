@@ -55,8 +55,12 @@ def get_openai_client() -> Optional[OpenAI]:
             logger.error("OpenAI API key not found in environment variables")
             return None
 
-        # Initialize new client with proper configuration
-        _openai_client = OpenAI(api_key=api_key)
+        # Initialize new client with correct configuration
+        # Removed 'proxies' parameter that was causing the error
+        _openai_client = OpenAI(
+            api_key=api_key,
+            timeout=60.0  # Add reasonable timeout
+        )
         _last_client_init = time.time()
 
         # Test the client with a simple request
@@ -67,22 +71,26 @@ def get_openai_client() -> Optional[OpenAI]:
         except Exception as e:
             logger.error(f"Client test failed: {str(e)}")
             _openai_client = None
+            _client_error_count += 1
             raise
 
     except RateLimitError as e:
         _last_client_error = str(e)
+        _client_error_count += 1
         logger.warning(f"Rate limit error during client initialization: {_last_client_error}")
-        raise
+        return None
 
     except APIError as e:
         _last_client_error = str(e)
+        _client_error_count += 1
         logger.error(f"OpenAI API error during client initialization: {_last_client_error}")
-        raise
+        return None
 
     except Exception as e:
         _last_client_error = str(e)
+        _client_error_count += 1
         logger.error(f"Unexpected error during client initialization: {_last_client_error}")
-        raise
+        return None
 
     return None
 
