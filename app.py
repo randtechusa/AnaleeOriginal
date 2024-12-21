@@ -31,47 +31,6 @@ load_dotenv()
 migrate = Migrate()
 scheduler = APScheduler()
 
-def verify_database():
-    """Verify database connection and check required tables"""
-    try:
-        logger.info("Verifying database connection...")
-        with db.engine.connect() as conn:
-            # Test basic connection
-            conn.execute(text('SELECT 1'))
-            logger.info("Basic database connection successful")
-
-            # List existing tables
-            tables_query = text("""
-                SELECT tablename 
-                FROM pg_catalog.pg_tables 
-                WHERE schemaname != 'pg_catalog' 
-                AND schemaname != 'information_schema';
-            """)
-            existing_tables = [row[0] for row in conn.execute(tables_query)]
-            logger.info(f"Existing tables: {existing_tables}")
-
-            # Create tables if they don't exist
-            try:
-                db.create_all()
-                logger.info("Database tables created/verified successfully")
-
-                # Verify each model's table exists
-                for table in db.metadata.tables:
-                    if table not in existing_tables:
-                        logger.warning(f"Table {table} may not have been created properly")
-                    else:
-                        logger.info(f"Table {table} verified")
-                return True
-
-            except Exception as table_error:
-                logger.error(f"Error creating tables: {str(table_error)}")
-                logger.exception("Full table creation error stacktrace:")
-                return False
-
-    except Exception as db_error:
-        logger.error(f"Database connection failed: {str(db_error)}")
-        logger.exception("Full database connection error stacktrace:")
-        return False
 
 def create_app(env=os.environ.get('FLASK_ENV', 'production')):
     """Create and configure the Flask application"""
@@ -121,22 +80,6 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         scheduler.start()
 
         with app.app_context():
-            # Verify database connection
-            try:
-                db.session.execute(text('SELECT 1'))
-                logger.info("Database connection verified")
-            except Exception as db_error:
-                logger.error(f"Database connection failed: {str(db_error)}")
-                return None
-
-            # Create database tables
-            try:
-                db.create_all()
-                logger.info("Database tables created successfully")
-            except Exception as table_error:
-                logger.error(f"Failed to create database tables: {str(table_error)}")
-                return None
-
             # Register blueprints
             try:
                 from routes import main as main_blueprint
@@ -145,8 +88,9 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 from reports import reports as reports_blueprint
                 app.register_blueprint(reports_blueprint, url_prefix='/reports')
 
-                # Register historical data blueprint with proper URL prefix
-                app.register_blueprint(historical_data_blueprint, url_prefix='/historical-data')
+                # Register historical data blueprint
+                logger.info("Registering historical data blueprint with URL prefix: /historical-data")
+                app.register_blueprint(historical_data_blueprint)
 
                 logger.info("Blueprints registered successfully")
             except Exception as blueprint_error:
@@ -174,19 +118,6 @@ if __name__ == '__main__':
         port = 5000  # Force port 5000 for Replit
         logger.info(f"Configuring server to run on port {port}")
 
-        # Verify database connection before starting
-        with app.app_context():
-            if not verify_database():
-                logger.error("Database verification failed")
-                sys.exit(1)
-
-            # Ensure all tables exist
-            try:
-                db.create_all()
-                logger.info("Database tables verified/created")
-            except Exception as db_error:
-                logger.error(f"Error creating database tables: {str(db_error)}")
-                sys.exit(1)
 
         # Start the server
         logger.info(f"Starting Flask application on http://0.0.0.0:{port}")

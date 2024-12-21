@@ -24,96 +24,8 @@ main = Blueprint('main', __name__)
 @main.route('/historical-data', methods=['GET', 'POST'])
 @login_required
 def historical_data():
-    """Handle historical data upload and management."""
-    try:
-        if request.method == 'POST':
-            if 'file' not in request.files:
-                flash('No file uploaded')
-                return redirect(url_for('main.historical_data'))
-
-            file = request.files['file']
-            if not file.filename:
-                flash('No file selected')
-                return redirect(url_for('main.historical_data'))
-
-            if not file.filename.endswith(('.csv', '.xlsx')):
-                flash('Invalid file format. Please upload a CSV or Excel file.')
-                return redirect(url_for('main.historical_data'))
-
-            try:
-                # Read the file
-                if file.filename.endswith('.xlsx'):
-                    df = pd.read_excel(file)
-                else:
-                    df = pd.read_csv(file)
-
-                # Validate required columns
-                required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
-                if not all(col in df.columns for col in required_columns):
-                    flash('Invalid file format. Please ensure all required columns are present.')
-                    return redirect(url_for('main.historical_data'))
-
-                # Get available accounts for mapping
-                accounts = Account.query.filter_by(user_id=current_user.id).all()
-                account_map = {acc.name: acc.id for acc in accounts}
-
-                # Process each row
-                success_count = 0
-                error_count = 0
-
-                for _, row in df.iterrows():
-                    try:
-                        # Find account ID from name
-                        account_name = str(row['Account']).strip()
-                        account_id = account_map.get(account_name)
-
-                        if not account_id:
-                            logger.warning(f"Account not found: {account_name}")
-                            error_count += 1
-                            continue
-
-                        # Create historical data entry
-                        historical_entry = HistoricalData(
-                            date=pd.to_datetime(row['Date']).date(),
-                            description=str(row['Description']),
-                            amount=float(row['Amount']),
-                            explanation=str(row['Explanation']),
-                            account_id=account_id,
-                            user_id=current_user.id
-                        )
-                        db.session.add(historical_entry)
-                        success_count += 1
-
-                    except Exception as row_error:
-                        logger.error(f"Error processing row: {str(row_error)}")
-                        error_count += 1
-                        continue
-
-                db.session.commit()
-                flash(f'Successfully processed {success_count} entries. {error_count} entries had errors.')
-                return redirect(url_for('main.historical_data'))
-
-            except Exception as e:
-                logger.error(f"Error processing file: {str(e)}")
-                db.session.rollback()
-                flash('Error processing file')
-                return redirect(url_for('main.historical_data'))
-
-        # GET request - show upload form and existing data
-        historical_entries = HistoricalData.query.filter_by(user_id=current_user.id)\
-            .order_by(HistoricalData.date.desc())\
-            .limit(100)\
-            .all()
-
-        return render_template(
-            'historical_data.html',
-            entries=historical_entries
-        )
-
-    except Exception as e:
-        logger.error(f"Error in historical_data route: {str(e)}")
-        flash('An error occurred')
-        return redirect(url_for('main.dashboard'))
+    """Redirect to the proper historical data blueprint route"""
+    return redirect(url_for('historical_data.upload'))
 
 @main.route('/')
 def index():
@@ -906,8 +818,7 @@ def _analyze_cash_flow(transactions):
         return {
             'current_status': f"Net cash flow: ${net_flow:,.2f}",
             'projected_trend': "Trend analysis will be available in the next update",
-            'key_drivers': [
-                f"Total inflow: ${total_inflow:,.2f}",
+            'key_drivers': [                f"Total inflow: ${total_inflow:,.2f}",
                 f"Total outflow: ${total_outflow:,.2f}"
             ],
             'improvement_suggestions': ["Cash flow optimization suggestions will be available in the next update"]
