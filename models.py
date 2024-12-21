@@ -307,7 +307,6 @@ class KeywordRule(db.Model):
     def __repr__(self):
         return f'<KeywordRule {self.keyword}: {self.category}>'
 
-
 class HistoricalData(db.Model):
     """Model for storing historical transaction data used for training"""
     __tablename__ = 'historical_data'
@@ -418,3 +417,42 @@ class AlertHistory(db.Model):
 
     def __repr__(self):
         return f'<AlertHistory {self.severity}: {self.alert_message[:50]}>'
+
+class FinancialRecommendation(db.Model):
+    """Model for storing AI-generated financial recommendations"""
+    __tablename__ = 'financial_recommendation'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
+    category = Column(String(50), nullable=False)  # cashflow, investment, cost_reduction, etc.
+    priority = Column(String(20), nullable=False)  # high, medium, low
+    recommendation = Column(Text, nullable=False)
+    impact_score = Column(Float)  # Estimated financial impact
+    status = Column(String(20), default='new')  # new, in_progress, completed, dismissed
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    applied_at = Column(DateTime)
+
+    # Relationships
+    user = relationship('User', backref='recommendations')
+
+    def __repr__(self):
+        return f'<FinancialRecommendation {self.category}: {self.recommendation[:50]}>'
+
+class RecommendationMetrics(db.Model):
+    """Model for tracking recommendation effectiveness"""
+    __tablename__ = 'recommendation_metrics'
+
+    id = Column(Integer, primary_key=True)
+    recommendation_id = Column(Integer, ForeignKey('financial_recommendation.id'), nullable=False)
+    metric_name = Column(String(100), nullable=False)
+    baseline_value = Column(Float)
+    current_value = Column(Float)
+    target_value = Column(Float)
+    measured_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    recommendation = relationship('FinancialRecommendation', backref='metrics')
+
+    def __repr__(self):
+        return f'<RecommendationMetrics {self.metric_name}: {self.current_value}>'

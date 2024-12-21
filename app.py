@@ -111,6 +111,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 logger.info("Registering risk assessment blueprint")
                 app.register_blueprint(risk_assessment_blueprint)
 
+                # Register recommendations blueprint
+                from recommendations import recommendations as recommendations_blueprint
+                logger.info("Registering recommendations blueprint")
+                app.register_blueprint(recommendations_blueprint)
+
                 logger.info("All blueprints registered successfully")
             except Exception as blueprint_error:
                 logger.error(f"Error registering blueprints: {str(blueprint_error)}")
