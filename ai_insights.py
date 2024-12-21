@@ -17,26 +17,33 @@ class FinancialInsightsGenerator:
         self.client = get_openai_client() if self.api_key else None
         self.env = os.environ.get('FLASK_ENV', 'development')
 
-    def generate_transaction_insights(self, transaction_data: Dict) -> Dict:
+    def generate_transaction_insights(self, transaction_data: List[Dict]) -> Dict:
         """
-        Generate AI-powered insights for a specific transaction.
+        Generate AI-powered insights for transactions.
 
         Args:
-            transaction_data (Dict): Transaction information including description, amount, etc.
+            transaction_data (List[Dict]): List of transaction information including description, amount, etc.
 
         Returns:
             Dict: Generated insights and analysis results
         """
         try:
+            if not isinstance(transaction_data, list) or not transaction_data:
+                logger.error("Invalid or empty transaction data provided")
+                return self._generate_fallback_insights([])
+
+            # For single transaction analysis, use the first transaction
+            transaction = transaction_data[0]
+
             if not self.client:
-                return self._generate_fallback_insights([transaction_data])
+                return self._generate_fallback_insights([transaction])
 
             # Prepare transaction for analysis
-            transaction_summary = self._prepare_transaction_summary([transaction_data])
+            transaction_summary = self._prepare_transaction_summary([transaction])
 
             # Get AI categorization
             try:
-                category, confidence, explanation = categorize_transaction(transaction_data.get('description', ''))
+                category, confidence, explanation = categorize_transaction(transaction.get('description', ''))
             except Exception as e:
                 logger.error(f"Error in categorization: {str(e)}")
                 category, confidence, explanation = None, 0, "Categorization unavailable"
@@ -76,7 +83,7 @@ class FinancialInsightsGenerator:
 
         except Exception as e:
             logger.error(f"Error generating AI insights: {str(e)}")
-            return self._generate_fallback_insights([transaction_data])
+            return self._generate_fallback_insights([transaction_data[0]] if transaction_data else [])
 
     def generate_insights(self, transactions: List[Dict]) -> Dict:
         """Generate insights from transaction data using AI."""

@@ -53,7 +53,7 @@ def get_openai_client() -> Optional[OpenAI]:
         if _openai_client is not None:
             return _openai_client
 
-        # Initialize new client without proxies
+        # Initialize new client with updated syntax
         _openai_client = OpenAI(api_key=api_key)
         _last_client_init = time.time()
 
