@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+import statistics
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
 from flask_login import login_user, logout_user, login_required, current_user
@@ -837,87 +838,78 @@ def _analyze_cash_flow(transaction_data):
 @main.route('/expense-forecast')
 @login_required
 def expense_forecast():
-    """
-    Generate and display expense forecasts with proper error handling and data protection
-    Returns:
-        Template with expense forecast data or redirects to dashboard with error message
-    """
+    """Handle expense forecast view with proper error handling and data structure"""
     try:
-        # Get company settings with validation
-        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
-        if not company_settings:
-            flash('Please configure company settings first.')
-            return redirect(url_for('main.company_settings'))
-
-        # Get current financial year dates
-        fy_dates = company_settings.get_financial_year()
-        start_date = fy_dates['start_date']
-        end_date = fy_dates['end_date']
-
-        # Get transactions with proper filtering
-        transactions = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.date.between(start_date, end_date),
-            Transaction.amount < 0  # Only include expenses
-        ).order_by(Transaction.date.desc()).all()
-
-        # Initialize forecast structure with all required fields
+        # Initialize the forecast structure with required attributes
         forecast = {
-            'monthly_forecasts': [],
-            'forecast_factors': {
-                'key_drivers': [
-                    'Historical spending patterns',
-                    'Seasonal variations',
-                    'Fixed costs'
-                ],
-                'risk_factors': [
-                    'Market volatility',
-                    'Unexpected expenses',
-                    'Economic conditions'
-                ]
-            },
-            'recommendations': [
-                {
-                    'action': 'Monitor fixed costs',
-                    'implementation_timeline': 'Immediate',
-                    'potential_impact': 'Reduce operational expenses'
+            'confidence_metrics': {
+                'overall_confidence': 0.85,
+                'variance_range': {
+                    'min': 0.0,
+                    'max': 0.0
                 },
-                {
-                    'action': 'Review variable expenses',
-                    'implementation_timeline': 'Monthly',
-                    'potential_impact': 'Optimize spending patterns'
-                }
-            ]
+                'reliability_score': 0.80
+            },
+            'forecast_factors': {
+                'key_drivers': []
+            },
+            'recommendations': []
         }
 
-        # Process monthly data for forecasting
+        # Get all transactions for analysis
+        transactions = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).all()
+
+        if not transactions:
+            flash('No transaction data available for forecasting')
+            return redirect(url_for('main.dashboard'))
+
+        # Process transaction data for monthly analysis
         monthly_data = {}
         for transaction in transactions:
             month_key = transaction.date.strftime('%Y-%m')
             if month_key not in monthly_data:
-                monthly_data[month_key] = {'expenses': 0}
-            monthly_data[month_key]['expenses'] += abs(transaction.amount)
+                monthly_data[month_key] = {'amount': 0, 'count': 0}
+            monthly_data[month_key]['amount'] += transaction.amount
+            monthly_data[month_key]['count'] += 1
 
-        # Generate monthly forecasts
-        for month, data in sorted(monthly_data.items()):
-            forecast['monthly_forecasts'].append({
-                'month': datetime.strptime(month, '%Y-%m').strftime('%B %Y'),
-                'total_expenses': data['expenses'],
-                'confidence': 0.85,  # Default confidence level
-                'breakdown': [
-                    {
-                        'category': 'Operating Expenses',
-                        'amount': data['expenses'],
-                        'trend': 'stable'
-                    }
-                ]
-            })
+        # Prepare data for charts
+        sorted_months = sorted(monthly_data.keys())
+        monthly_labels = [datetime.strptime(m, '%Y-%m').strftime('%b %Y') for m in sorted_months]
+        monthly_amounts = [monthly_data[m]['amount'] for m in sorted_months]
 
-        # Return template with complete forecast data
+        # Calculate confidence intervals
+        mean_amount = sum(monthly_amounts) / len(monthly_amounts) if monthly_amounts else 0
+        std_dev = statistics.stdev(monthly_amounts) if len(monthly_amounts) > 1 else 0
+        confidence_upper = [amount + std_dev for amount in monthly_amounts]
+        confidence_lower = [amount - std_dev for amount in monthly_amounts]
+
+        # Update variance range in forecast
+        if monthly_amounts:
+            forecast['confidence_metrics']['variance_range'] = {
+                'min': min(monthly_amounts),
+                'max': max(monthly_amounts)
+            }
+
+        # Process category data
+        category_data = {}
+        for transaction in transactions:
+            if transaction.account:
+                category = transaction.account.category or 'Uncategorized'
+                if category not in category_data:
+                    category_data[category] = 0
+                category_data[category] += transaction.amount
+
+        category_labels = list(category_data.keys())
+        category_amounts = [category_data[cat] for cat in category_labels]
+
         return render_template('expense_forecast.html',
-                            forecast=forecast,
-                            start_date=start_date.strftime('%Y-%m-%d'),
-                            end_date=end_date.strftime('%Y-%m-%d'))
+                             forecast=forecast,
+                             monthly_labels=monthly_labels,
+                             monthly_amounts=monthly_amounts,
+                             confidence_upper=confidence_upper,
+                             confidence_lower=confidence_lower,
+                             category_labels=category_labels,
+                             category_amounts=category_amounts)
 
     except Exception as e:
         logger.error(f"Error in expense forecast: {str(e)}")
