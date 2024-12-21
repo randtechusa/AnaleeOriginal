@@ -330,6 +330,45 @@ class HistoricalData(db.Model):
     def __repr__(self):
         return f'<HistoricalData {self.date}: {self.description}>'
 
+class RiskAssessment(db.Model):
+    """Model for storing financial risk assessments"""
+    __tablename__ = 'risk_assessment'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
+    assessment_date = Column(DateTime, default=datetime.utcnow)
+    risk_score = Column(Float, nullable=False)
+    risk_level = Column(String(20), nullable=False)  # low, medium, high
+    assessment_type = Column(String(50), nullable=False)  # liquidity, solvency, operational
+    findings = Column(Text)
+    recommendations = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship('User', backref='risk_assessments')
+
+    def __repr__(self):
+        return f'<RiskAssessment {self.assessment_date}: {self.risk_level}>'
+
+class RiskIndicator(db.Model):
+    """Model for storing specific risk indicators"""
+    __tablename__ = 'risk_indicator'
+
+    id = Column(Integer, primary_key=True)
+    assessment_id = Column(Integer, ForeignKey('risk_assessment.id'), nullable=False)
+    indicator_name = Column(String(100), nullable=False)
+    indicator_value = Column(Float, nullable=False)
+    threshold_value = Column(Float, nullable=False)
+    is_breach = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    assessment = relationship('RiskAssessment', backref='indicators')
+
+    def __repr__(self):
+        return f'<RiskIndicator {self.indicator_name}: {self.indicator_value}>'
+
 @login_manager.user_loader
 def load_user(user_id):
     """Load user by ID."""
