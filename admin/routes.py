@@ -218,6 +218,17 @@ def deactivated_subscribers():
     ).all()
     return render_template('admin/deactivated_subscribers.html', users=users)
 
+@admin.route('/pending-subscribers')
+@login_required
+@admin_required
+def pending_subscribers():
+    """View pending subscriber requests"""
+    users = User.query.filter(
+        User.is_admin == False,
+        User.subscription_status == 'pending'
+    ).all()
+    return render_template('admin/pending_subscribers.html', users=users)
+
 @admin.route('/subscriber/<int:user_id>/approve', methods=['POST'])
 @login_required
 @admin_required
@@ -236,7 +247,7 @@ def approve_subscriber(user_id):
         current_app.logger.error(f"Error activating subscription: {str(e)}")
         flash('Error activating subscription', 'error')
 
-    return redirect(url_for('admin.active_subscribers'))
+    return redirect(url_for('admin.pending_subscribers'))
 
 @admin.route('/subscriber/<int:user_id>/deactivate', methods=['POST'])
 @login_required

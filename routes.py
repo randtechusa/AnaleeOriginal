@@ -14,16 +14,87 @@ logger = logging.getLogger(__name__)
 # Create blueprint
 main = Blueprint('main', __name__)
 
-@main.route('/')
-def index():
-    """Root route - redirects to appropriate dashboard based on user type"""
-    if current_user.is_authenticated:
-        if current_user.is_admin:
-            logger.info(f"Admin user {current_user.email} redirected to admin dashboard")
-            return redirect(url_for('admin.dashboard'))
-        logger.info(f"Regular user {current_user.email} redirected to main dashboard")
-        return redirect(url_for('main.dashboard'))
-    return redirect(url_for('main.login'))
+@main.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        try:
+            # Verify database connection first
+            try:
+                db.session.execute(text('SELECT 1'))
+                logger.info("Database connection verified for registration")
+            except Exception as db_error:
+                logger.error(f"Database connection failed during registration: {str(db_error)}")
+                flash('Unable to connect to database. Please try again.')
+                return render_template('register.html')
+
+            # Get and validate form data
+            username = request.form.get('username', '').strip()
+            email = request.form.get('email', '').strip()
+            password = request.form.get('password', '')
+
+            # Validate required fields
+            if not username or not email or not password:
+                logger.warning("Registration attempt with missing fields")
+                flash('All fields are required')
+                return render_template('register.html')
+
+            # Validate email format
+            from email_validator import validate_email, EmailNotValidError
+            try:
+                validate_email(email)
+            except EmailNotValidError as e:
+                logger.warning(f"Invalid email format during registration: {email}")
+                flash('Please enter a valid email address')
+                return render_template('register.html')
+
+            # Check for existing user
+            existing_user = User.query.filter(
+                (User.username == username) | (User.email == email)
+            ).first()
+            if existing_user:
+                logger.warning(f"Registration attempt with existing username/email: {username}/{email}")
+                flash('Username or email already exists')
+                return render_template('register.html')
+
+            # Create new user with enhanced error handling
+            try:
+                user = User(
+                    username=username,
+                    email=email,
+                    subscription_status='pending'  # Set initial status as pending
+                )
+                user.set_password(password)
+                logger.info(f"Created new user object for {username}")
+
+                db.session.add(user)
+                db.session.commit()
+                logger.info(f"Successfully registered new user: {username}")
+
+                # Create default Chart of Accounts for the new user
+                try:
+                    User.create_default_accounts(user.id)
+                    logger.info(f"Default Chart of Accounts created for user {user.id}")
+                    flash('Registration successful. Your account is pending approval.')
+                    return redirect(url_for('main.login'))
+                except Exception as e:
+                    logger.error(f"Error creating default accounts: {str(e)}")
+                    db.session.rollback()
+                    flash('Error during registration. Please try again.')
+                    return render_template('register.html')
+
+            except Exception as user_error:
+                logger.error(f"Error creating user: {str(user_error)}")
+                db.session.rollback()
+                flash('Error creating user account. Please try again.')
+                return render_template('register.html')
+
+        except Exception as e:
+            logger.error(f'Unexpected error during registration: {str(e)}')
+            logger.exception("Full registration error stacktrace:")
+            db.session.rollback()
+            flash('Registration failed. Please try again.')
+
+    return render_template('register.html')
 
 @main.route('/login', methods=['GET', 'POST'])
 def login():
@@ -71,6 +142,18 @@ def login():
                 flash('Invalid email or password')
                 return render_template('login.html')
 
+            # Check if user is pending approval
+            if user.subscription_status == 'pending':
+                logger.warning(f"Login attempt by pending user: {email}")
+                flash('Your account is pending approval. Please wait for administrator approval.')
+                return render_template('login.html')
+
+            # Check if user is deactivated
+            if user.subscription_status == 'deactivated':
+                logger.warning(f"Login attempt by deactivated user: {email}")
+                flash('Your account has been deactivated. Please contact administrator.')
+                return render_template('login.html')
+
             # Login successful - set up session
             login_user(user, remember=True)
             logger.info(f"User {email} logged in successfully")
@@ -98,95 +181,22 @@ def login():
     # GET request - show login form
     return render_template('login.html')
 
+@main.route('/')
+def index():
+    """Root route - redirects to appropriate dashboard based on user type"""
+    if current_user.is_authenticated:
+        if current_user.is_admin:
+            logger.info(f"Admin user {current_user.email} redirected to admin dashboard")
+            return redirect(url_for('admin.dashboard'))
+        logger.info(f"Regular user {current_user.email} redirected to main dashboard")
+        return redirect(url_for('main.dashboard'))
+    return redirect(url_for('main.login'))
+
 @main.route('/historical-data', methods=['GET', 'POST'])
 @login_required
 def historical_data():
     """Redirect to the proper historical data blueprint route"""
     return redirect(url_for('historical_data.upload'))
-
-@main.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        try:
-            # Verify database connection first
-            try:
-                db.session.execute(text('SELECT 1'))
-                logger.info("Database connection verified for registration")
-            except Exception as db_error:
-                logger.error(f"Database connection failed during registration: {str(db_error)}")
-                flash('Unable to connect to database. Please try again.')
-                return render_template('register.html')
-
-            # Get and validate form data
-            username = request.form.get('username', '').strip()
-            email = request.form.get('email', '').strip()
-            password = request.form.get('password', '')
-
-            # Validate required fields
-            if not username or not email or not password:
-                logger.warning("Registration attempt with missing fields")
-                flash('All fields are required')
-                return render_template('register.html')
-
-            # Validate email format
-            from email_validator import validate_email, EmailNotValidError
-            try:
-                validate_email(email)
-            except EmailNotValidError as e:
-                logger.warning(f"Invalid email format during registration: {email}")
-                flash('Please enter a valid email address')
-                return render_template('register.html')
-
-            # Check for existing user
-            existing_user = User.query.filter(
-                (User.username == username) | (User.email == email)
-            ).first()
-            if existing_user:
-                logger.warning(f"Registration attempt with existing username/email: {username}/{email}")
-                flash('Username or email already exists')
-                return render_template('register.html')
-
-            # Create new user with enhanced error handling
-            try:
-                user = User(
-                    username=username,
-                    email=email
-                )
-                user.set_password(password)
-                logger.info(f"Created new user object for {username}")
-
-                db.session.add(user)
-                db.session.commit()
-                logger.info(f"Successfully registered new user: {username}")
-
-                # Log the user in after registration
-                # Create default Chart of Accounts for the new user
-                try:
-                    User.create_default_accounts(user.id)
-                    logger.info(f"Default Chart of Accounts created for user {user.id}")
-                    login_user(user)
-                    flash('Registration successful with default Chart of Accounts')
-                    return redirect(url_for('main.dashboard'))
-                except Exception as e:
-                    logger.error(f"Error creating default accounts: {str(e)}")
-                    db.session.rollback()
-                    flash('Error during registration. Please try again.')
-                    return render_template('register.html')
-
-            except Exception as user_error:
-                logger.error(f"Error creating user: {str(user_error)}")
-                db.session.rollback()
-                flash('Error creating user account. Please try again.')
-                return render_template('register.html')
-
-        except Exception as e:
-            logger.error(f'Unexpected error during registration: {str(e)}')
-            logger.exception("Full registration error stacktrace:")
-            db.session.rollback()
-            flash('Registration failed. Please try again.')
-
-
-    return render_template('register.html')
 
 @main.route('/settings', methods=['GET', 'POST'])
 @login_required
@@ -801,7 +811,7 @@ def _parse_insights(insights_text):
 def _extract_risk_factors(insights_text):
     """Extract risk factors fromAI insights"""
     # TODO: Implement risk factorextraction
-    return ["Risk analysis will be available in the next update"]
+    return ["Risk analysis will be available in thenext update"]
 
 def _extract_opportunities(insights_text):
     """Extract optimization opportunities from AI insights"""
