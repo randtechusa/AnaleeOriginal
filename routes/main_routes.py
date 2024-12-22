@@ -219,3 +219,17 @@ def logout():
     """Handle user logout"""
     logout_user()
     return redirect(url_for('main.login'))
+
+@login_required
+def icountant_interface():
+    """Handle iCountant Assistant interface"""
+    try:
+        if not current_user.is_authenticated:
+            return redirect(url_for('main.login'))
+
+        # Get relevant data for iCountant interface
+        return render_template('icountant.html')
+    except Exception as e:
+        logger.error(f"Error accessing iCountant interface: {str(e)}")
+        flash('Error loading iCountant Assistant', 'error')
+        return redirect(url_for('main.dashboard'))
