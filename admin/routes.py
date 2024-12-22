@@ -27,11 +27,19 @@ def upload_chart_of_accounts():
             # Log the columns found in the Excel file
             current_app.logger.info(f"Excel columns found: {df.columns.tolist()}")
 
+            # Validate required columns
+            required_columns = ['Account Code', 'Account Name', 'Category']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                flash(f'Missing required columns: {", ".join(missing_columns)}', 'error')
+                return redirect(url_for('admin.charts_of_accounts'))
+
             success_count = 0
             error_count = 0
             skipped_count = 0
+            error_details = []
 
-            for _, row in df.iterrows():
+            for idx, row in df.iterrows():
                 try:
                     # Check if account already exists
                     existing_account = AdminChartOfAccounts.query.filter_by(
@@ -57,15 +65,21 @@ def upload_chart_of_accounts():
                     success_count += 1
                 except Exception as e:
                     error_count += 1
-                    current_app.logger.error(f"Error processing row: {str(e)}")
+                    error_msg = f"Row {idx + 2}: {str(e)}"
+                    error_details.append(error_msg)
+                    current_app.logger.error(error_msg)
                     continue
 
+            if error_details:
+                current_app.logger.error("Upload errors:\n" + "\n".join(error_details))
+                flash(f'Upload completed with errors. Check logs for details.', 'warning')
+
             db.session.commit()
-            flash(f'Uploaded {success_count} accounts successfully. {error_count} accounts failed. {skipped_count} accounts skipped (already exist).', 'success')
+            flash(f'Uploaded {success_count} accounts successfully. {error_count} accounts failed. {skipped_count} accounts skipped (already exist).', 'info')
 
         except Exception as e:
             db.session.rollback()
-            flash('Error uploading Chart of Accounts.', 'error')
+            flash(f'Error uploading Chart of Accounts: {str(e)}', 'error')
             current_app.logger.error(f"Error uploading COA: {str(e)}")
     else:
         for field, errors in form.errors.items():
