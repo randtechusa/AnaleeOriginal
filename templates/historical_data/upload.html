@@ -159,21 +159,23 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.append('file', fileInput.files[0]);
 
         try {
-            const response = await fetch('/historical-data/preview', {
+            // Use the correct URL with url_for
+            const response = await fetch("{{ url_for('historical_data.preview_upload') }}", {
                 method: 'POST',
                 body: formData
             });
 
-            const data = await response.json();
-            if (response.ok) {
-                displayPreview(data);
-                importBtn.disabled = false;
-            } else {
-                alert(data.error || 'Error previewing file');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Error previewing file');
             }
+
+            const data = await response.json();
+            displayPreview(data);
+            importBtn.disabled = false;
         } catch (error) {
             console.error('Preview error:', error);
-            alert('Error previewing file');
+            alert(error.message || 'Error previewing file');
         }
     });
 
