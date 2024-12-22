@@ -215,6 +215,28 @@ def analyze_list():
         flash('Error loading analyze list', 'error')
         return redirect(url_for('main.dashboard'))
 
+@login_required
+def financial_insights():
+    """Handle financial insights view"""
+    try:
+        if not current_user.is_authenticated:
+            return redirect(url_for('main.login'))
+
+        # Get relevant data for financial insights
+        insights_generator = FinancialInsightsGenerator()
+        transactions = Transaction.query.filter_by(user_id=current_user.id)\
+            .order_by(Transaction.date.desc())\
+            .limit(100)\
+            .all()
+
+        insights = insights_generator.generate_insights(transactions)
+
+        return render_template('financial_insights.html', insights=insights)
+    except Exception as e:
+        logger.error(f"Error accessing financial insights: {str(e)}")
+        flash('Error loading Financial Insights', 'error')
+        return redirect(url_for('main.dashboard'))
+
 def logout():
     """Handle user logout"""
     logout_user()
