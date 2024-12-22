@@ -110,9 +110,9 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(recommendations_blueprint)
                 logger.info("Recommendations blueprint registered successfully")
 
-                # Register new feature blueprints
-                from routes import batch_processing as batch_processing_blueprint
-                app.register_blueprint(batch_processing_blueprint)
+                # Register batch processing blueprint
+                from routes.batch_processing import batch_processing
+                app.register_blueprint(batch_processing, url_prefix='/batch')
                 logger.info("Batch processing blueprint registered successfully")
 
                 logger.info("All blueprints registered successfully")

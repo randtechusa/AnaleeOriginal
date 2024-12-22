@@ -5,29 +5,44 @@
 {% block content %}
 <div class="container mt-4">
     <h2>Batch Transaction Processing</h2>
-    
+    <div class="alert alert-info">
+        <h5>Important Information</h5>
+        <ul>
+            <li>This feature allows you to process large sets of transactions safely</li>
+            <li>Supported file formats: CSV and Excel (.xlsx)</li>
+            <li>Required columns: date, description, amount, account_id</li>
+            <li>Processing is done in batches to ensure system stability</li>
+        </ul>
+    </div>
+
     <!-- Upload Form -->
     <div class="card mb-4">
         <div class="card-body">
             <h5 class="card-title">Upload Transactions</h5>
             <form id="batchUploadForm" method="POST" enctype="multipart/form-data">
                 <div class="mb-3">
-                    <label for="batchFile" class="form-label">Select Transaction File (CSV or Excel)</label>
-                    <input type="file" class="form-control" id="batchFile" name="file" accept=".csv,.xlsx" required>
+                    <label for="batchFile" class="form-label">Select Transaction File</label>
+                    <input type="file" class="form-control" id="batchFile" name="file" 
+                           accept=".csv,.xlsx" required>
                     <div class="form-text">
-                        File must contain required transaction columns
+                        Please ensure your file contains all required columns with correct formatting
                     </div>
                 </div>
                 <div class="mb-3">
-                    <label for="batchSize" class="form-label">Batch Size</label>
+                    <label for="batchSize" class="form-label">Processing Batch Size</label>
                     <select class="form-select" id="batchSize" name="batch_size">
-                        <option value="50">50 transactions per batch</option>
-                        <option value="100">100 transactions per batch</option>
-                        <option value="200">200 transactions per batch</option>
-                        <option value="500">500 transactions per batch</option>
+                        <option value="50">Small (50 transactions) - Recommended for slower connections</option>
+                        <option value="100" selected>Medium (100 transactions) - Default</option>
+                        <option value="200">Large (200 transactions) - For faster connections</option>
+                        <option value="500">Very Large (500 transactions) - For high-speed connections only</option>
                     </select>
+                    <div class="form-text">
+                        Choose based on your connection speed and file size
+                    </div>
                 </div>
-                <button type="submit" class="btn btn-primary" id="startProcessing">Start Processing</button>
+                <button type="submit" class="btn btn-primary" id="startProcessing">
+                    <i class="fas fa-upload"></i> Start Processing
+                </button>
             </form>
         </div>
     </div>
@@ -36,14 +51,14 @@
     <div id="progressSection" class="card mb-4 d-none">
         <div class="card-body">
             <h5 class="card-title">Processing Progress</h5>
-            
+
             <!-- Overall Progress -->
             <div class="mb-4">
                 <label class="form-label">Overall Progress</label>
-                <div class="progress">
-                    <div class="progress-bar" role="progressbar" style="width: 0%" 
-                         id="overallProgress" aria-valuenow="0" aria-valuemin="0" 
-                         aria-valuemax="100">0%</div>
+                <div class="progress" style="height: 25px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%" id="overallProgress" 
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                 </div>
                 <small class="text-muted">
                     Processed: <span id="processedCount">0</span> / 
@@ -53,11 +68,11 @@
 
             <!-- Current Batch Progress -->
             <div class="mb-4">
-                <label class="form-label">Current Batch</label>
-                <div class="progress">
-                    <div class="progress-bar bg-success" role="progressbar" 
-                         style="width: 0%" id="batchProgress" aria-valuenow="0" 
-                         aria-valuemin="0" aria-valuemax="100">0%</div>
+                <label class="form-label">Current Batch Progress</label>
+                <div class="progress" style="height: 20px;">
+                    <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%" id="batchProgress" 
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                 </div>
                 <small class="text-muted">
                     Batch: <span id="currentBatch">0</span> / 
@@ -69,7 +84,7 @@
             <div class="mb-4">
                 <h6>Processing Status</h6>
                 <div class="alert alert-info" id="statusMessage">
-                    Waiting to start processing...
+                    Initializing batch processing...
                 </div>
             </div>
 
@@ -87,36 +102,36 @@
     <div id="resultsSummary" class="card mb-4 d-none">
         <div class="card-body">
             <h5 class="card-title">Processing Summary</h5>
-            <div class="row">
+            <div class="row g-4">
                 <div class="col-md-3">
-                    <div class="card bg-success text-white">
+                    <div class="card bg-success text-white h-100">
                         <div class="card-body">
                             <h6 class="card-title">Successfully Processed</h6>
-                            <p class="card-text" id="successCount">0</p>
+                            <p class="card-text display-6" id="successCount">0</p>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card bg-danger text-white">
+                    <div class="card bg-danger text-white h-100">
                         <div class="card-body">
                             <h6 class="card-title">Failed</h6>
-                            <p class="card-text" id="failureCount">0</p>
+                            <p class="card-text display-6" id="failureCount">0</p>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card bg-warning">
+                    <div class="card bg-warning h-100">
                         <div class="card-body">
                             <h6 class="card-title">Warnings</h6>
-                            <p class="card-text" id="warningCount">0</p>
+                            <p class="card-text display-6" id="warningCount">0</p>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card bg-info text-white">
+                    <div class="card bg-info text-white h-100">
                         <div class="card-body">
                             <h6 class="card-title">Processing Time</h6>
-                            <p class="card-text" id="processingTime">0s</p>
+                            <p class="card-text display-6" id="processingTime">0s</p>
                         </div>
                     </div>
                 </div>
@@ -124,7 +139,6 @@
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
@@ -136,94 +150,100 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusMessage = document.getElementById('statusMessage');
     const errorLog = document.getElementById('errorLog');
     const errorList = document.getElementById('errorList');
-    
     let startTime;
 
     form.onsubmit = async function(e) {
         e.preventDefault();
         startTime = Date.now();
-        
-        // Show progress section and hide results
+
+        // Reset UI state
         progressSection.classList.remove('d-none');
         resultsSummary.classList.add('d-none');
         errorLog.classList.add('d-none');
-        
+        errorList.innerHTML = '';
+
         const formData = new FormData(form);
-        
+
         try {
-            const response = await fetch('/batch-process', {
+            const response = await fetch('/batch/process', {
                 method: 'POST',
                 body: formData
             });
-            
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const reader = response.body.getReader();
-            
+
             while(true) {
                 const {done, value} = await reader.read();
                 if (done) break;
-                
-                try {
-                    const text = new TextDecoder().decode(value);
-                    const updates = text.split('\n').filter(line => line.trim());
-                    
-                    for (const update of updates) {
-                        const data = JSON.parse(update);
+
+                const text = new TextDecoder().decode(value);
+                const updates = text.split('\n')
+                    .filter(line => line.trim())
+                    .filter(line => line.startsWith('data: '));
+
+                for (const update of updates) {
+                    try {
+                        const data = JSON.parse(update.replace('data: ', ''));
                         updateProgress(data);
+                    } catch (parseError) {
+                        console.error('Error parsing progress data:', parseError);
                     }
-                } catch (parseError) {
-                    console.error('Error parsing progress data:', parseError);
                 }
             }
-            
+
             showFinalSummary();
-            
+
         } catch (error) {
             console.error('Processing error:', error);
             statusMessage.className = 'alert alert-danger';
             statusMessage.textContent = 'Error: ' + error.message;
         }
     };
-    
+
     function updateProgress(data) {
         // Update overall progress
-        document.getElementById('overallProgress').style.width = `${data.overall_progress}%`;
-        document.getElementById('overallProgress').textContent = `${Math.round(data.overall_progress)}%`;
+        const overallProgress = document.getElementById('overallProgress');
+        overallProgress.style.width = `${data.overall_progress}%`;
+        overallProgress.textContent = `${Math.round(data.overall_progress)}%`;
         document.getElementById('processedCount').textContent = data.processed_count;
         document.getElementById('totalCount').textContent = data.total_count;
-        
+
         // Update batch progress
-        document.getElementById('batchProgress').style.width = `${data.batch_progress}%`;
-        document.getElementById('batchProgress').textContent = `${Math.round(data.batch_progress)}%`;
+        const batchProgress = document.getElementById('batchProgress');
+        batchProgress.style.width = `${data.batch_progress}%`;
+        batchProgress.textContent = `${Math.round(data.batch_progress)}%`;
         document.getElementById('currentBatch').textContent = data.current_batch;
         document.getElementById('totalBatches').textContent = data.total_batches;
-        
+
         // Update status message
         statusMessage.textContent = data.status;
-        
+
         // Handle errors
         if (data.errors && data.errors.length > 0) {
             errorLog.classList.remove('d-none');
-            errorList.innerHTML = data.errors.map(err => 
-                `<li class="text-danger"><small>${err}</small></li>`
-            ).join('');
+            errorList.innerHTML = data.errors
+                .map(err => `<li class="text-danger"><i class="fas fa-exclamation-circle"></i> ${err}</li>`)
+                .join('');
         }
-        
+
         // Update summary counts
         document.getElementById('successCount').textContent = data.success_count || 0;
         document.getElementById('failureCount').textContent = data.failure_count || 0;
         document.getElementById('warningCount').textContent = data.warning_count || 0;
-        
+
         // Update processing time
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         document.getElementById('processingTime').textContent = `${elapsed}s`;
     }
-    
+
     function showFinalSummary() {
         resultsSummary.classList.remove('d-none');
         statusMessage.className = 'alert alert-success';
-        statusMessage.textContent = 'Processing completed successfully!';
+        statusMessage.innerHTML = '<i class="fas fa-check-circle"></i> Processing completed successfully!';
     }
 });
 </script>

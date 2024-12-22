@@ -39,7 +39,7 @@ def process_transactions():
             return jsonify({'error': 'No file selected'}), 400
 
         try:
-            # Read file
+            # Read file based on extension
             if file.filename.endswith('.xlsx'):
                 df = pd.read_excel(file, engine='openpyxl')
             else:
@@ -60,20 +60,16 @@ def process_transactions():
                     end_idx = min(start_idx + batch_size, total_rows)
                     batch_df = df.iloc[start_idx:end_idx]
 
-                    batch_results = process_batch(batch_df, batch_num + 1, total_batches)
-                    success, failure, warnings, errors = batch_results
+                    success, failure, warnings, errors = process_batch(batch_df, batch_num + 1, total_batches)
 
                     total_success += success
                     total_failure += failure
                     total_warnings += warnings
 
-                    processed_rows = (batch_num + 1) * batch_size
-                    if processed_rows > total_rows:
-                        processed_rows = total_rows
-
+                    processed_rows = min((batch_num + 1) * batch_size, total_rows)
                     overall_progress = (processed_rows / total_rows) * 100
 
-                    yield f"data: {json.dumps({"
+                    progress_data = {
                         'overall_progress': overall_progress,
                         'batch_progress': 100,
                         'processed_count': processed_rows,
@@ -85,10 +81,11 @@ def process_transactions():
                         'warning_count': total_warnings,
                         'errors': errors[-5:] if errors else [],
                         'status': f'Processing batch {batch_num + 1}/{total_batches}'
-                    })}\n\n"
+                    }
+                    yield f"data: {json.dumps(progress_data)}\n\n"
 
                 # Final summary
-                yield f"data: {json.dumps({"
+                summary_data = {
                     'overall_progress': 100,
                     'batch_progress': 100,
                     'processed_count': total_rows,
@@ -99,7 +96,8 @@ def process_transactions():
                     'failure_count': total_failure,
                     'warning_count': total_warnings,
                     'status': 'Processing completed'
-                })}\n\n"
+                }
+                yield f"data: {json.dumps(summary_data)}\n\n"
 
             return Response(
                 stream_with_context(generate_updates()),
