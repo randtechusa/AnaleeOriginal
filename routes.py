@@ -19,7 +19,9 @@ def index():
     """Root route - redirects to appropriate dashboard based on user type"""
     if current_user.is_authenticated:
         if current_user.is_admin:
+            logger.info(f"Admin user {current_user.email} redirected to admin dashboard")
             return redirect(url_for('admin.dashboard'))
+        logger.info(f"Regular user {current_user.email} redirected to main dashboard")
         return redirect(url_for('main.dashboard'))
     return redirect(url_for('main.login'))
 

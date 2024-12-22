@@ -14,9 +14,9 @@ def admin_required(f):
     @login_required
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated or not current_user.is_admin:
-            abort(403)  # Forbidden
+            return redirect(url_for('main.index'))  # Redirect non-admin users to main page
         return f(*args, **kwargs)
-    return decorated_function
+    return decorated_function  # Return the decorated function, not the decorator name
 
 # Import routes after blueprint creation to avoid circular imports
 from . import routes
@@ -26,4 +26,4 @@ from . import routes
 def restrict_admin_access():
     """Ensure only admin users can access admin routes"""
     if not current_user.is_authenticated or not current_user.is_admin:
-        abort(403)
+        return redirect(url_for('main.index'))  # Redirect non-admin users to main page
