@@ -2,14 +2,16 @@
 Admin routes for subscription management and system administration
 Completely isolated from core application features
 """
-from flask import render_template, redirect, url_for, flash, request, current_app, abort
+from flask import render_template, redirect, url_for, flash, request, current_app, abort, send_file
 from flask_login import current_user, login_required
 from sqlalchemy import func
 from datetime import datetime, timedelta
+import pandas as pd
+import os
 
 from . import admin, admin_required
 from models import db, User, AdminChartOfAccounts, Account
-from .forms import AdminChartOfAccountsForm
+from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm
 
 @admin.route('/dashboard')
 @login_required
@@ -37,13 +39,35 @@ def dashboard():
                          pending_users=pending_users,
                          deactivated_users=deactivated_users)
 
-@admin.route('/charts-of-accounts', methods=['GET', 'POST'])
+@admin.route('/charts-of-accounts', methods=['GET'])
 @login_required
 @admin_required
 def charts_of_accounts():
     """Manage system-wide Chart of Accounts"""
     form = AdminChartOfAccountsForm()
+    upload_form = ChartOfAccountsUploadForm()
+    accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.account_code).all()
+    return render_template('admin/charts_of_accounts.html', 
+                         form=form, 
+                         upload_form=upload_form,
+                         accounts=accounts)
+
+@admin.route('/charts-of-accounts/add', methods=['POST'])
+@login_required
+@admin_required
+def add_chart_of_accounts():
+    """Add a new account to system-wide Chart of Accounts"""
+    form = AdminChartOfAccountsForm()
     if form.validate_on_submit():
+        # Check if account code already exists
+        existing_account = AdminChartOfAccounts.query.filter_by(
+            account_code=form.account_code.data
+        ).first()
+
+        if existing_account:
+            flash('Account code already exists.', 'error')
+            return redirect(url_for('admin.charts_of_accounts'))
+
         account = AdminChartOfAccounts(
             account_code=form.account_code.data,
             name=form.name.data,
@@ -55,14 +79,117 @@ def charts_of_accounts():
             db.session.add(account)
             db.session.commit()
             flash('Chart of Accounts entry added successfully.', 'success')
-            return redirect(url_for('admin.charts_of_accounts'))
         except Exception as e:
             db.session.rollback()
             flash('Error adding Chart of Accounts entry.', 'error')
             current_app.logger.error(f"Error adding admin COA: {str(e)}")
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f'{getattr(form, field).label.text}: {error}', 'error')
 
-    accounts = AdminChartOfAccounts.query.all()
-    return render_template('admin/charts_of_accounts.html', form=form, accounts=accounts)
+    return redirect(url_for('admin.charts_of_accounts'))
+
+@admin.route('/charts-of-accounts/upload', methods=['POST'])
+@login_required
+@admin_required
+def upload_chart_of_accounts():
+    """Upload Chart of Accounts from Excel file"""
+    form = ChartOfAccountsUploadForm()
+    if form.validate_on_submit():
+        try:
+            file = form.excel_file.data
+            df = pd.read_excel(file)
+
+            required_columns = ['account_code', 'name', 'category']
+            if not all(col in df.columns for col in required_columns):
+                flash('Excel file must contain account_code, name, and category columns', 'error')
+                return redirect(url_for('admin.charts_of_accounts'))
+
+            success_count = 0
+            error_count = 0
+
+            for _, row in df.iterrows():
+                # Check if account already exists
+                existing_account = AdminChartOfAccounts.query.filter_by(
+                    account_code=str(row['account_code'])
+                ).first()
+
+                if existing_account:
+                    error_count += 1
+                    continue
+
+                try:
+                    account = AdminChartOfAccounts(
+                        account_code=str(row['account_code']),
+                        name=str(row['name']),
+                        category=str(row['category']),
+                        sub_category=str(row.get('sub_category', '')),
+                        description=str(row.get('description', ''))
+                    )
+                    db.session.add(account)
+                    success_count += 1
+                except Exception as e:
+                    error_count += 1
+                    current_app.logger.error(f"Error processing row: {str(e)}")
+
+            db.session.commit()
+            flash(f'Uploaded {success_count} accounts successfully. {error_count} accounts failed.', 'success')
+
+        except Exception as e:
+            db.session.rollback()
+            flash('Error uploading Chart of Accounts.', 'error')
+            current_app.logger.error(f"Error uploading COA: {str(e)}")
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f'{getattr(form, field).label.text}: {error}', 'error')
+
+    return redirect(url_for('admin.charts_of_accounts'))
+
+@admin.route('/charts-of-accounts/edit/<int:account_id>', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def edit_chart_of_accounts(account_id):
+    """Edit an existing Chart of Accounts entry"""
+    account = AdminChartOfAccounts.query.get_or_404(account_id)
+    form = AdminChartOfAccountsForm(obj=account)
+
+    if form.validate_on_submit():
+        try:
+            account.account_code = form.account_code.data
+            account.name = form.name.data
+            account.category = form.category.data
+            account.sub_category = form.sub_category.data
+            account.description = form.description.data
+
+            db.session.commit()
+            flash('Account updated successfully.', 'success')
+            return redirect(url_for('admin.charts_of_accounts'))
+        except Exception as e:
+            db.session.rollback()
+            flash('Error updating account.', 'error')
+            current_app.logger.error(f"Error updating admin COA: {str(e)}")
+
+    return render_template('admin/edit_chart_of_accounts.html', form=form, account=account)
+
+@admin.route('/charts-of-accounts/delete/<int:account_id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_chart_of_accounts(account_id):
+    """Delete a Chart of Accounts entry"""
+    account = AdminChartOfAccounts.query.get_or_404(account_id)
+
+    try:
+        db.session.delete(account)
+        db.session.commit()
+        flash('Account deleted successfully.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash('Error deleting account.', 'error')
+        current_app.logger.error(f"Error deleting admin COA: {str(e)}")
+
+    return redirect(url_for('admin.charts_of_accounts'))
 
 @admin.route('/active-subscribers')
 @login_required

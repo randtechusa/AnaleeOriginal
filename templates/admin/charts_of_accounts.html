@@ -3,11 +3,26 @@
 <div class="container mt-4">
     <h2>System Charts of Accounts</h2>
 
+    <!-- Excel Upload Form -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Upload Charts of Accounts</h5>
+            <form method="POST" action="{{ url_for('admin.upload_chart_of_accounts') }}" enctype="multipart/form-data">
+                {{ upload_form.csrf_token }}
+                <div class="form-group">
+                    {{ upload_form.excel_file.label }}
+                    {{ upload_form.excel_file(class="form-control") }}
+                </div>
+                <button type="submit" class="btn btn-primary mt-3">{{ upload_form.submit.label }}</button>
+            </form>
+        </div>
+    </div>
+
     <!-- Add new account form -->
     <div class="card mt-4">
         <div class="card-body">
             <h5 class="card-title">Add New Account</h5>
-            <form method="POST">
+            <form method="POST" action="{{ url_for('admin.add_chart_of_accounts') }}">
                 {{ form.csrf_token }}
                 <div class="form-group">
                     {{ form.account_code.label }}
@@ -38,28 +53,43 @@
     <div class="card mt-4">
         <div class="card-body">
             <h5 class="card-title">Existing Accounts</h5>
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Account Code</th>
-                        <th>Name</th>
-                        <th>Category</th>
-                        <th>Sub Category</th>
-                        <th>Description</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for account in accounts %}
-                    <tr>
-                        <td>{{ account.account_code }}</td>
-                        <td>{{ account.name }}</td>
-                        <td>{{ account.category }}</td>
-                        <td>{{ account.sub_category }}</td>
-                        <td>{{ account.description }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Account Code</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Sub Category</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in accounts %}
+                        <tr>
+                            <td>{{ account.account_code }}</td>
+                            <td>{{ account.name }}</td>
+                            <td>{{ account.category }}</td>
+                            <td>{{ account.sub_category }}</td>
+                            <td>{{ account.description }}</td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="{{ url_for('admin.edit_chart_of_accounts', account_id=account.id) }}" 
+                                       class="btn btn-sm btn-warning">Edit</a>
+                                    <form method="POST" action="{{ url_for('admin.delete_chart_of_accounts', account_id=account.id) }}"
+                                          style="display: inline;"
+                                          onsubmit="return confirm('Are you sure you want to delete this account?');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
