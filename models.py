@@ -31,6 +31,8 @@ class User(UserMixin, db.Model):
     password_hash = Column(String(256))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_admin = Column(Boolean, default=False)  # New field for admin status
+    subscription_status = Column(String(20), default='pending')  # New field for subscription tracking
 
     # Relationships with cascade deletes for proper cleanup
     transactions = relationship('Transaction', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -179,8 +181,21 @@ class User(UserMixin, db.Model):
             logger.error(f"Error creating default accounts for user {user_id}: {str(e)}")
             db.session.rollback()
             raise
+
     def __repr__(self):
         return f'<User {self.username}>'
+
+    def activate_subscription(self):
+        """Activate user subscription"""
+        self.subscription_status = 'active'
+        logger.info(f"Subscription activated for user {self.username}")
+
+    def deactivate_subscription(self):
+        """Deactivate user subscription"""
+        self.subscription_status = 'deactivated'
+        logger.info(f"Subscription deactivated for user {self.username}")
+
+
 
 class UploadedFile(db.Model):
     __tablename__ = 'uploaded_file'
@@ -499,3 +514,19 @@ class FinancialGoal(db.Model):
 
     def __repr__(self):
         return f'<FinancialGoal {self.name}: {self.current_amount}/{self.target_amount}>'
+
+class AdminChartOfAccounts(db.Model):
+    """System-wide Chart of Accounts managed by admin"""
+    __tablename__ = 'admin_chart_of_accounts'
+
+    id = Column(Integer, primary_key=True)
+    account_code = Column(String(20), nullable=False, unique=True)
+    name = Column(String(100), nullable=False)
+    category = Column(String(50), nullable=False)
+    sub_category = Column(String(50))
+    description = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AdminChartOfAccounts {self.account_code}: {self.name}>'

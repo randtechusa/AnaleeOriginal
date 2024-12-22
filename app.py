@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
+from admin import admin as admin_blueprint
 
 # Configure logging with more detailed error reporting
 logging.basicConfig(
@@ -115,6 +116,34 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 from recommendations import recommendations as recommendations_blueprint
                 logger.info("Registering recommendations blueprint")
                 app.register_blueprint(recommendations_blueprint)
+
+                # Register admin blueprint (new)
+                logger.info("Registering admin blueprint")
+                app.register_blueprint(admin_blueprint)
+
+                # Create admin account if it doesn't exist
+                def create_admin_account():
+                    """Create the one-off admin account if it doesn't exist"""
+                    admin_email = "festusa@cnbs.co.za"
+                    admin = User.query.filter_by(email=admin_email).first()
+                    if not admin:
+                        admin = User(
+                            username="admin",
+                            email=admin_email,
+                            is_admin=True,
+                            subscription_status='active'
+                        )
+                        admin.set_password("Fes5036tus@3")
+                        db.session.add(admin)
+                        db.session.commit()
+                        logger.info("Admin account created successfully")
+                    else:
+                        logger.info("Admin account already exists")
+
+                try:
+                    create_admin_account()
+                except Exception as e:
+                    logger.error(f"Error creating admin account: {str(e)}")
 
                 logger.info("All blueprints registered successfully")
             except Exception as blueprint_error:

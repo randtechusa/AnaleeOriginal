@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>System Charts of Accounts</h2>
+    
+    <!-- Add new account form -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">Add New Account</h5>
+            <form method="POST">
+                {{ form.csrf_token }}
+                <div class="form-group">
+                    {{ form.account_code.label }}
+                    {{ form.account_code(class="form-control") }}
+                </div>
+                <div class="form-group">
+                    {{ form.name.label }}
+                    {{ form.name(class="form-control") }}
+                </div>
+                <div class="form-group">
+                    {{ form.category.label }}
+                    {{ form.category(class="form-control") }}
+                </div>
+                <div class="form-group">
+                    {{ form.sub_category.label }}
+                    {{ form.sub_category(class="form-control") }}
+                </div>
+                <div class="form-group">
+                    {{ form.description.label }}
+                    {{ form.description(class="form-control") }}
+                </div>
+                <button type="submit" class="btn btn-primary mt-3">{{ form.submit.label }}</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Existing accounts table -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">Existing Accounts</h5>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Account Code</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Sub Category</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for account in accounts %}
+                    <tr>
+                        <td>{{ account.account_code }}</td>
+                        <td>{{ account.name }}</td>
+                        <td>{{ account.category }}</td>
+                        <td>{{ account.sub_category }}</td>
+                        <td>{{ account.description }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

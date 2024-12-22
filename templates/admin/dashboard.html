@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Admin Dashboard</h2>
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Total Users</h5>
+                    <p class="card-text display-4">{{ total_users }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Active Subscribers</h5>
+                    <p class="card-text display-4">{{ active_users }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Pending Users</h5>
+                    <p class="card-text display-4">{{ pending_users }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Deactivated Users</h5>
+                    <p class="card-text display-4">{{ deactivated_users }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
