@@ -18,7 +18,6 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav">
-                    <!-- Core Protected Features - DO NOT MODIFY -->
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.upload') }}">Upload Data</a>
                     </li>
@@ -31,23 +30,15 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.icountant_interface') }}">iCountant Assistant</a>
                     </li>
-                    <!-- End Core Protected Features -->
-
-                    <!-- Optional Features - Conditionally Displayed -->
-                    {% try %}
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.financial_insights') }}">Financial Insights</a>
                     </li>
-                    {% except %} {# Silently skip if route doesn't exist #}
-                    {% endtry %}
-
-                    {% try %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('chat.chat_interface') }}">AI Assistant Chat</a>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.expense_forecast') }}">Expense Forecast</a>
                     </li>
-                    {% except %} {# Silently skip if route doesn't exist #}
-                    {% endtry %}
-
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.settings') }}">Chart of Accounts</a>
                     </li>

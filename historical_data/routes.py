@@ -1,8 +1,3 @@
-"""
-Historical Data Preview and Upload Handler
-This module handles the preview and upload of historical data files.
-It is designed to work independently of the core transaction processing system.
-"""
 import logging
 import pandas as pd
 from datetime import datetime
@@ -48,147 +43,6 @@ def sanitize_text(text, max_length=200):
     # Remove any special characters except basic punctuation
     text = re.sub(r'[^\w\s.,;:!?()-]', '', text)
     return text.strip()[:max_length]
-
-def preview_data_frame(df):
-    """Preview and validate the uploaded data without affecting existing data."""
-    logger.info("Starting data preview validation")
-    preview_results = {
-        'valid_rows': [],
-        'invalid_rows': [],
-        'warnings': [],
-        'total_rows': len(df),
-        'columns_found': list(df.columns),
-        'sample_data': []
-    }
-
-    # Check required columns
-    required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    if missing_columns:
-        logger.warning(f"Missing required columns: {missing_columns}")
-        preview_results['invalid_rows'].append({
-            'row': 0,
-            'errors': [f"Missing required columns: {', '.join(missing_columns)}"]
-        })
-        return preview_results
-
-    # Validate each row without modifying any existing data
-    for idx, row in df.iterrows():
-        try:
-            row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
-            row_issues = []
-            row_warnings = []
-
-            # Validate fields without affecting database
-            date = validate_date(row['Date'])
-            if not date:
-                row_issues.append("Invalid date format")
-
-            if pd.isna(row['Description']) or not str(row['Description']).strip():
-                row_issues.append("Invalid or empty description")
-            elif len(str(row['Description'])) > 200:
-                row_warnings.append("Description will be truncated to 200 characters")
-
-            amount = validate_amount(row['Amount'])
-            if amount is None:
-                row_issues.append("Invalid amount value")
-
-            if pd.isna(row['Explanation']) or not str(row['Explanation']).strip():
-                row_issues.append("Invalid or empty explanation")
-            elif len(str(row['Explanation'])) > 200:
-                row_warnings.append("Explanation will be truncated to 200 characters")
-
-            if pd.isna(row['Account']) or not str(row['Account']).strip():
-                row_issues.append("Invalid or empty account")
-
-            # Prepare preview data
-            row_data = {
-                'row_number': row_num,
-                'date': str(row['Date']),
-                'description': str(row['Description'])[:200] if not pd.isna(row['Description']) else '',
-                'amount': str(row['Amount']) if not pd.isna(row['Amount']) else '',
-                'explanation': str(row['Explanation'])[:200] if not pd.isna(row['Explanation']) else '',
-                'account': str(row['Account']) if not pd.isna(row['Account']) else '',
-                'is_valid': len(row_issues) == 0
-            }
-
-            if row_issues:
-                preview_results['invalid_rows'].append({
-                    'row': row_num,
-                    'data': row_data,
-                    'errors': row_issues
-                })
-            else:
-                preview_results['valid_rows'].append(row_data)
-
-            if row_warnings:
-                preview_results['warnings'].append({
-                    'row': row_num,
-                    'warnings': row_warnings
-                })
-
-            # Add to sample data (first 5 rows only)
-            if idx < 5:
-                preview_results['sample_data'].append(row_data)
-
-        except Exception as e:
-            logger.error(f"Error processing row {idx + 2}: {str(e)}", exc_info=True)
-            preview_results['invalid_rows'].append({
-                'row': idx + 2,
-                'errors': [f"Error processing row: {str(e)}"]
-            })
-
-    logger.info(f"Preview validation complete. Found {len(preview_results['valid_rows'])} valid rows and {len(preview_results['invalid_rows'])} invalid rows")
-    return preview_results
-
-@historical_data.route('/preview', methods=['POST'])
-@login_required
-def preview_upload():
-    """Preview uploaded file data without importing or affecting existing data."""
-    try:
-        if 'file' not in request.files:
-            logger.error("No file part in request")
-            return jsonify({'error': 'No file uploaded'}), 400
-
-        file = request.files['file']
-        if not file.filename:
-            logger.error("No selected file")
-            return jsonify({'error': 'No file selected'}), 400
-
-        if not validate_file_type(file.filename):
-            logger.error(f"Invalid file type: {file.filename}")
-            return jsonify({'error': 'Invalid file format. Please upload a CSV or Excel file.'}), 400
-
-        try:
-            # Read the file with explicit encoding for CSV
-            if file.filename.endswith('.xlsx'):
-                logger.info(f"Reading Excel file: {file.filename}")
-                df = pd.read_excel(file, engine='openpyxl')
-            else:
-                logger.info(f"Reading CSV file: {file.filename}")
-                try:
-                    df = pd.read_csv(file, encoding='utf-8')
-                except UnicodeDecodeError:
-                    file.seek(0)  # Reset file pointer
-                    df = pd.read_csv(file, encoding='latin1')
-
-            # Handle empty dataframe
-            if df.empty:
-                logger.error("Empty file uploaded")
-                return jsonify({'error': 'The uploaded file is empty'}), 400
-
-            # Preview data without affecting existing records
-            preview_results = preview_data_frame(df)
-
-            return jsonify(preview_results)
-
-        except Exception as e:
-            logger.error(f"Error processing file for preview: {str(e)}", exc_info=True)
-            return jsonify({'error': f'Error processing file: {str(e)}'}), 500
-
-    except Exception as e:
-        logger.error(f"Error in preview route: {str(e)}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
 
 def validate_data_frame(df):
     """Validate the structure and content of the uploaded data."""
@@ -250,6 +104,134 @@ def sanitize_data(row):
         'explanation': sanitize_text(row['Explanation']),
         'account': sanitize_text(row['Account'])
     }
+
+def preview_data_frame(df):
+    """Preview and validate the uploaded data without saving."""
+    preview_results = {
+        'valid_rows': [],
+        'invalid_rows': [],
+        'warnings': [],
+        'total_rows': len(df),
+        'columns_found': list(df.columns),
+        'sample_data': []
+    }
+
+    # Check required columns
+    required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        preview_results['invalid_rows'].append({
+            'row': 0,
+            'error': f"Missing required columns: {', '.join(missing_columns)}"
+        })
+        return preview_results
+
+    # Validate each row
+    for idx, row in df.iterrows():
+        row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
+        row_issues = []
+        row_warnings = []
+
+        # Validate each field
+        date = validate_date(row['Date'])
+        if not date:
+            row_issues.append("Invalid date format")
+
+        if not row['Description'] or not isinstance(row['Description'], str):
+            row_issues.append("Invalid or empty description")
+        elif len(str(row['Description'])) > 200:
+            row_warnings.append("Description will be truncated to 200 characters")
+
+        amount = validate_amount(row['Amount'])
+        if amount is None:
+            row_issues.append("Invalid amount value")
+
+        # Collect row data for preview
+        row_data = {
+            'row_number': row_num,
+            'date': str(row['Date']),
+            'description': str(row['Description'])[:200],
+            'amount': str(row['Amount']),
+            'explanation': str(row.get('Explanation', ''))[:200],
+            'account': str(row.get('Account', '')),
+            'is_valid': len(row_issues) == 0
+        }
+
+        if row_issues:
+            preview_results['invalid_rows'].append({
+                'row': row_num,
+                'data': row_data,
+                'errors': row_issues
+            })
+        else:
+            preview_results['valid_rows'].append(row_data)
+
+        if row_warnings:
+            preview_results['warnings'].append({
+                'row': row_num,
+                'warnings': row_warnings
+            })
+
+        # Add to sample data (first 5 rows)
+        if idx < 5:
+            preview_results['sample_data'].append(row_data)
+
+    return preview_results
+
+@historical_data.route('/preview', methods=['POST'])
+@login_required
+def preview_upload():
+    """Preview uploaded file data without importing."""
+    try:
+        if 'file' not in request.files:
+            logger.error("No file part in request")
+            return jsonify({'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+        if not file.filename:
+            logger.error("No selected file")
+            return jsonify({'error': 'No file selected'}), 400
+
+        if not validate_file_type(file.filename):
+            logger.error(f"Invalid file type: {file.filename}")
+            return jsonify({'error': 'Invalid file format. Please upload a CSV or Excel file.'}), 400
+
+        try:
+            # Read the file with explicit encoding for CSV
+            if file.filename.endswith('.xlsx'):
+                logger.info(f"Reading Excel file: {file.filename}")
+                df = pd.read_excel(file, engine='openpyxl')
+            else:
+                logger.info(f"Reading CSV file: {file.filename}")
+                # Try different encodings
+                try:
+                    df = pd.read_csv(file, encoding='utf-8')
+                except UnicodeDecodeError:
+                    file.seek(0)  # Reset file pointer
+                    df = pd.read_csv(file, encoding='latin1')
+
+            # Get preview results
+            logger.info("Generating preview results")
+            preview_results = preview_data_frame(df)
+
+            # Add summary statistics
+            preview_results['summary'] = {
+                'total_rows': len(df),
+                'valid_rows': len(preview_results['valid_rows']),
+                'invalid_rows': len(preview_results['invalid_rows']),
+                'warnings': len(preview_results['warnings'])
+            }
+
+            logger.info("Preview generated successfully")
+            return jsonify(preview_results)
+
+        except Exception as e:
+            logger.error(f"Error processing file for preview: {str(e)}", exc_info=True)
+            return jsonify({'error': f'Error processing file: {str(e)}'}), 500
+
+    except Exception as e:
+        logger.error(f"Error in preview route: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required

@@ -80,40 +80,41 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         with app.app_context():
             # Register blueprints
             try:
-                # Import and register main blueprint (core functionality)
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
-                logger.info("Main blueprint registered successfully")
-
-                # Register core feature blueprints
-                from historical_data import historical_data as historical_data_blueprint
-                app.register_blueprint(historical_data_blueprint)
-                logger.info("Historical data blueprint registered successfully")
 
                 from reports import reports as reports_blueprint
                 app.register_blueprint(reports_blueprint, url_prefix='/reports')
-                logger.info("Reports blueprint registered successfully")
 
+                # Register historical data blueprint (protected core feature)
+                from historical_data import historical_data as historical_data_blueprint
+                logger.info("Registering historical data blueprint with URL prefix: /historical-data")
+                app.register_blueprint(historical_data_blueprint)
+
+                # Register chat blueprint (protected core feature)
                 from chat.routes import chat as chat_blueprint
+                logger.info("Registering chat blueprint")
                 app.register_blueprint(chat_blueprint)
-                logger.info("Chat blueprint registered successfully")
 
+                # Register error monitoring blueprint
+                from errors import errors as errors_blueprint
+                logger.info("Registering error monitoring blueprint")
+                app.register_blueprint(errors_blueprint)
+
+                # Register predictions blueprint
                 from predictions.routes import predictions as predictions_blueprint
+                logger.info("Registering predictions blueprint with URL prefix: /predictions")
                 app.register_blueprint(predictions_blueprint, url_prefix='/predictions')
-                logger.info("Predictions blueprint registered successfully")
 
+                # Register risk assessment blueprint
                 from risk_assessment import risk_assessment as risk_assessment_blueprint
+                logger.info("Registering risk assessment blueprint")
                 app.register_blueprint(risk_assessment_blueprint)
-                logger.info("Risk assessment blueprint registered successfully")
 
+                # Register recommendations blueprint
                 from recommendations import recommendations as recommendations_blueprint
+                logger.info("Registering recommendations blueprint")
                 app.register_blueprint(recommendations_blueprint)
-                logger.info("Recommendations blueprint registered successfully")
-
-                # Register batch processing blueprint
-                from routes.batch_processing import batch_processing
-                app.register_blueprint(batch_processing, url_prefix='/batch')
-                logger.info("Batch processing blueprint registered successfully")
 
                 logger.info("All blueprints registered successfully")
             except Exception as blueprint_error:
