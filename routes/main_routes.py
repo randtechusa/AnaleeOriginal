@@ -161,6 +161,45 @@ def dashboard():
         flash('Error loading dashboard')
         return render_template('dashboard.html')
 
+@login_required
+def upload():
+    """Handle file upload for transaction processing"""
+    try:
+        if request.method == 'POST':
+            if 'file' not in request.files:
+                flash('No file uploaded', 'error')
+                return redirect(url_for('main.upload'))
+
+            file = request.files['file']
+            if not file.filename:
+                flash('No file selected', 'error')
+                return redirect(url_for('main.upload'))
+
+            # Create upload record
+            upload_record = UploadedFile(
+                filename=file.filename,
+                user_id=current_user.id,
+                upload_date=datetime.utcnow()
+            )
+            db.session.add(upload_record)
+            db.session.commit()
+
+            flash('File uploaded successfully', 'success')
+            return redirect(url_for('main.analyze', file_id=upload_record.id))
+
+        # GET request - show upload form
+        uploaded_files = UploadedFile.query.filter_by(user_id=current_user.id)\
+            .order_by(UploadedFile.upload_date.desc())\
+            .all()
+
+        return render_template('upload.html', files=uploaded_files)
+
+    except Exception as e:
+        logger.error(f"Upload error: {str(e)}")
+        db.session.rollback()
+        flash('Error during file upload', 'error')
+        return redirect(url_for('main.dashboard'))
+
 def logout():
     """Handle user logout"""
     logout_user()
