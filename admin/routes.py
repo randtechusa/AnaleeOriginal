@@ -13,6 +13,67 @@ from . import admin, admin_required
 from models import db, User, AdminChartOfAccounts, Account
 from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm
 
+@admin.route('/charts-of-accounts/upload', methods=['POST'])
+@login_required
+@admin_required
+def upload_chart_of_accounts():
+    """Upload Chart of Accounts from Excel file"""
+    form = ChartOfAccountsUploadForm()
+    if form.validate_on_submit():
+        try:
+            file = form.excel_file.data
+            df = pd.read_excel(file)
+
+            # Log the columns found in the Excel file
+            current_app.logger.info(f"Excel columns found: {df.columns.tolist()}")
+
+            success_count = 0
+            error_count = 0
+            skipped_count = 0
+
+            for _, row in df.iterrows():
+                try:
+                    # Check if account already exists
+                    existing_account = AdminChartOfAccounts.query.filter_by(
+                        account_code=str(row['Account Code'])
+                    ).first()
+
+                    if existing_account:
+                        skipped_count += 1
+                        continue
+
+                    # Create new account with all available fields
+                    account = AdminChartOfAccounts(
+                        account_code=str(row['Account Code']),
+                        name=str(row['Account Name']),
+                        category=str(row['Category']),
+                        sub_category=str(row['Sub Category']) if 'Sub Category' in row else '',
+                        description=str(row['Description']) if 'Description' in row else '',
+                        account_type=str(row['Account Type']) if 'Account Type' in row else '',
+                        balance_sheet_category=str(row['Balance Sheet Category']) if 'Balance Sheet Category' in row else '',
+                        status=str(row['Status']) if 'Status' in row else 'Active'
+                    )
+                    db.session.add(account)
+                    success_count += 1
+                except Exception as e:
+                    error_count += 1
+                    current_app.logger.error(f"Error processing row: {str(e)}")
+                    continue
+
+            db.session.commit()
+            flash(f'Uploaded {success_count} accounts successfully. {error_count} accounts failed. {skipped_count} accounts skipped (already exist).', 'success')
+
+        except Exception as e:
+            db.session.rollback()
+            flash('Error uploading Chart of Accounts.', 'error')
+            current_app.logger.error(f"Error uploading COA: {str(e)}")
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f'{getattr(form, field).label.text}: {error}', 'error')
+
+    return redirect(url_for('admin.charts_of_accounts'))
+
 @admin.route('/dashboard')
 @login_required
 @admin_required
@@ -90,62 +151,6 @@ def add_chart_of_accounts():
 
     return redirect(url_for('admin.charts_of_accounts'))
 
-@admin.route('/charts-of-accounts/upload', methods=['POST'])
-@login_required
-@admin_required
-def upload_chart_of_accounts():
-    """Upload Chart of Accounts from Excel file"""
-    form = ChartOfAccountsUploadForm()
-    if form.validate_on_submit():
-        try:
-            file = form.excel_file.data
-            df = pd.read_excel(file)
-
-            required_columns = ['account_code', 'name', 'category']
-            if not all(col in df.columns for col in required_columns):
-                flash('Excel file must contain account_code, name, and category columns', 'error')
-                return redirect(url_for('admin.charts_of_accounts'))
-
-            success_count = 0
-            error_count = 0
-
-            for _, row in df.iterrows():
-                # Check if account already exists
-                existing_account = AdminChartOfAccounts.query.filter_by(
-                    account_code=str(row['account_code'])
-                ).first()
-
-                if existing_account:
-                    error_count += 1
-                    continue
-
-                try:
-                    account = AdminChartOfAccounts(
-                        account_code=str(row['account_code']),
-                        name=str(row['name']),
-                        category=str(row['category']),
-                        sub_category=str(row.get('sub_category', '')),
-                        description=str(row.get('description', ''))
-                    )
-                    db.session.add(account)
-                    success_count += 1
-                except Exception as e:
-                    error_count += 1
-                    current_app.logger.error(f"Error processing row: {str(e)}")
-
-            db.session.commit()
-            flash(f'Uploaded {success_count} accounts successfully. {error_count} accounts failed.', 'success')
-
-        except Exception as e:
-            db.session.rollback()
-            flash('Error uploading Chart of Accounts.', 'error')
-            current_app.logger.error(f"Error uploading COA: {str(e)}")
-    else:
-        for field, errors in form.errors.items():
-            for error in errors:
-                flash(f'{getattr(form, field).label.text}: {error}', 'error')
-
-    return redirect(url_for('admin.charts_of_accounts'))
 
 @admin.route('/charts-of-accounts/edit/<int:account_id>', methods=['GET', 'POST'])
 @login_required

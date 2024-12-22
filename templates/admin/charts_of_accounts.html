@@ -24,27 +24,31 @@
             <h5 class="card-title">Add New Account</h5>
             <form method="POST" action="{{ url_for('admin.add_chart_of_accounts') }}">
                 {{ form.csrf_token }}
-                <div class="form-group">
-                    {{ form.account_code.label }}
-                    {{ form.account_code(class="form-control") }}
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        {{ form.account_code.label }}
+                        {{ form.account_code(class="form-control") }}
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        {{ form.name.label }}
+                        {{ form.name(class="form-control") }}
+                    </div>
                 </div>
-                <div class="form-group">
-                    {{ form.name.label }}
-                    {{ form.name(class="form-control") }}
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        {{ form.category.label }}
+                        {{ form.category(class="form-control") }}
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        {{ form.sub_category.label }}
+                        {{ form.sub_category(class="form-control") }}
+                    </div>
                 </div>
-                <div class="form-group">
-                    {{ form.category.label }}
-                    {{ form.category(class="form-control") }}
-                </div>
-                <div class="form-group">
-                    {{ form.sub_category.label }}
-                    {{ form.sub_category(class="form-control") }}
-                </div>
-                <div class="form-group">
+                <div class="mb-3">
                     {{ form.description.label }}
                     {{ form.description(class="form-control") }}
                 </div>
-                <button type="submit" class="btn btn-primary mt-3">{{ form.submit.label }}</button>
+                <button type="submit" class="btn btn-primary">Add Account</button>
             </form>
         </div>
     </div>
@@ -61,7 +65,10 @@
                             <th>Name</th>
                             <th>Category</th>
                             <th>Sub Category</th>
+                            <th>Account Type</th>
+                            <th>Balance Sheet Category</th>
                             <th>Description</th>
+                            <th>Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -72,7 +79,10 @@
                             <td>{{ account.name }}</td>
                             <td>{{ account.category }}</td>
                             <td>{{ account.sub_category }}</td>
+                            <td>{{ account.account_type }}</td>
+                            <td>{{ account.balance_sheet_category }}</td>
                             <td>{{ account.description }}</td>
+                            <td>{{ account.status }}</td>
                             <td>
                                 <div class="btn-group" role="group">
                                     <a href="{{ url_for('admin.edit_chart_of_accounts', account_id=account.id) }}" 
