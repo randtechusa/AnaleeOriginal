@@ -94,16 +94,16 @@ def approve_subscriber(user_id):
     user = User.query.get_or_404(user_id)
     if user.is_admin:
         abort(400)  # Bad Request
-    
+
     try:
-        user.activate_subscription()
+        user.subscription_status = 'active'
         db.session.commit()
         flash(f'Subscription activated for user {user.username}', 'success')
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error activating subscription: {str(e)}")
         flash('Error activating subscription', 'error')
-    
+
     return redirect(url_for('admin.active_subscribers'))
 
 @admin.route('/subscriber/<int:user_id>/deactivate', methods=['POST'])
@@ -114,14 +114,14 @@ def deactivate_subscriber(user_id):
     user = User.query.get_or_404(user_id)
     if user.is_admin:
         abort(400)  # Bad Request
-    
+
     try:
-        user.deactivate_subscription()
+        user.subscription_status = 'deactivated'
         db.session.commit()
         flash(f'Subscription deactivated for user {user.username}', 'success')
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error deactivating subscription: {str(e)}")
         flash('Error deactivating subscription', 'error')
-    
+
     return redirect(url_for('admin.deactivated_subscribers'))

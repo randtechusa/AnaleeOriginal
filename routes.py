@@ -1,20 +1,11 @@
+"""Main application routes including authentication and core functionality"""
 import logging
-import os
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-import statistics
-
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
+from datetime import datetime
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import text
-import pandas as pd
 
-from models import (
-    db, User, Account, Transaction, UploadedFile, 
-    CompanySettings, HistoricalData, AlertHistory, AlertConfiguration, FinancialGoal # Added FinancialGoal import
-)
-from ai_insights import FinancialInsightsGenerator
-from alert_system import AlertSystem # Assuming this class is defined elsewhere
+from models import db, User, CompanySettings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,15 +14,12 @@ logger = logging.getLogger(__name__)
 # Create blueprint
 main = Blueprint('main', __name__)
 
-@main.route('/historical-data', methods=['GET', 'POST'])
-@login_required
-def historical_data():
-    """Redirect to the proper historical data blueprint route"""
-    return redirect(url_for('historical_data.upload'))
-
 @main.route('/')
 def index():
+    """Root route - redirects to appropriate dashboard based on user type"""
     if current_user.is_authenticated:
+        if current_user.is_admin:
+            return redirect(url_for('admin.dashboard'))
         return redirect(url_for('main.dashboard'))
     return redirect(url_for('main.login'))
 
@@ -40,6 +28,8 @@ def login():
     """Handle user login with enhanced error handling and session management."""
     if current_user.is_authenticated:
         logger.info(f"Already authenticated user {current_user.id} redirected to dashboard")
+        if current_user.is_admin:
+            return redirect(url_for('admin.dashboard'))
         return redirect(url_for('main.dashboard'))
 
     # Clear any existing session data
@@ -83,7 +73,12 @@ def login():
             login_user(user, remember=True)
             logger.info(f"User {email} logged in successfully")
 
-            # Handle redirect
+            # Handle redirect based on user type
+            if user.is_admin:
+                logger.info(f"Admin user {email} redirecting to admin dashboard")
+                return redirect(url_for('admin.dashboard'))
+
+            # Regular user redirect
             next_page = request.args.get('next')
             if not next_page or not next_page.startswith('/'):
                 next_page = url_for('main.dashboard')
@@ -100,6 +95,12 @@ def login():
 
     # GET request - show login form
     return render_template('login.html')
+
+@main.route('/historical-data', methods=['GET', 'POST'])
+@login_required
+def historical_data():
+    """Redirect to the proper historical data blueprint route"""
+    return redirect(url_for('historical_data.upload'))
 
 @main.route('/register', methods=['GET', 'POST'])
 def register():
@@ -814,7 +815,7 @@ def _analyze_cash_flow(transaction_data):
     """Analyze cash flow patterns from transaction data"""
     try:
         total_inflow = sum(t['amount'] for t in transaction_data if t['amount'] > 0)
-        total_outflow = abs(sum(t['amount'] for t in transaction_data if t['amount'] < 0))
+        total_outflow = abs(sum(t['amount'] for t in transaction_data if t['amount']< 0))
         net_flow = total_inflow - total_outflow
 
         return {
@@ -1139,9 +1140,6 @@ class ICountant:
             completed = False
         return success, message, completed
 
-# Keep all other existing routes and functions, but remove the duplicate historical_data route at the bottom
-
-
 def suggest_explanation(description, similar_transactions):
     #Implementation for suggestion would go here. Placeholder for now.
     return "Explanation suggestion will be available in the next update"
@@ -1366,8 +1364,6 @@ def check_alerts():
         logger.error(f"Error checking alerts: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-# Add after the last route
-
 @main.route('/goals')
 @login_required
 def goals_dashboard():
@@ -1434,7 +1430,7 @@ def create_goal():
 
 @main.route('/goals/<int:goal_id>/update', methods=['POST'])
 @login_required
-def update_goal():
+def update_goal(goal_id):
     """Update goal progress"""
     try:
         goal = FinancialGoal.query.filter_by(
