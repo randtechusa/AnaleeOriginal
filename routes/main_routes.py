@@ -200,6 +200,21 @@ def upload():
         flash('Error during file upload', 'error')
         return redirect(url_for('main.dashboard'))
 
+@login_required
+def analyze_list():
+    """Display list of uploaded files available for analysis"""
+    try:
+        # Get uploaded files for current user
+        files = UploadedFile.query.filter_by(user_id=current_user.id)\
+            .order_by(UploadedFile.upload_date.desc())\
+            .all()
+
+        return render_template('analyze_list.html', files=files)
+    except Exception as e:
+        logger.error(f"Error accessing analyze list: {str(e)}")
+        flash('Error loading analyze list', 'error')
+        return redirect(url_for('main.dashboard'))
+
 def logout():
     """Handle user logout"""
     logout_user()

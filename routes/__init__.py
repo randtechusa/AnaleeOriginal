@@ -8,7 +8,7 @@ from flask import Blueprint
 main = Blueprint('main', __name__)
 
 # Import routes after blueprint creation to avoid circular imports
-from .main_routes import index, login, register, dashboard, logout, upload # Added import for upload
+from .main_routes import index, login, register, dashboard, logout, upload, analyze_list # Added analyze_list
 from .batch_processing import batch_processing
 
 # Register routes with main blueprint (core functionality)
@@ -17,6 +17,7 @@ main.add_url_rule('/login', view_func=login, methods=['GET', 'POST'])
 main.add_url_rule('/register', view_func=register, methods=['GET', 'POST'])
 main.add_url_rule('/dashboard', view_func=dashboard)
 main.add_url_rule('/logout', view_func=logout)
-main.add_url_rule('/upload', view_func=upload, methods=['GET', 'POST'])  # Add upload route
+main.add_url_rule('/upload', view_func=upload, methods=['GET', 'POST'])
+main.add_url_rule('/analyze/list', view_func=analyze_list, methods=['GET'])  # Add analyze list route
 
 # Note: batch_processing blueprint is registered directly in app.py
