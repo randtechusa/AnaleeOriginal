@@ -7,6 +7,7 @@
             <div class="card-body">
                 <h2 class="card-title">Company Settings</h2>
                 <form method="POST">
+                    {{ form.csrf_token }}
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <div class="mb-3">
@@ -66,7 +67,6 @@
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
@@ -74,13 +74,13 @@
 document.addEventListener('DOMContentLoaded', function() {
     const yearEndSelect = document.getElementById('financial_year_end');
     const infoDiv = document.getElementById('financial_year_info');
-    
+
     yearEndSelect.addEventListener('change', function() {
         const selectedMonth = parseInt(this.value);
         const now = new Date();
         let startYear = now.getFullYear();
         let endYear = now.getFullYear();
-        
+
         if (now.getMonth() + 1 > selectedMonth) {
             startYear = now.getFullYear();
             endYear = now.getFullYear() + 1;
@@ -88,10 +88,10 @@ document.addEventListener('DOMContentLoaded', function() {
             startYear = now.getFullYear() - 1;
             endYear = now.getFullYear();
         }
-        
+
         const monthNames = ["January", "February", "March", "April", "May", "June",
                           "July", "August", "September", "October", "November", "December"];
-        
+
         const startMonth = (selectedMonth % 12) + 1;
         let endDay;
         if (selectedMonth === 2) {
@@ -101,10 +101,10 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             endDay = '31';
         }
-        
+
         const startDate = `${monthNames[startMonth-1]} 1`;
         const endDate = `${monthNames[selectedMonth-1]} ${endDay}`;
-        
+
         infoDiv.textContent = `Financial Year: ${startDate} to ${endDate}`;
     });
 });

@@ -4,6 +4,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import text
+from admin.forms import CompanySettingsForm
 
 from models import db, User, CompanySettings, Account, Transaction, UploadedFile
 from utils.chart_of_accounts_dev import ChartOfAccountsLoader
@@ -233,20 +234,23 @@ def logout():
 @main.route('/company-settings', methods=['GET', 'POST'])
 @login_required
 def company_settings():
+    """Handle company settings with CSRF protection"""
+    form = CompanySettingsForm()
     settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
 
-    if request.method == 'POST':
+    if request.method == 'POST' and form.validate_on_submit():
         try:
             if not settings:
                 settings = CompanySettings(user_id=current_user.id)
                 db.session.add(settings)
 
-            settings.company_name = request.form['company_name']
-            settings.registration_number = request.form['registration_number']
-            settings.tax_number = request.form['tax_number']
-            settings.vat_number = request.form['vat_number']
-            settings.address = request.form['address']
-            settings.financial_year_end = int(request.form['financial_year_end'])
+            # Update settings from form data
+            settings.company_name = form.company_name.data
+            settings.registration_number = form.registration_number.data
+            settings.tax_number = form.tax_number.data
+            settings.vat_number = form.vat_number.data
+            settings.address = form.address.data
+            settings.financial_year_end = int(form.financial_year_end.data)
 
             db.session.commit()
             flash('Company settings updated successfully')
@@ -255,6 +259,15 @@ def company_settings():
             logger.error(f'Error updating company settings: {str(e)}')
             flash('Error updating company settings')
             db.session.rollback()
+
+    # Pre-populate form with existing data
+    if settings:
+        form.company_name.data = settings.company_name
+        form.registration_number.data = settings.registration_number
+        form.tax_number.data = settings.tax_number
+        form.vat_number.data = settings.vat_number
+        form.address.data = settings.address
+        form.financial_year_end.data = str(settings.financial_year_end)
 
     months = [
         (1, 'January'), (2, 'February'), (3, 'March'),
@@ -265,6 +278,7 @@ def company_settings():
 
     return render_template(
         'company_settings.html',
+        form=form,
         settings=settings,
         months=months
     )

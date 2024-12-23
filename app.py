@@ -52,13 +52,15 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-        # Configure Flask app
+        # Configure Flask app with enhanced security
         config = {
             'SECRET_KEY': os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex()),
             'SQLALCHEMY_DATABASE_URI': database_url,
             'SQLALCHEMY_TRACK_MODIFICATIONS': False,
             'TEMPLATES_AUTO_RELOAD': True,
             'WTF_CSRF_ENABLED': True,
+            'WTF_CSRF_SECRET_KEY': os.environ.get("WTF_CSRF_SECRET_KEY", os.urandom(24).hex()),
+            'WTF_CSRF_TIME_LIMIT': 3600,  # 1 hour CSRF token validity
             'SQLALCHEMY_ENGINE_OPTIONS': {
                 'pool_pre_ping': True,
                 'pool_size': 5,
