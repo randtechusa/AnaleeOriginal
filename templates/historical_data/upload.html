@@ -13,13 +13,13 @@
             <form id="uploadForm" method="POST" enctype="multipart/form-data" action="{{ url_for('historical_data.upload') }}">
                 {{ form.csrf_token }}
                 <div class="mb-3">
-                    <label for="file" class="form-label">Select File (CSV or Excel)</label>
-                    <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
+                    {{ form.file.label(class="form-label") }}
+                    {{ form.file(class="form-control", accept=".csv,.xlsx") }}
                     <div class="form-text">
                         File must contain the following columns: Date, Description, Amount, Explanation
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary">Upload File</button>
+                {{ form.submit(class="btn btn-primary") }}
             </form>
         </div>
     </div>

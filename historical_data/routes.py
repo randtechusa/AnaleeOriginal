@@ -7,14 +7,22 @@ from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 import re
 from decimal import Decimal, InvalidOperation
+from flask_wtf import FlaskForm
+from wtforms import FileField, SubmitField
+from wtforms.validators import DataRequired
 
 from models import db, Account, HistoricalData
 from . import historical_data
 from .ai_suggestions import HistoricalDataAI
-from flask_wtf.csrf import CSRFProtect
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Define upload form with CSRF protection
+class UploadForm(FlaskForm):
+    """Form for file upload with CSRF protection"""
+    file = FileField('File', validators=[DataRequired()])
+    submit = SubmitField('Upload')
 
 def validate_file_type(filename):
     """Validate if the uploaded file is CSV or Excel."""
@@ -113,7 +121,10 @@ def sanitize_data(row):
 def upload():
     """Handle historical data upload and management."""
     try:
-        if request.method == 'POST':
+        # Initialize form with CSRF protection
+        form = UploadForm()
+
+        if request.method == 'POST' and form.validate_on_submit():
             logger.info("Processing file upload request")
 
             if 'file' not in request.files:
@@ -141,7 +152,6 @@ def upload():
                     df = pd.read_excel(file, engine='openpyxl')
                 else:
                     logger.info(f"Reading CSV file: {file.filename}")
-                    # Try different encodings
                     try:
                         df = pd.read_csv(file, encoding='utf-8')
                     except UnicodeDecodeError:
@@ -239,6 +249,7 @@ def upload():
 
         return render_template(
             'historical_data/upload.html',
+            form=form,  # Pass the form to the template
             entries=historical_entries
         )
 
