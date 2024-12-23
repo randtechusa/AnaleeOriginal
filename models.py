@@ -520,13 +520,14 @@ class AdminChartOfAccounts(db.Model):
     __tablename__ = 'admin_chart_of_accounts'
 
     id = Column(Integer, primary_key=True)
-    account_code = Column(String(20), nullable=False, unique=True)
-    name = Column(String(100), nullable=False)
-    category = Column(String(50), nullable=False)
-    sub_category = Column(String(50))
+    link = Column(String(20), nullable=False, unique=True)  # Maps to 'Links' column
+    code = Column(String(20), nullable=False)  # Maps to 'Code' column
+    name = Column(String(100), nullable=False)  # Maps to 'Account Name' column
+    category = Column(String(50), nullable=False)  # Maps to 'Category' column
+    sub_category = Column(String(50))  # Maps to 'Sub Category' column
     description = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
-        return f'<AdminChartOfAccounts {self.account_code}: {self.name}>'
+        return f'<AdminChartOfAccounts {self.code}: {self.name}>'
