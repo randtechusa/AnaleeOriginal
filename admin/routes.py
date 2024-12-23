@@ -35,7 +35,7 @@ def charts_of_accounts():
 @login_required
 @admin_required
 def upload_chart_of_accounts():
-    """Upload Chart of Accounts from Excel file"""
+    """Upload Chart of Accounts from Excel file with enhanced error handling"""
     form = ChartOfAccountsUploadForm()
     if form.validate_on_submit():
         try:
@@ -73,20 +73,15 @@ def upload_chart_of_accounts():
             skipped_count = 0
             error_details = []
 
+            # Process each row with enhanced validation and error handling
             for idx, row in df.iterrows():
                 try:
-                    # Check if account already exists
-                    code = str(row[df_columns['Code']])
-                    existing_account = AdminChartOfAccounts.query.filter_by(
-                        code=code
-                    ).first()
+                    # Get values with proper null handling
+                    code = str(row[df_columns['Code']]).strip()
+                    link = str(row[df_columns['Links']]).strip() if 'Links' in df_columns else code
 
-                    if existing_account:
-                        skipped_count += 1
-                        continue
-
-                    # Validate required fields
-                    if not code.strip():
+                    # Pre-validate required fields
+                    if not code:
                         error_details.append({
                             'row': idx + 2,
                             'message': 'Code cannot be empty'
@@ -94,7 +89,8 @@ def upload_chart_of_accounts():
                         error_count += 1
                         continue
 
-                    if not str(row[df_columns['Account Name']]).strip():
+                    name = str(row[df_columns['Account Name']]).strip()
+                    if not name:
                         error_details.append({
                             'row': idx + 2,
                             'message': 'Account Name cannot be empty'
@@ -102,7 +98,8 @@ def upload_chart_of_accounts():
                         error_count += 1
                         continue
 
-                    if not str(row[df_columns['Category']]).strip():
+                    category = str(row[df_columns['Category']]).strip()
+                    if not category:
                         error_details.append({
                             'row': idx + 2,
                             'message': 'Category cannot be empty'
@@ -110,19 +107,36 @@ def upload_chart_of_accounts():
                         error_count += 1
                         continue
 
-                    # Create new account with mapped columns
+                    # Check for existing account by link or code
+                    existing_account = AdminChartOfAccounts.query.filter(
+                        (AdminChartOfAccounts.link == link) | 
+                        (AdminChartOfAccounts.code == code)
+                    ).first()
+
+                    if existing_account:
+                        error_details.append({
+                            'row': idx + 2,
+                            'message': f'Account with link {link} or code {code} already exists'
+                        })
+                        skipped_count += 1
+                        continue
+
+                    # Create new account with careful value assignment
                     account = AdminChartOfAccounts(
-                        link=str(row[df_columns['Links']]) if 'Links' in df_columns else code,
+                        link=link,
                         code=code,
-                        name=str(row[df_columns['Account Name']]),
-                        category=str(row[df_columns['Category']]),
-                        sub_category=str(row[df_columns.get('Sub Category', '')]) if 'Sub Category' in df_columns else '',
-                        description=str(row[df_columns.get('Description', '')]) if 'Description' in df_columns else ''
+                        name=name,
+                        category=category,
+                        sub_category=str(row[df_columns.get('Sub Category', '')]).strip() if 'Sub Category' in df_columns else '',
+                        description=str(row[df_columns.get('Description', '')]).strip() if 'Description' in df_columns else ''
                     )
+
                     db.session.add(account)
+                    db.session.commit()  # Commit each record individually
                     success_count += 1
 
                 except Exception as e:
+                    db.session.rollback()
                     error_count += 1
                     error_details.append({
                         'row': idx + 2,
@@ -132,14 +146,12 @@ def upload_chart_of_accounts():
                     continue
 
             if error_details:
-                current_app.logger.error("Upload errors:\n" + "\n".join([f"Row {e['row']}: {e['message']}" for e in error_details]))
-                # Store error details in session for template rendering
                 session['upload_errors'] = error_details
                 flash('Upload completed with errors. See detailed error report below.', 'warning')
             else:
                 session.pop('upload_errors', None)
+                flash('Upload completed successfully.', 'success')
 
-            db.session.commit()
             flash(f'Uploaded {success_count} accounts successfully. {error_count} accounts failed. {skipped_count} accounts skipped (already exist).', 'info')
 
         except Exception as e:
