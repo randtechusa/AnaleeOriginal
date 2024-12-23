@@ -31,4 +31,5 @@ dependencies = [
     "pyotp>=2.9.0",
     "qrcode>=8.0",
     "pillow>=11.0.0",
+    "flask-cors>=5.0.0",
 ]

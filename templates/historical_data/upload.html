@@ -9,7 +9,7 @@
     <!-- Upload Form -->
     <div class="card mb-4">
         <div class="card-body">
-            <form method="POST" enctype="multipart/form-data">
+            <form method="POST" enctype="multipart/form-data" id="uploadForm">
                 {{ form.csrf_token }}
 
                 <div class="mb-3">
@@ -34,6 +34,30 @@
                     </div>
                 </div>
 
+                <!-- Upload Progress -->
+                <div class="progress mb-3 d-none" id="uploadProgress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%" 
+                         aria-valuenow="0" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100">0%</div>
+                </div>
+
+                <!-- Status Display -->
+                <div id="uploadStatus" class="alert d-none mb-3">
+                    <p class="mb-2"><strong>Status:</strong> <span id="statusText">Processing...</span></p>
+                    <p class="mb-2"><small>Processed rows: <span id="processedRows">0</span></small></p>
+                    <p class="mb-2"><small>Processing rate: <span id="processingRate">0</span> rows/second</small></p>
+                    <p class="mb-0"><small>Estimated time remaining: <span id="timeRemaining">Calculating...</span></small></p>
+                </div>
+
+                <!-- Error Display -->
+                <div id="errorContainer" class="alert alert-danger d-none mb-3">
+                    <h6 class="alert-heading">Upload Errors:</h6>
+                    <ul id="errorList" class="mb-0">
+                    </ul>
+                </div>
+
                 <!-- File Format Requirements -->
                 <div class="alert alert-info mb-3">
                     <h6 class="alert-heading">File Format Requirements:</h6>
@@ -45,12 +69,12 @@
                     </ul>
                 </div>
 
-                {{ form.submit(class="btn btn-primary") }}
+                {{ form.submit(class="btn btn-primary", id="submitButton") }}
             </form>
         </div>
     </div>
 
-    <!-- Recent Uploads -->
+    <!-- Recent Uploads Table -->
     <div class="card">
         <div class="card-body">
             <h5 class="card-title">Recent Historical Data</h5>
@@ -92,22 +116,110 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.querySelector('form');
-    const fileInput = document.querySelector('input[type="file"]');
-    const accountSelect = document.querySelector('select[name="account"]');
+    const form = document.getElementById('uploadForm');
+    const progressBar = document.querySelector('.progress-bar');
+    const progressDiv = document.getElementById('uploadProgress');
+    const statusDiv = document.getElementById('uploadStatus');
+    const statusText = document.getElementById('statusText');
+    const processedRows = document.getElementById('processedRows');
+    const processingRate = document.getElementById('processingRate');
+    const timeRemaining = document.getElementById('timeRemaining');
+    const errorContainer = document.getElementById('errorContainer');
+    const errorList = document.getElementById('errorList');
+    const submitButton = document.getElementById('submitButton');
 
-    form.onsubmit = function(e) {
-        if (!fileInput.files.length) {
-            e.preventDefault();
-            alert('Please select a file to upload');
-            return false;
+    let startTime;
+    let uploadStarted = false;
+
+    form.onsubmit = async function(e) {
+        e.preventDefault();
+
+        // Reset display elements
+        errorContainer.classList.add('d-none');
+        errorList.innerHTML = '';
+        progressBar.style.width = '0%';
+        progressBar.textContent = '0%';
+
+        const formData = new FormData(form);
+        startTime = Date.now();
+        uploadStarted = true;
+
+        // Show progress elements
+        progressDiv.classList.remove('d-none');
+        statusDiv.classList.remove('d-none');
+        submitButton.disabled = true;
+
+        try {
+            const response = await fetch(form.action || window.location.href, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+            }
+
+            const reader = response.body.getReader();
+
+            while(true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+
+                try {
+                    const text = new TextDecoder().decode(value);
+                    const data = JSON.parse(text);
+
+                    // Update progress
+                    if (data.total_rows > 0) {
+                        const progress = (data.processed_rows / data.total_rows * 100);
+                        progressBar.style.width = `${Math.min(progress, 100)}%`;
+                        progressBar.textContent = `${Math.round(progress)}%`;
+                    }
+
+                    // Update status
+                    statusText.textContent = data.status || 'Processing...';
+                    processedRows.textContent = data.processed_rows || '0';
+
+                    // Update processing rate
+                    if (data.processing_rate) {
+                        processingRate.textContent = Math.round(data.processing_rate);
+
+                        // Calculate time remaining
+                        if (data.total_rows && data.processed_rows) {
+                            const remainingRows = data.total_rows - data.processed_rows;
+                            const remainingTime = remainingRows / data.processing_rate;
+                            timeRemaining.textContent = `${Math.round(remainingTime)}s`;
+                        }
+                    }
+
+                    // Display errors if any
+                    if (data.errors && data.errors.length > 0) {
+                        errorContainer.classList.remove('d-none');
+                        errorList.innerHTML = data.errors.map(error => 
+                            `<li>${error}</li>`
+                        ).join('');
+                    }
+
+                } catch (parseError) {
+                    console.error('Error parsing progress data:', parseError);
+                }
+            }
+
+            // Upload completed successfully
+            statusText.textContent = 'Upload Complete!';
+            setTimeout(() => window.location.reload(), 2000);
+
+        } catch (error) {
+            console.error('Upload error:', error);
+            statusText.textContent = error.message;
+            errorContainer.classList.remove('d-none');
+            errorList.innerHTML = `<li>Error: ${error.message}</li>`;
+            progressBar.classList.add('bg-danger');
+
+        } finally {
+            submitButton.disabled = false;
+            uploadStarted = false;
         }
-        if (!accountSelect.value) {
-            e.preventDefault();
-            alert('Please select a bank account');
-            return false;
-        }
-        return true;
     };
 });
 </script>

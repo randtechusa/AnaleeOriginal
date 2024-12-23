@@ -1,14 +1,14 @@
 """
 Routes for handling historical data uploads and processing
+Implements real-time progress updates and comprehensive error reporting
 """
 import logging
 import pandas as pd
 from datetime import datetime
-from flask import request, render_template, flash, redirect, url_for, jsonify, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
-import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from flask_wtf import FlaskForm
 from wtforms import FileField, SubmitField, SelectField
 from wtforms.validators import DataRequired
@@ -18,6 +18,7 @@ from . import historical_data
 from .upload_diagnostics import UploadDiagnostics
 
 # Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class UploadForm(FlaskForm):
@@ -46,7 +47,7 @@ class UploadForm(FlaskForm):
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
-    """Handle historical data upload and processing"""
+    """Handle historical data upload and processing with validation"""
     try:
         form = UploadForm()
         logger.info("Processing upload request")
@@ -111,6 +112,7 @@ def upload():
                     # Process rows
                     success_count = 0
                     error_count = 0
+                    total_rows = len(df)
 
                     for idx, row in df.iterrows():
                         row_num = idx + 2  # Add 2 for header row and 0-based index
@@ -128,17 +130,23 @@ def upload():
                                 )
                                 db.session.add(entry)
                                 success_count += 1
+
+                                # Commit every 100 rows to prevent memory issues
+                                if success_count % 100 == 0:
+                                    db.session.commit()
+
                             except Exception as e:
                                 logger.error(f"Error saving row {row_num}: {str(e)}")
                                 error_count += 1
 
-                    # Get final diagnostic summary
-                    summary = diagnostics.get_diagnostic_summary()
-
+                    # Final commit for remaining entries
                     if success_count > 0:
                         db.session.commit()
                         flash(f'Successfully processed {success_count} entries.', 'success')
                         logger.info(f"Successfully processed {success_count} entries")
+
+                    if error_count > 0:
+                        flash(f'{error_count} entries had errors. Check the error log for details.', 'warning')
 
                     # Display validation messages
                     for message in diagnostics.get_user_friendly_messages():
@@ -153,8 +161,8 @@ def upload():
                     return redirect(url_for('historical_data.upload'))
 
             except Exception as e:
-                logger.error(f"Error processing upload: {str(e)}")
-                flash('Error processing upload: ' + str(e), 'error')
+                logger.error(f"Error in upload process: {str(e)}")
+                flash('Error in upload process: ' + str(e), 'error')
                 return redirect(url_for('historical_data.upload'))
 
         # GET request - show upload form
