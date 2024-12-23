@@ -1,6 +1,6 @@
 """
 Routes for handling historical data uploads and processing
-Implements real-time progress updates and comprehensive error reporting
+Implements comprehensive validation and error reporting
 """
 import logging
 import pandas as pd
@@ -17,9 +17,14 @@ from models import db, Account, HistoricalData
 from . import historical_data
 from .upload_diagnostics import UploadDiagnostics
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with detailed format
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+file_handler = logging.FileHandler('upload_debug.log')
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+logger.addHandler(file_handler)
 
 class UploadForm(FlaskForm):
     """Form for file upload with CSRF protection"""
@@ -51,12 +56,19 @@ def upload():
     try:
         form = UploadForm()
         logger.info("Processing upload request")
+        logger.debug(f"Request method: {request.method}")
+        logger.debug(f"Form data: {request.form}")
+        logger.debug(f"Files: {request.files}")
 
         if request.method == 'POST':
             logger.info("Received POST request")
+            logger.debug(f"CSRF token present: {'csrf_token' in request.form}")
+            logger.debug(f"Form validation result: {form.validate()}")
+            logger.debug(f"Form errors: {form.errors}")
 
             if not form.validate_on_submit():
                 logger.error("Form validation failed")
+                logger.error(f"Form errors: {form.errors}")
                 if request.is_xhr:
                     return jsonify({
                         'success': False,
@@ -223,7 +235,7 @@ def upload():
                              entries=historical_entries)
 
     except Exception as e:
-        logger.error(f"Error in upload route: {str(e)}")
+        logger.error(f"Error in upload route: {str(e)}", exc_info=True)
         if request.is_xhr:
             return jsonify({
                 'success': False,

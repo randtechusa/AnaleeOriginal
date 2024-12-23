@@ -231,7 +231,7 @@ class Transaction(db.Model):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     account = relationship('Account', backref='transactions')
-    uploaded_file = relationship('UploadedFile', back_populates='transactions')
+    file = relationship('UploadedFile', backref='transactions', lazy=True)
 
     def __repr__(self):
         return f'<Transaction {self.date}: {self.description}>'
