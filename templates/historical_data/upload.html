@@ -10,7 +10,8 @@
     <div class="card mb-4">
         <div class="card-body">
             <form id="uploadForm" method="POST" enctype="multipart/form-data" action="{{ url_for('historical_data.upload') }}">
-                {{ form.csrf_token }}
+                <!-- Hidden CSRF token field -->
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                 <div class="mb-3">
                     {{ form.account.label(class="form-label") }}
