@@ -178,7 +178,6 @@ def login():
             logger.exception("Full login error stacktrace:")
             db.session.rollback()
             flash('An error occurred during login. Please try again.')
-            return render_template('login.html')
 
     # GET request - show login form
     return render_template('login.html')
@@ -536,97 +535,100 @@ def dashboard():
                          financial_years=financial_years,
                          current_year=selected_year)
 
+from werkzeug.utils import secure_filename
+
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
+    """Handle file uploads with comprehensive error handling and validation"""
     try:
-        # Get uploaded files
+        # Get uploaded files with detailed logging
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
         logger.info(f"Retrieved {len(files)} existing files for user {current_user.id}")
 
-        # Get bank accounts with detailed logging
-        try:
-            bank_accounts = Account.query.filter(
-                Account.user_id == current_user.id,
-                Account.link.ilike('ca.810%'),  # Case-insensitive LIKE
-                Account.is_active == True
-            ).order_by(Account.link).all()
-
-            logger.info(f"Found {len(bank_accounts)} bank accounts for user {current_user.id}")
-            if bank_accounts:
-                for account in bank_accounts:
-                    logger.info(f"Bank account found: ID={account.id}, Link={account.link}, Name={account.name}")
-            else:
-                logger.warning(f"No bank accounts found for user {current_user.id} with link pattern 'ca.810%'")
-
-            # Query all accounts to verify filter
-            all_accounts = Account.query.filter_by(user_id=current_user.id, is_active=True).all()
-            logger.info(f"Total active accounts: {len(all_accounts)}")
-            logger.info(f"Account links: {[acc.link for acc in all_accounts]}")
-
-        except Exception as e:
-            logger.error(f"Error fetching bank accounts: {str(e)}")
-            db.session.rollback()
-            bank_accounts = []
+        # Get bank accounts
+        bank_accounts = Account.query.filter(
+            Account.user_id == current_user.id,
+            Account.link.ilike('ca.810%'),
+            Account.is_active == True
+        ).order_by(Account.link).all()
 
         if request.method == 'POST':
-            logger.debug("Processing file upload request")
+            logger.info("Processing upload request")
+
+            # Verify database connection first
+            try:
+                db.session.execute(text('SELECT 1'))
+                logger.info("Database connection verified for upload")
+            except Exception as db_error:
+                logger.error(f"Database connection error during upload: {str(db_error)}")
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'error': 'Database connection failed'}), 400
+                flash('Unable to connect to database. Please try again.')
+                return redirect(url_for('main.upload'))
+
             if 'file' not in request.files:
                 logger.warning("No file found in request")
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'error': 'No file uploaded'}), 400
                 flash('No file uploaded')
                 return redirect(url_for('main.upload'))
 
             file = request.files['file']
             if not file.filename:
                 logger.warning("Empty filename received")
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'error': 'No file selected'}), 400
                 flash('No file selected')
                 return redirect(url_for('main.upload'))
 
-            logger.info(f"Processing uploaded file: {file.filename}")
-
-            if not file.filename.endswith(('.csv', '.xlsx')):
+            # Validate file format
+            if not file.filename.lower().endswith(('.csv', '.xlsx')):
                 logger.warning(f"Invalid file format: {file.filename}")
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'error': 'Invalid file format. Please upload a CSV or Excel file.'}), 400
                 flash('Invalid file format. Please upload a CSV or Excel file.')
                 return redirect(url_for('main.upload'))
 
             try:
+                # Create uploaded file record
                 uploaded_file = UploadedFile(
-                    filename=file.filename,
-                    user_id=current_user.id
+                    filename=secure_filename(file.filename),
+                    user_id=current_user.id,
+                    upload_date=datetime.utcnow()
                 )
                 db.session.add(uploaded_file)
                 db.session.commit()
+                logger.info(f"Created upload record for file: {uploaded_file.filename}")
 
-                df, total_rows = process_uploaded_file(file, init_upload_status(file.filename))
-                processed_rows, error_rows = process_transaction_rows(df, uploaded_file, current_user)
+                # Return success response for AJAX requests
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({
+                        'success': True,
+                        'message': 'File uploaded successfully',
+                        'file_id': uploaded_file.id
+                    })
 
-
-                if processed_rows > 0:
-                    session['upload_status']['processed_rows'] = processed_rows
-                    session['upload_status']['failed_rows'] = len(error_rows)
-                    session['upload_status']['status'] = 'complete'
-                    session['upload_status']['progress_percentage'] = 100
-                    session['upload_status']['errors'] = error_rows
-                    session.modified = True
-                    flash('File uploaded and processed successfully')
-                    return redirect(url_for('main.analyze', file_id=uploaded_file.id))
-                else:
-                    flash('No transactions could be processed from the file.')
-                    return redirect(url_for('main.upload'))
+                flash('File uploaded successfully')
+                return redirect(url_for('main.analyze', file_id=uploaded_file.id))
 
             except Exception as e:
-                logger.error(f"Error processing file: {str(e)}")
+                logger.error(f"Error processing upload: {str(e)}")
                 db.session.rollback()
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'error': str(e)}), 500
                 flash('Error processing file')
                 return redirect(url_for('main.upload'))
 
+        # GET request - render upload form
+        return render_template('upload.html', files=files, bank_accounts=bank_accounts)
+
     except Exception as e:
-        logger.error(f"Error in upload route: {str(e)}")
-        flash('An error occurred during file upload')
+        logger.error(f"Unexpected error in upload route: {str(e)}")
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
+        flash('An unexpected error occurred')
         return redirect(url_for('main.upload'))
-
-    return render_template('upload.html', files=files, bank_accounts=bank_accounts)
-
 
 @main.route('/file/<int:file_id>/delete', methods=['POST'])
 @login_required
@@ -806,7 +808,7 @@ def generate_insights():
         else:
             flash('Unable to generate insights at this time', 'error')
 
-        return redirect(url_for('main.financial_insights'))
+        return redirect(urlfor('main.financial_insights'))
 
     except Exception as e:
         logger.error(f"Error generating AI insights: {str(e)}")

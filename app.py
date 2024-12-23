@@ -80,84 +80,77 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         csrf.init_app(app)  # Initialize CSRF protection
         login_manager.login_view = 'main.login'
 
-        # Initialize scheduler
-        scheduler.init_app(app)
-        scheduler.start()
+        # Initialize scheduler with error handling
+        try:
+            scheduler.init_app(app)
+            scheduler.start()
+            logger.info("Scheduler initialized successfully")
+        except Exception as scheduler_error:
+            logger.error(f"Error initializing scheduler: {str(scheduler_error)}")
+            # Continue without scheduler - non-critical component
 
         with app.app_context():
-            # Register blueprints
+            # Register blueprints with proper error handling
             try:
+                # Core blueprints - protected components
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
+                logger.info("Main blueprint registered successfully")
 
                 from reports import reports as reports_blueprint
                 app.register_blueprint(reports_blueprint, url_prefix='/reports')
+                logger.info("Reports blueprint registered successfully")
 
-                # Register historical data blueprint (protected core feature)
+                # Historical data blueprint (protected core feature)
                 from historical_data import historical_data as historical_data_blueprint
-                logger.info("Registering historical data blueprint with URL prefix: /historical-data")
-                app.register_blueprint(historical_data_blueprint)
+                app.register_blueprint(historical_data_blueprint, url_prefix='/historical-data')
+                logger.info("Historical data blueprint registered successfully")
 
-                # Register chat blueprint (protected core feature)
+                # Chat blueprint (protected core feature)
                 from chat.routes import chat as chat_blueprint
-                logger.info("Registering chat blueprint")
-                app.register_blueprint(chat_blueprint)
+                app.register_blueprint(chat_blueprint, url_prefix='/chat')
+                logger.info("Chat blueprint registered successfully")
 
-                # Register error monitoring blueprint
+                # Error monitoring blueprint
                 from errors import errors as errors_blueprint
-                logger.info("Registering error monitoring blueprint")
                 app.register_blueprint(errors_blueprint)
+                logger.info("Error monitoring blueprint registered successfully")
 
-                # Register predictions blueprint
+                # Predictions blueprint
                 from predictions.routes import predictions as predictions_blueprint
-                logger.info("Registering predictions blueprint with URL prefix: /predictions")
                 app.register_blueprint(predictions_blueprint, url_prefix='/predictions')
+                logger.info("Predictions blueprint registered successfully")
 
-                # Register risk assessment blueprint
+                # Risk assessment blueprint
                 from risk_assessment import risk_assessment as risk_assessment_blueprint
-                logger.info("Registering risk assessment blueprint")
-                app.register_blueprint(risk_assessment_blueprint)
+                app.register_blueprint(risk_assessment_blueprint, url_prefix='/risk')
+                logger.info("Risk assessment blueprint registered successfully")
 
-                # Register recommendations blueprint
+                # Recommendations blueprint
                 from recommendations import recommendations as recommendations_blueprint
-                logger.info("Registering recommendations blueprint")
-                app.register_blueprint(recommendations_blueprint)
+                app.register_blueprint(recommendations_blueprint, url_prefix='/recommendations')
+                logger.info("Recommendations blueprint registered successfully")
 
-                # Register admin blueprint (new)
+                # Admin blueprint (new)
                 logger.info("Registering admin blueprint")
-                app.register_blueprint(admin_blueprint)
-
-                # Create admin account if it doesn't exist
-                def create_admin_account():
-                    """Create the one-off admin account if it doesn't exist"""
-                    admin_email = "festusa@cnbs.co.za"
-                    admin = User.query.filter_by(email=admin_email).first()
-                    if not admin:
-                        admin = User(
-                            username="admin",
-                            email=admin_email,
-                            is_admin=True,
-                            subscription_status='active'
-                        )
-                        admin.set_password("Fes5036tus@3")
-                        db.session.add(admin)
-                        db.session.commit()
-                        logger.info("Admin account created successfully")
-                    else:
-                        logger.info("Admin account already exists")
-
-                try:
-                    create_admin_account()
-                except Exception as e:
-                    logger.error(f"Error creating admin account: {str(e)}")
+                app.register_blueprint(admin_blueprint, url_prefix='/admin')
 
                 logger.info("All blueprints registered successfully")
+
+                # Verify database connection before proceeding
+                try:
+                    with db.engine.connect() as connection:
+                        connection.execute(text("SELECT 1"))
+                    logger.info("Database connection verified")
+                except Exception as db_error:
+                    logger.error(f"Database connection error: {str(db_error)}")
+                    return None
+
+                return app
+
             except Exception as blueprint_error:
                 logger.error(f"Error registering blueprints: {str(blueprint_error)}")
-                raise
-
-            logger.info("Application initialization completed successfully")
-            return app
+                return None
 
     except Exception as e:
         logger.error(f"Critical error in application creation: {str(e)}")
