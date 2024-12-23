@@ -27,4 +27,5 @@ dependencies = [
     "python-levenshtein>=0.26.1",
     "numpy>=2.2.0",
     "scikit-learn>=1.6.0",
+    "oauthlib>=3.2.2",
 ]

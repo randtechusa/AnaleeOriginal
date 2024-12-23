@@ -7,6 +7,8 @@
             <div class="card-body">
                 <h2 class="card-title text-center mb-4">Login</h2>
                 <form method="POST">
+                    <!-- Add CSRF Token -->
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label for="email" class="form-label">Email</label>
                         <input type="email" class="form-control" id="email" name="email" required>
