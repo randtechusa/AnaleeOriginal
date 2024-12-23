@@ -27,12 +27,28 @@ def upload_chart_of_accounts():
             # Log the columns found in the Excel file
             current_app.logger.info(f"Excel columns found: {df.columns.tolist()}")
 
-            # Validate required columns
-            required_columns = ['Account Code', 'Account Name', 'Category']
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                flash(f'Missing required columns: {", ".join(missing_columns)}', 'error')
-                return redirect(url_for('admin.charts_of_accounts'))
+            # Create column mapping dictionary
+            column_mapping = {
+                'Account Code': ['Code', 'Account Code', 'AccountCode', 'Account_Code'],
+                'Account Name': ['Account Name', 'AccountName', 'Name', 'Account_Name'],
+                'Category': ['Category'],
+                'Sub Category': ['Sub Category', 'SubCategory', 'Sub_Category'],
+                'Description': ['Description', 'Desc'],
+                'Links': ['Links', 'Link']
+            }
+
+            # Map Excel columns to expected names
+            df_columns = {}
+            for expected_col, possible_names in column_mapping.items():
+                found = False
+                for name in possible_names:
+                    if name in df.columns:
+                        df_columns[expected_col] = name
+                        found = True
+                        break
+                if not found and expected_col in ['Account Code', 'Account Name', 'Category']:
+                    flash(f'Required column {expected_col} not found in Excel file', 'error')
+                    return redirect(url_for('admin.charts_of_accounts'))
 
             success_count = 0
             error_count = 0
@@ -42,27 +58,27 @@ def upload_chart_of_accounts():
             for idx, row in df.iterrows():
                 try:
                     # Check if account already exists
+                    account_code = str(row[df_columns['Account Code']])
                     existing_account = AdminChartOfAccounts.query.filter_by(
-                        account_code=str(row['Account Code'])
+                        account_code=account_code
                     ).first()
 
                     if existing_account:
                         skipped_count += 1
                         continue
 
-                    # Create new account with all available fields
+                    # Create new account with mapped columns
                     account = AdminChartOfAccounts(
-                        account_code=str(row['Account Code']),
-                        name=str(row['Account Name']),
-                        category=str(row['Category']),
-                        sub_category=str(row['Sub Category']) if 'Sub Category' in row else '',
-                        description=str(row['Description']) if 'Description' in row else '',
-                        account_type=str(row['Account Type']) if 'Account Type' in row else '',
-                        balance_sheet_category=str(row['Balance Sheet Category']) if 'Balance Sheet Category' in row else '',
-                        status=str(row['Status']) if 'Status' in row else 'Active'
+                        account_code=account_code,
+                        name=str(row[df_columns['Account Name']]),
+                        category=str(row[df_columns['Category']]),
+                        sub_category=str(row[df_columns.get('Sub Category', '')]) if 'Sub Category' in df_columns else '',
+                        description=str(row[df_columns.get('Description', '')]) if 'Description' in df_columns else '',
+                        link=str(row[df_columns.get('Links', '')]) if 'Links' in df_columns else ''
                     )
                     db.session.add(account)
                     success_count += 1
+
                 except Exception as e:
                     error_count += 1
                     error_msg = f"Row {idx + 2}: {str(e)}"
@@ -72,7 +88,7 @@ def upload_chart_of_accounts():
 
             if error_details:
                 current_app.logger.error("Upload errors:\n" + "\n".join(error_details))
-                flash(f'Upload completed with errors. Check logs for details.', 'warning')
+                flash('Upload completed with errors. Check logs for details.', 'warning')
 
             db.session.commit()
             flash(f'Uploaded {success_count} accounts successfully. {error_count} accounts failed. {skipped_count} accounts skipped (already exist).', 'info')
