@@ -14,6 +14,7 @@ from wtforms.validators import DataRequired
 
 from models import db, Account, UploadedFile
 from .upload_validator import BankStatementValidator
+from . import bank_statements  # Import the blueprint from __init__.py
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -54,10 +55,10 @@ def upload():
     try:
         form = BankStatementUploadForm()
         logger.info("Processing bank statement upload request")
-        
+
         if request.method == 'POST':
             logger.debug(f"Form validation result: {form.validate()}")
-            
+
             if not form.validate_on_submit():
                 logger.error("Form validation failed")
                 if request.is_xhr:
@@ -95,10 +96,10 @@ def upload():
                     return redirect(url_for('bank_statements.upload'))
 
                 filename = secure_filename(file.filename)
-                
+
                 # Initialize validator
                 validator = BankStatementValidator()
-                
+
                 # Validate and process file
                 if validator.validate_and_process(file, account_id, current_user.id):
                     if request.is_xhr:
@@ -116,7 +117,7 @@ def upload():
                         })
                     for message in error_messages:
                         flash(message, 'error')
-                
+
                 return redirect(url_for('bank_statements.upload'))
 
             except Exception as e:

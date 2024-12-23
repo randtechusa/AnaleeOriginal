@@ -10,6 +10,7 @@ from flask_apscheduler import APScheduler
 from flask_wtf.csrf import CSRFProtect
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
 from admin import admin as admin_blueprint
+from bank_statements import bank_statements as bank_statements_blueprint
 
 # Configure logging with more detailed error reporting
 logging.basicConfig(
@@ -110,6 +111,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 from chat.routes import chat as chat_blueprint
                 app.register_blueprint(chat_blueprint, url_prefix='/chat')
                 logger.info("Chat blueprint registered successfully")
+
+                # Bank statements blueprint (new, isolated functionality)
+                logger.info("Registering bank statements blueprint")
+                app.register_blueprint(bank_statements_blueprint, url_prefix='/bank-statements')
+                logger.info("Bank statements blueprint registered successfully")
 
                 # Error monitoring blueprint
                 from errors import errors as errors_blueprint
