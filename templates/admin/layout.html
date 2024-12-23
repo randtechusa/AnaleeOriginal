@@ -27,6 +27,10 @@
                            href="{{ url_for('admin.charts_of_accounts') }}">Charts of Accounts</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'admin.pending_subscribers' %}active{% endif %}" 
+                           href="{{ url_for('admin.pending_subscribers') }}">Pending Subscribers</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'admin.active_subscribers' %}active{% endif %}" 
                            href="{{ url_for('admin.active_subscribers') }}">Active Subscribers</a>
                     </li>
