@@ -13,6 +13,24 @@ from . import admin, admin_required
 from models import db, User, AdminChartOfAccounts, Account
 from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm
 
+@admin.route('/charts-of-accounts', methods=['GET'])
+@login_required
+@admin_required
+def charts_of_accounts():
+    """Manage system-wide Chart of Accounts"""
+    form = AdminChartOfAccountsForm()
+    upload_form = ChartOfAccountsUploadForm()
+    accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.code).all()
+
+    # Get upload errors from session if they exist
+    upload_errors = session.pop('upload_errors', None)
+
+    return render_template('admin/charts_of_accounts.html', 
+                         form=form, 
+                         upload_form=upload_form,
+                         accounts=accounts,
+                         upload_errors=upload_errors)
+
 @admin.route('/charts-of-accounts/upload', methods=['POST'])
 @login_required
 @admin_required
@@ -29,7 +47,7 @@ def upload_chart_of_accounts():
 
             # Create column mapping dictionary
             column_mapping = {
-                'Account Code': ['Code', 'Account Code', 'AccountCode', 'Account_Code'],
+                'Code': ['Code', 'Account Code', 'AccountCode', 'Account_Code'],
                 'Account Name': ['Account Name', 'AccountName', 'Name', 'Account_Name'],
                 'Category': ['Category'],
                 'Sub Category': ['Sub Category', 'SubCategory', 'Sub_Category'],
@@ -46,7 +64,7 @@ def upload_chart_of_accounts():
                         df_columns[expected_col] = name
                         found = True
                         break
-                if not found and expected_col in ['Account Code', 'Account Name', 'Category']:
+                if not found and expected_col in ['Code', 'Account Name', 'Category']:
                     flash(f'Required column {expected_col} not found in Excel file', 'danger')
                     return redirect(url_for('admin.charts_of_accounts'))
 
@@ -58,9 +76,9 @@ def upload_chart_of_accounts():
             for idx, row in df.iterrows():
                 try:
                     # Check if account already exists
-                    account_code = str(row[df_columns['Account Code']])
+                    code = str(row[df_columns['Code']])
                     existing_account = AdminChartOfAccounts.query.filter_by(
-                        account_code=account_code
+                        code=code
                     ).first()
 
                     if existing_account:
@@ -68,10 +86,10 @@ def upload_chart_of_accounts():
                         continue
 
                     # Validate required fields
-                    if not account_code.strip():
+                    if not code.strip():
                         error_details.append({
                             'row': idx + 2,
-                            'message': 'Account Code cannot be empty'
+                            'message': 'Code cannot be empty'
                         })
                         error_count += 1
                         continue
@@ -94,12 +112,12 @@ def upload_chart_of_accounts():
 
                     # Create new account with mapped columns
                     account = AdminChartOfAccounts(
-                        account_code=account_code,
+                        link=str(row[df_columns['Links']]) if 'Links' in df_columns else code,
+                        code=code,
                         name=str(row[df_columns['Account Name']]),
                         category=str(row[df_columns['Category']]),
                         sub_category=str(row[df_columns.get('Sub Category', '')]) if 'Sub Category' in df_columns else '',
-                        description=str(row[df_columns.get('Description', '')]) if 'Description' in df_columns else '',
-                        link=str(row[df_columns.get('Links', '')]) if 'Links' in df_columns else ''
+                        description=str(row[df_columns.get('Description', '')]) if 'Description' in df_columns else ''
                     )
                     db.session.add(account)
                     success_count += 1
@@ -134,24 +152,6 @@ def upload_chart_of_accounts():
                 flash(f'{getattr(form, field).label.text}: {error}', 'danger')
 
     return redirect(url_for('admin.charts_of_accounts'))
-
-@admin.route('/charts-of-accounts', methods=['GET'])
-@login_required
-@admin_required
-def charts_of_accounts():
-    """Manage system-wide Chart of Accounts"""
-    form = AdminChartOfAccountsForm()
-    upload_form = ChartOfAccountsUploadForm()
-    accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.account_code).all()
-
-    # Get upload errors from session if they exist
-    upload_errors = session.pop('upload_errors', None)
-
-    return render_template('admin/charts_of_accounts.html', 
-                         form=form, 
-                         upload_form=upload_form,
-                         accounts=accounts,
-                         upload_errors=upload_errors)
 
 @admin.route('/dashboard')
 @login_required
@@ -188,7 +188,7 @@ def add_chart_of_accounts():
     if form.validate_on_submit():
         # Check if account code already exists
         existing_account = AdminChartOfAccounts.query.filter_by(
-            account_code=form.account_code.data
+            code=form.code.data
         ).first()
 
         if existing_account:
@@ -196,7 +196,7 @@ def add_chart_of_accounts():
             return redirect(url_for('admin.charts_of_accounts'))
 
         account = AdminChartOfAccounts(
-            account_code=form.account_code.data,
+            code=form.code.data,
             name=form.name.data,
             category=form.category.data,
             sub_category=form.sub_category.data,
@@ -227,7 +227,7 @@ def edit_chart_of_accounts(account_id):
 
     if form.validate_on_submit():
         try:
-            account.account_code = form.account_code.data
+            account.code = form.code.data
             account.name = form.name.data
             account.category = form.category.data
             account.sub_category = form.sub_category.data

@@ -118,24 +118,22 @@
                 <table class="table table-striped">
                     <thead>
                         <tr>
-                            <th>Account Code</th>
+                            <th>Code</th>
                             <th>Name</th>
                             <th>Category</th>
                             <th>Sub Category</th>
                             <th>Description</th>
-                            <th>Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for account in accounts %}
                         <tr>
-                            <td>{{ account.account_code }}</td>
+                            <td>{{ account.code }}</td>
                             <td>{{ account.name }}</td>
                             <td>{{ account.category }}</td>
                             <td>{{ account.sub_category }}</td>
                             <td>{{ account.description }}</td>
-                            <td>{{ account.status }}</td>
                             <td>
                                 <div class="btn-group" role="group">
                                     <a href="{{ url_for('admin.edit_chart_of_accounts', account_id=account.id) }}" 
