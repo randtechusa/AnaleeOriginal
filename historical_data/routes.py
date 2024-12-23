@@ -2,7 +2,7 @@
 import logging
 import pandas as pd
 from datetime import datetime
-from flask import request, render_template, flash, redirect, url_for, jsonify
+from flask import request, render_template, flash, redirect, url_for, jsonify, current_app
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 import re
@@ -42,51 +42,6 @@ class UploadForm(FlaskForm):
                 logger.error(f"Error loading bank accounts: {str(e)}")
                 self.account.choices = []
 
-def validate_upload_data(df):
-    """Validate the uploaded data structure and content"""
-    required_columns = ['Date', 'Description', 'Amount']
-    errors = []
-
-    # Check if DataFrame is empty
-    if df.empty:
-        return ['The uploaded file is empty']
-
-    # Verify required columns exist
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    if missing_columns:
-        return [f"Missing required columns: {', '.join(missing_columns)}"]
-
-    # Basic data validation
-    for idx, row in df.iterrows():
-        row_num = idx + 2  # Add 2 for header row and 0-based index
-        try:
-            # Date validation
-            if pd.isna(row['Date']):
-                errors.append(f"Row {row_num}: Missing date")
-            else:
-                try:
-                    pd.to_datetime(row['Date'])
-                except Exception:
-                    errors.append(f"Row {row_num}: Invalid date format")
-
-            # Amount validation
-            if pd.isna(row['Amount']):
-                errors.append(f"Row {row_num}: Missing amount")
-            else:
-                try:
-                    Decimal(str(row['Amount']))
-                except InvalidOperation:
-                    errors.append(f"Row {row_num}: Invalid amount format")
-
-            # Description validation
-            if pd.isna(row['Description']) or str(row['Description']).strip() == '':
-                errors.append(f"Row {row_num}: Missing description")
-
-        except Exception as e:
-            errors.append(f"Row {row_num}: Error validating data - {str(e)}")
-
-    return errors
-
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
@@ -98,10 +53,15 @@ def upload():
 
         if request.method == 'POST':
             logger.info("Received POST request")
-
-            # Log form data for debugging
             logger.debug(f"Form data: account={form.account.data}, file={form.file.data.filename if form.file.data else None}")
             logger.debug(f"CSRF Token present: {form.csrf_token.current_token is not None}")
+            logger.debug(f"Request form data: {request.form}")
+            logger.debug(f"Request files: {request.files}")
+
+            if not form.csrf_token.current_token:
+                logger.error("CSRF token missing")
+                flash('Form validation failed. Please try again.', 'error')
+                return redirect(url_for('historical_data.upload'))
 
             # Validate form submission
             if not form.validate_on_submit():
@@ -153,14 +113,6 @@ def upload():
                         file.seek(0)
                         df = pd.read_csv(file, encoding='latin1')
                         logger.info("Successfully read CSV file with Latin-1 encoding")
-
-                # Validate uploaded data
-                validation_errors = validate_upload_data(df)
-                if validation_errors:
-                    for error in validation_errors[:5]:  # Show first 5 errors
-                        flash(error, 'error')
-                    logger.error(f"Validation errors in upload: {validation_errors}")
-                    return redirect(url_for('historical_data.upload'))
 
                 # Process each row
                 success_count = 0
