@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Historical Data Upload{% endblock %}
+{% block title %}Bank Statement Upload{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Upload Historical Financial Data</h2>
+    <h2>Upload Bank Statement</h2>
 
     <!-- Format Requirements Card -->
     <div class="card mb-4">
@@ -14,17 +14,15 @@
                 <li>File Format: Excel (.xlsx) or CSV</li>
                 <li>Required Columns:
                     <ul>
-                        <li>Date (supports multiple formats: DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD)</li>
+                        <li>Date (transaction date)</li>
                         <li>Description (transaction details)</li>
-                        <li>Amount (numeric value, positive for income/negative for expense)</li>
-                        <li>Account (must match existing account codes)</li>
+                        <li>Amount (debit/credit amount)</li>
                     </ul>
                 </li>
-                <li>Optional Columns:
+                <li>Bank Account Selection:
                     <ul>
-                        <li>Category</li>
-                        <li>Reference</li>
-                        <li>Notes</li>
+                        <li>Must select an existing bank account</li>
+                        <li>Account must start with "ca.810"</li>
                     </ul>
                 </li>
             </ul>
@@ -34,14 +32,27 @@
     <!-- Upload Form -->
     <div class="card mb-4">
         <div class="card-body">
-            <form method="POST" enctype="multipart/form-data" id="historicalUploadForm">
+            <form method="POST" enctype="multipart/form-data" id="bankStatementUploadForm">
                 {{ form.csrf_token }}
 
                 <div class="mb-3">
-                    <label for="file" class="form-label">Historical Data File</label>
-                    <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
+                    {{ form.bank_account.label(class="form-label") }}
+                    {{ form.bank_account(class="form-select") }}
+                    {% if form.bank_account.description %}
+                        <div class="form-text">{{ form.bank_account.description }}</div>
+                    {% endif %}
+                    {% if not form.bank_account.choices %}
+                        <div class="alert alert-warning mt-2">
+                            <small>No bank accounts found. Please add a bank account (starting with ca.810) in settings first.</small>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="mb-3">
+                    {{ form.statement_file.label(class="form-label") }}
+                    {{ form.statement_file(class="form-control", accept=".csv,.xlsx") }}
                     <div class="form-text">
-                        Upload historical financial data in CSV or Excel format.
+                        Upload bank statement in CSV or Excel format. Must contain Date, Description, and Amount columns.
                     </div>
                 </div>
 
@@ -59,52 +70,56 @@
                     <p class="mb-1"><strong>Status:</strong> <span id="statusText">Processing...</span></p>
                     <p class="mb-1"><small>Processed: <span id="processedRows">0</span> / <span id="totalRows">0</span> rows</small></p>
                     <p class="mb-0"><small>Time remaining: <span id="timeRemaining">Calculating...</span></small></p>
-                    <div id="validationErrors" class="mt-2 d-none">
-                        <h6 class="text-danger">Validation Errors:</h6>
-                        <ul id="errorList" class="mb-0"></ul>
-                    </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary" id="submitButton">Upload Historical Data</button>
+                <!-- Error Display -->
+                <div id="errorContainer" class="alert alert-danger d-none mb-3">
+                    <h6 class="alert-heading">Upload Errors:</h6>
+                    <ul id="errorList" class="mb-0">
+                    </ul>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="submitButton">Upload Bank Statement</button>
             </form>
         </div>
     </div>
 
-    <!-- Recent Historical Uploads -->
+    <!-- Recent Uploads -->
     <div class="card">
         <div class="card-body">
-            <h5 class="card-title">Recent Historical Data Entries</h5>
+            <h5 class="card-title">Recent Bank Statement Uploads</h5>
             <div class="table-responsive">
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>Date</th>
-                            <th>Description</th>
-                            <th>Amount</th>
-                            <th>Account</th>
+                            <th>Upload Date</th>
+                            <th>Bank Account</th>
+                            <th>Statement Period</th>
                             <th>Status</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% if entries %}
-                            {% for entry in entries %}
+                        {% if recent_uploads %}
+                            {% for upload in recent_uploads %}
                             <tr>
-                                <td>{{ entry.date.strftime('%Y-%m-%d') }}</td>
-                                <td>{{ entry.description }}</td>
-                                <td class="text-{{ 'success' if entry.amount > 0 else 'danger' }}">
-                                    {{ "%.2f"|format(entry.amount) }}
-                                </td>
-                                <td>{{ entry.account.name if entry.account else 'N/A' }}</td>
+                                <td>{{ upload.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>{{ upload.bank_account.name }}</td>
+                                <td>{{ upload.statement_period }}</td>
                                 <td>
-                                    <span class="badge bg-{{ entry.validation_status_color }}">
-                                        {{ entry.validation_status }}
+                                    <span class="badge bg-{{ upload.status_color }}">
+                                        {{ upload.status }}
                                     </span>
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('bank_statements.view_statement', upload_id=upload.id) }}" 
+                                       class="btn btn-sm btn-primary">View</a>
                                 </td>
                             </tr>
                             {% endfor %}
                         {% else %}
                             <tr>
-                                <td colspan="5" class="text-center">No historical data uploaded yet.</td>
+                                <td colspan="5" class="text-center">No bank statements uploaded yet.</td>
                             </tr>
                         {% endif %}
                     </tbody>
@@ -118,7 +133,7 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('historicalUploadForm');
+    const form = document.getElementById('bankStatementUploadForm');
     const progressBar = document.querySelector('.progress-bar');
     const progressDiv = document.getElementById('uploadProgress');
     const statusDiv = document.getElementById('uploadStatus');
@@ -126,7 +141,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const processedRows = document.getElementById('processedRows');
     const totalRows = document.getElementById('totalRows');
     const timeRemaining = document.getElementById('timeRemaining');
-    const validationErrors = document.getElementById('validationErrors');
+    const errorContainer = document.getElementById('errorContainer');
     const errorList = document.getElementById('errorList');
     const submitButton = document.getElementById('submitButton');
     const csrfToken = document.querySelector('input[name="csrf_token"]').value;
@@ -135,7 +150,7 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
 
         // Reset display elements
-        validationErrors.classList.add('d-none');
+        errorContainer.classList.add('d-none');
         errorList.innerHTML = '';
         progressBar.style.width = '0%';
         progressBar.textContent = '0%';
@@ -149,7 +164,7 @@ document.addEventListener('DOMContentLoaded', function() {
         submitButton.disabled = true;
 
         try {
-            const response = await fetch('{{ url_for("historical_data.upload") }}', {
+            const response = await fetch('{{ url_for("bank_statements.upload") }}', {
                 method: 'POST',
                 body: formData,
                 headers: {
@@ -170,16 +185,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 progressBar.style.width = '100%';
                 progressBar.textContent = '100%';
 
-                if (result.validation_errors && result.validation_errors.length > 0) {
-                    validationErrors.classList.remove('d-none');
-                    result.validation_errors.forEach(error => {
-                        const li = document.createElement('li');
-                        li.textContent = `Row ${error.row}: ${error.message}`;
-                        errorList.appendChild(li);
-                    });
-                } else {
-                    setTimeout(() => window.location.reload(), 2000);
-                }
+                setTimeout(() => window.location.reload(), 2000);
             } else {
                 throw new Error(result.error || 'Upload failed');
             }
@@ -187,7 +193,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error('Upload error:', error);
             statusText.textContent = error.message;
-            validationErrors.classList.remove('d-none');
+            errorContainer.classList.remove('d-none');
             errorList.innerHTML = `<li>${error.message}</li>`;
             progressBar.classList.add('bg-danger');
         } finally {
