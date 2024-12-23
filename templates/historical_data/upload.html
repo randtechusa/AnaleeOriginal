@@ -18,14 +18,31 @@
                     {% if form.account.description %}
                         <div class="form-text">{{ form.account.description }}</div>
                     {% endif %}
+                    {% if not form.account.choices %}
+                        <div class="alert alert-warning mt-2">
+                            <small>No bank accounts found. Please add a bank account (starting with ca.810) in settings first.</small>
+                        </div>
+                    {% endif %}
                 </div>
 
                 <div class="mb-3">
                     {{ form.file.label(class="form-label") }}
                     {{ form.file(class="form-control", accept=".csv,.xlsx") }}
                     <div class="form-text">
-                        File must contain the following columns: Date, Description, Amount
+                        Required columns: Date, Description, Amount<br>
+                        Optional columns: Explanation
                     </div>
+                </div>
+
+                <!-- File Format Requirements -->
+                <div class="alert alert-info mb-3">
+                    <h6 class="alert-heading">File Format Requirements:</h6>
+                    <ul class="mb-0">
+                        <li>Date column: Valid dates (e.g., YYYY-MM-DD, DD/MM/YYYY)</li>
+                        <li>Description column: Text description of the transaction</li>
+                        <li>Amount column: Numeric values (positive for credits, negative for debits)</li>
+                        <li>Explanation column (optional): Additional notes or categorization</li>
+                    </ul>
                 </div>
 
                 {{ form.submit(class="btn btn-primary") }}
@@ -75,7 +92,7 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('uploadForm');
+    const form = document.querySelector('form');
     const fileInput = document.querySelector('input[type="file"]');
     const accountSelect = document.querySelector('select[name="account"]');
 

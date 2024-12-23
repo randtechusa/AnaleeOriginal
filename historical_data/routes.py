@@ -1,4 +1,6 @@
-"""Routes for handling historical data uploads and processing"""
+"""
+Routes for handling historical data uploads and processing
+"""
 import logging
 import pandas as pd
 from datetime import datetime
@@ -13,6 +15,7 @@ from wtforms.validators import DataRequired
 
 from models import db, Account, HistoricalData
 from . import historical_data
+from .upload_diagnostics import UploadDiagnostics
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -43,7 +46,7 @@ class UploadForm(FlaskForm):
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
-    """Handle historical data upload and processing."""
+    """Handle historical data upload and processing"""
     try:
         form = UploadForm()
         logger.info("Processing upload request")
@@ -81,7 +84,10 @@ def upload():
                     flash('Invalid file format. Please upload a CSV or Excel file.', 'error')
                     return redirect(url_for('historical_data.upload'))
 
-                # Read file contents
+                # Initialize diagnostics
+                diagnostics = UploadDiagnostics()
+
+                # Read and validate file
                 try:
                     if filename.endswith('.xlsx'):
                         df = pd.read_excel(file, engine='openpyxl')
@@ -95,40 +101,48 @@ def upload():
                             df = pd.read_csv(file, encoding='latin1')
                             logger.info("Successfully read CSV file with Latin-1 encoding")
 
+                    # Validate file structure
+                    if not diagnostics.validate_file_structure(df):
+                        logger.error("File structure validation failed")
+                        for message in diagnostics.get_user_friendly_messages():
+                            flash(message['message'], message['type'])
+                        return redirect(url_for('historical_data.upload'))
+
                     # Process rows
                     success_count = 0
                     error_count = 0
 
-                    for _, row in df.iterrows():
-                        try:
-                            date = pd.to_datetime(row['Date']).date()
-                            amount = Decimal(str(row['Amount']))
-                            description = str(row['Description']).strip()[:200]
-                            explanation = str(row.get('Explanation', '')).strip()[:200]
+                    for idx, row in df.iterrows():
+                        row_num = idx + 2  # Add 2 for header row and 0-based index
+                        is_valid, cleaned_data = diagnostics.validate_row(row, row_num)
 
-                            entry = HistoricalData(
-                                date=date,
-                                description=description,
-                                amount=amount,
-                                explanation=explanation,
-                                account_id=account_id,
-                                user_id=current_user.id
-                            )
-                            db.session.add(entry)
-                            success_count += 1
-                        except Exception as e:
-                            logger.error(f"Error processing row: {str(e)}")
-                            error_count += 1
-                            continue
+                        if is_valid:
+                            try:
+                                entry = HistoricalData(
+                                    date=cleaned_data['date'],
+                                    description=cleaned_data['description'],
+                                    amount=cleaned_data['amount'],
+                                    explanation=str(row.get('Explanation', '')).strip()[:200],
+                                    account_id=account_id,
+                                    user_id=current_user.id
+                                )
+                                db.session.add(entry)
+                                success_count += 1
+                            except Exception as e:
+                                logger.error(f"Error saving row {row_num}: {str(e)}")
+                                error_count += 1
+
+                    # Get final diagnostic summary
+                    summary = diagnostics.get_diagnostic_summary()
 
                     if success_count > 0:
                         db.session.commit()
                         flash(f'Successfully processed {success_count} entries.', 'success')
                         logger.info(f"Successfully processed {success_count} entries")
 
-                    if error_count > 0:
-                        flash(f'{error_count} entries had errors.', 'warning')
-                        logger.warning(f"{error_count} entries had errors")
+                    # Display validation messages
+                    for message in diagnostics.get_user_friendly_messages():
+                        flash(message['message'], message['type'])
 
                     return redirect(url_for('historical_data.upload'))
 
@@ -144,7 +158,15 @@ def upload():
                 return redirect(url_for('historical_data.upload'))
 
         # GET request - show upload form
-        return render_template('historical_data/upload.html', form=form)
+        historical_entries = (HistoricalData.query
+                            .filter_by(user_id=current_user.id)
+                            .order_by(HistoricalData.date.desc())
+                            .limit(10)
+                            .all())
+
+        return render_template('historical_data/upload.html',
+                             form=form,
+                             entries=historical_entries)
 
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}")
