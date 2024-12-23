@@ -1,11 +1,12 @@
 """Main application routes including authentication and core functionality"""
 import logging
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import text
 
-from models import db, User, CompanySettings
+from models import db, User, CompanySettings, Account, Transaction, UploadedFile
+from utils.chart_of_accounts_dev import ChartOfAccountsLoader
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -891,6 +892,7 @@ def expense_forecast():
         monthly_amounts = [monthly_data[m]['amount'] for m in sorted_months]
 
         # Calculate confidence intervals
+        import statistics
         mean_amount = sum(monthly_amounts) / len(monthly_amounts) if monthly_amounts else 0
         std_dev = statistics.stdev(monthly_amounts) if len(monthly_amounts) > 1 else 0
         confidence_upper = [amount + std_dev for amount in monthly_amounts]
@@ -1158,6 +1160,7 @@ def suggest_explanation(description, similar_transactions):
 
 def process_uploaded_file(file, status):
     """Process the uploaded file and return dataframe and total rows."""
+    import pandas as pd
     try:
         if file.filename.endswith('.xlsx'):
             df = pd.read_excel(file)
