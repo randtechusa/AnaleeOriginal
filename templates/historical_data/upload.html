@@ -9,15 +9,14 @@
     <!-- Upload Form -->
     <div class="card mb-4">
         <div class="card-body">
-            <form id="uploadForm" method="POST" enctype="multipart/form-data" action="{{ url_for('historical_data.upload') }}">
-                <!-- Hidden CSRF token field -->
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <form method="POST" enctype="multipart/form-data">
+                {{ form.csrf_token }}
 
                 <div class="mb-3">
                     {{ form.account.label(class="form-label") }}
                     {{ form.account(class="form-select") }}
                     {% if form.account.description %}
-                    <div class="form-text">{{ form.account.description }}</div>
+                        <div class="form-text">{{ form.account.description }}</div>
                     {% endif %}
                 </div>
 
@@ -25,7 +24,7 @@
                     {{ form.file.label(class="form-label") }}
                     {{ form.file(class="form-control", accept=".csv,.xlsx") }}
                     <div class="form-text">
-                        File must contain the following columns: Date, Description, Amount, Explanation
+                        File must contain the following columns: Date, Description, Amount
                     </div>
                 </div>
 
@@ -38,7 +37,6 @@
     <div class="card">
         <div class="card-body">
             <h5 class="card-title">Recent Historical Data</h5>
-            {% if entries %}
             <div class="table-responsive">
                 <table class="table">
                     <thead>
@@ -46,28 +44,29 @@
                             <th>Date</th>
                             <th>Description</th>
                             <th>Amount</th>
-                            <th>Explanation</th>
                             <th>Account</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for entry in entries %}
-                        <tr>
-                            <td>{{ entry.date.strftime('%Y-%m-%d') }}</td>
-                            <td>{{ entry.description }}</td>
-                            <td class="text-{{ 'success' if entry.amount > 0 else 'danger' }}">
-                                {{ "%.2f"|format(entry.amount) }}
-                            </td>
-                            <td>{{ entry.explanation }}</td>
-                            <td>{{ entry.account.name if entry.account else 'N/A' }}</td>
-                        </tr>
-                        {% endfor %}
+                        {% if entries %}
+                            {% for entry in entries %}
+                            <tr>
+                                <td>{{ entry.date.strftime('%Y-%m-%d') }}</td>
+                                <td>{{ entry.description }}</td>
+                                <td class="text-{{ 'success' if entry.amount > 0 else 'danger' }}">
+                                    {{ "%.2f"|format(entry.amount) }}
+                                </td>
+                                <td>{{ entry.account.name if entry.account else 'N/A' }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center">No historical data uploaded yet.</td>
+                            </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>
-            {% else %}
-            <p class="text-muted">No historical data uploaded yet.</p>
-            {% endif %}
         </div>
     </div>
 </div>
