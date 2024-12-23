@@ -10,6 +10,14 @@ class Config:
     TEMPLATES_AUTO_RELOAD = True
     PROTECT_PRODUCTION = True  # Global flag to prevent production modifications
 
+    # Email configuration for password reset
+    MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+    MAIL_PORT = int(os.environ.get('MAIL_PORT', 587))
+    MAIL_USE_TLS = os.environ.get('MAIL_USE_TLS', True)
+    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
+    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+    MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER', MAIL_USERNAME)
+
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
@@ -19,13 +27,13 @@ class ProductionConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
-    
+
     # Enhanced production security settings
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 1800  # 30 minutes
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    
+
     # Production-specific database settings
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 5,
@@ -38,7 +46,7 @@ class ProductionConfig(Config):
             'application_name': 'financial_app_prod'
         }
     }
-    
+
     @classmethod
     def init_app(cls, app):
         """Production-specific initialization"""
@@ -48,13 +56,7 @@ class ProductionConfig(Config):
         if cls.PROTECT_PRODUCTION:
             app.config['PREVENT_MODIFICATIONS'] = True
             app.config['CHARTS_OF_ACCOUNTS_PROTECTED'] = True
-    
-    @classmethod
-    def init_app(cls, app):
-        """Production-specific initialization"""
-        # Prevent modifications in production
-        if cls.PROTECT_PRODUCTION:
-            app.config['PREVENT_MODIFICATIONS'] = True
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""
@@ -65,10 +67,10 @@ class DevelopmentConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL', os.environ.get('DATABASE_URL'))
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
-    
+
     # Protect production data in development
     PROTECT_PRODUCTION_DATA = True
-    
+
     # Development-specific settings
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 2,

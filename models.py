@@ -1,5 +1,7 @@
 import logging
 import os
+import base64
+import pyotp
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -23,6 +25,7 @@ login_manager = LoginManager()
 logger = logging.getLogger(__name__)
 
 class User(UserMixin, db.Model):
+    """User model with enhanced security features including MFA and password reset"""
     __tablename__ = 'user'
 
     id = Column(Integer, primary_key=True)
@@ -31,14 +34,58 @@ class User(UserMixin, db.Model):
     password_hash = Column(String(256))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    is_admin = Column(Boolean, default=False)  # New field for admin status
-    subscription_status = Column(String(20), default='pending')  # New field for subscription tracking
+    is_admin = Column(Boolean, default=False)
+    subscription_status = Column(String(20), default='pending')
 
-    # Relationships with cascade deletes for proper cleanup
+    mfa_secret = Column(String(32))  # For TOTP-based 2FA
+    mfa_enabled = Column(Boolean, default=False)
+    reset_token = Column(String(100), unique=True)
+    reset_token_expires = Column(DateTime)
+
     transactions = relationship('Transaction', backref='user', lazy=True, cascade='all, delete-orphan')
     accounts = relationship('Account', backref='user', lazy=True, cascade='all, delete-orphan')
     company_settings = relationship('CompanySettings', backref='user', uselist=False, lazy=True, cascade='all, delete-orphan')
     financial_goals = relationship('FinancialGoal', backref='user', lazy=True, cascade='all, delete-orphan')
+
+    def generate_mfa_secret(self):
+        """Generate a new MFA secret key"""
+        if not self.mfa_secret:
+            self.mfa_secret = base64.b32encode(os.urandom(10)).decode('utf-8')
+        return self.mfa_secret
+
+    def get_totp_uri(self):
+        """Get the TOTP URI for QR code generation"""
+        if self.mfa_secret:
+            return pyotp.totp.TOTP(self.mfa_secret).provisioning_uri(
+                name=self.email,
+                issuer_name="Financial Management System"
+            )
+        return None
+
+    def verify_totp(self, token):
+        """Verify a TOTP token"""
+        if self.mfa_secret and token:
+            totp = pyotp.TOTP(self.mfa_secret)
+            return totp.verify(token)
+        return False
+
+    def generate_reset_token(self):
+        """Generate a password reset token"""
+        self.reset_token = base64.b32encode(os.urandom(20)).decode('utf-8')
+        self.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+        return self.reset_token
+
+    def verify_reset_token(self, token):
+        """Verify if a reset token is valid"""
+        if (self.reset_token and self.reset_token == token and 
+            self.reset_token_expires > datetime.utcnow()):
+            return True
+        return False
+
+    def clear_reset_token(self):
+        """Clear the reset token after use"""
+        self.reset_token = None
+        self.reset_token_expires = None
 
     def set_password(self, password):
         """Set hashed password."""
@@ -108,17 +155,14 @@ class User(UserMixin, db.Model):
             logger.error("Cannot create default accounts: Invalid user_id")
             raise ValueError("Invalid user_id")
 
-        # Check if user already has accounts
         existing_accounts = Account.query.filter_by(user_id=user_id).first()
         if existing_accounts:
             logger.info(f"User {user_id} already has accounts set up")
             return
 
         try:
-            # Get system-wide chart of accounts
             admin_accounts = AdminChartOfAccounts.query.all()
 
-            # Copy each admin account to user account while maintaining separation
             for admin_account in admin_accounts:
                 try:
                     account = Account(
@@ -158,7 +202,6 @@ class User(UserMixin, db.Model):
         logger.info(f"Subscription deactivated for user {self.username}")
 
 
-
 class UploadedFile(db.Model):
     __tablename__ = 'uploaded_file'
 
@@ -167,7 +210,6 @@ class UploadedFile(db.Model):
     upload_date = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
 
-    # Relationships
     transactions = relationship('Transaction', backref='file', lazy=True)
 
 class Transaction(db.Model):
@@ -188,7 +230,6 @@ class Transaction(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
     account = relationship('Account', backref='transactions')
     uploaded_file = relationship('UploadedFile', back_populates='transactions')
 
@@ -234,11 +275,8 @@ class CompanySettings(db.Model):
             date = datetime.utcnow()
 
         if year is not None:
-            # If year is provided, use it as the start year
             start_year = year
         else:
-            # If date's month is after financial year end, start year is the same as date year
-            # Otherwise, start year is the previous year
             if date.month > self.financial_year_end:
                 start_year = date.year
             else:
@@ -246,14 +284,11 @@ class CompanySettings(db.Model):
 
         end_year = start_year + 1
 
-        # Start date is always the first day of the month after financial_year_end
         start_month = self.financial_year_end + 1 if self.financial_year_end < 12 else 1
         start_year_adj = start_year if self.financial_year_end < 12 else start_year + 1
         start_date = datetime(start_year_adj, start_month, 1)
 
-        # End date is the last day of financial_year_end month in the next year
         if self.financial_year_end == 2:
-            # Handle February and leap years
             last_day = 29 if end_year % 4 == 0 and (end_year % 100 != 0 or end_year % 400 == 0) else 28
         elif self.financial_year_end in [4, 6, 9, 11]:
             last_day = 30
@@ -300,7 +335,6 @@ class HistoricalData(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
     account = relationship('Account', backref='historical_data')
     user = relationship('User', backref='historical_data')
 
@@ -322,7 +356,6 @@ class RiskAssessment(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
     user = relationship('User', backref='risk_assessments')
 
     def __repr__(self):
@@ -340,7 +373,6 @@ class RiskIndicator(db.Model):
     is_breach = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relationships
     assessment = relationship('RiskAssessment', backref='indicators')
 
     def __repr__(self):
@@ -370,7 +402,6 @@ class AlertConfiguration(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
     user = relationship('User', backref='alert_configurations')
 
     def __repr__(self):
@@ -389,7 +420,6 @@ class AlertHistory(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
     alert_config = relationship('AlertConfiguration', backref='alert_history')
     user = relationship('User', backref='alert_history')
 
@@ -411,7 +441,6 @@ class FinancialRecommendation(db.Model):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     applied_at = Column(DateTime)
 
-    # Relationships
     user = relationship('User', backref='recommendations')
 
     def __repr__(self):
@@ -429,7 +458,6 @@ class RecommendationMetrics(db.Model):
     target_value = Column(Float)
     measured_at = Column(DateTime, default=datetime.utcnow)
 
-    # Relationships
     recommendation = relationship('FinancialRecommendation', backref='metrics')
 
     def __repr__(self):

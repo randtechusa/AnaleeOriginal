@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card mt-5">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">Set Up Two-Factor Authentication</h4>
+                </div>
+                <div class="card-body">
+                    <p>Scan this QR code with your authenticator app:</p>
+                    <div class="text-center mb-4">
+                        <img src="{{ qr_code }}" alt="QR Code" class="img-fluid">
+                    </div>
+                    <p>Can't scan the QR code? Use this code instead:</p>
+                    <div class="alert alert-info">
+                        {{ secret_key }}
+                    </div>
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        <div class="mb-3">
+                            {{ form.token.label(class="form-label") }}
+                            {{ form.token(class="form-control") }}
+                            {% for error in form.token.errors %}
+                                <span class="text-danger">{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {{ form.submit(class="btn btn-primary") }}
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
