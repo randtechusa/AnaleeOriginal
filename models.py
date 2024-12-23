@@ -210,7 +210,8 @@ class UploadedFile(db.Model):
     upload_date = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey('user.id'), nullable=False)
 
-    transactions = relationship('Transaction', backref='file', lazy=True)
+    # Modified relationship to avoid circular reference
+    transactions = relationship('Transaction', back_populates='file', lazy=True)
 
 class Transaction(db.Model):
     __tablename__ = 'transaction'
@@ -231,7 +232,7 @@ class Transaction(db.Model):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     account = relationship('Account', backref='transactions')
-    file = relationship('UploadedFile', backref='transactions', lazy=True)
+    file = relationship('UploadedFile', back_populates='transactions', lazy=True)
 
     def __repr__(self):
         return f'<Transaction {self.date}: {self.description}>'
