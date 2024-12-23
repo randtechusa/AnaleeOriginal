@@ -57,9 +57,13 @@ def upload():
 
             if not form.validate_on_submit():
                 logger.error("Form validation failed")
+                if request.is_xhr:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Form validation failed. Please ensure all fields are filled correctly.'
+                    })
                 for field, errors in form.errors.items():
                     for error in errors:
-                        logger.error(f"Form error - {field}: {error}")
                         flash(f"{field}: {error}", 'error')
                 return redirect(url_for('historical_data.upload'))
 
@@ -69,6 +73,11 @@ def upload():
                 account = Account.query.get(account_id)
                 if not account or account.user_id != current_user.id:
                     logger.error(f"Invalid account selected: {account_id}")
+                    if request.is_xhr:
+                        return jsonify({
+                            'success': False,
+                            'error': 'Invalid bank account selected'
+                        })
                     flash('Invalid bank account selected', 'error')
                     return redirect(url_for('historical_data.upload'))
 
@@ -76,12 +85,22 @@ def upload():
                 file = form.file.data
                 if not file or not file.filename:
                     logger.error("No file selected")
+                    if request.is_xhr:
+                        return jsonify({
+                            'success': False,
+                            'error': 'Please select a file to upload'
+                        })
                     flash('No file selected', 'error')
                     return redirect(url_for('historical_data.upload'))
 
                 filename = secure_filename(file.filename)
                 if not filename.lower().endswith(('.csv', '.xlsx')):
                     logger.error(f"Invalid file type: {filename}")
+                    if request.is_xhr:
+                        return jsonify({
+                            'success': False,
+                            'error': 'Invalid file format. Please upload a CSV or Excel file.'
+                        })
                     flash('Invalid file format. Please upload a CSV or Excel file.', 'error')
                     return redirect(url_for('historical_data.upload'))
 
@@ -105,7 +124,13 @@ def upload():
                     # Validate file structure
                     if not diagnostics.validate_file_structure(df):
                         logger.error("File structure validation failed")
-                        for message in diagnostics.get_user_friendly_messages():
+                        messages = diagnostics.get_user_friendly_messages()
+                        if request.is_xhr:
+                            return jsonify({
+                                'success': False,
+                                'error': messages[0]['message'] if messages else 'File validation failed'
+                            })
+                        for message in messages:
                             flash(message['message'], message['type'])
                         return redirect(url_for('historical_data.upload'))
 
@@ -142,14 +167,25 @@ def upload():
                     # Final commit for remaining entries
                     if success_count > 0:
                         db.session.commit()
-                        flash(f'Successfully processed {success_count} entries.', 'success')
                         logger.info(f"Successfully processed {success_count} entries")
+                        if request.is_xhr:
+                            return jsonify({
+                                'success': True,
+                                'message': f'Successfully processed {success_count} entries.'
+                            })
+                        flash(f'Successfully processed {success_count} entries.', 'success')
 
                     if error_count > 0:
                         flash(f'{error_count} entries had errors. Check the error log for details.', 'warning')
 
                     # Display validation messages
-                    for message in diagnostics.get_user_friendly_messages():
+                    messages = diagnostics.get_user_friendly_messages()
+                    if request.is_xhr:
+                        return jsonify({
+                            'success': True,
+                            'messages': messages
+                        })
+                    for message in messages:
                         flash(message['message'], message['type'])
 
                     return redirect(url_for('historical_data.upload'))
@@ -157,11 +193,21 @@ def upload():
                 except Exception as e:
                     logger.error(f"Error processing file: {str(e)}")
                     db.session.rollback()
+                    if request.is_xhr:
+                        return jsonify({
+                            'success': False,
+                            'error': f'Error processing file: {str(e)}'
+                        })
                     flash('Error processing file: ' + str(e), 'error')
                     return redirect(url_for('historical_data.upload'))
 
             except Exception as e:
                 logger.error(f"Error in upload process: {str(e)}")
+                if request.is_xhr:
+                    return jsonify({
+                        'success': False,
+                        'error': f'Error in upload process: {str(e)}'
+                    })
                 flash('Error in upload process: ' + str(e), 'error')
                 return redirect(url_for('historical_data.upload'))
 
@@ -178,5 +224,10 @@ def upload():
 
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}")
+        if request.is_xhr:
+            return jsonify({
+                'success': False,
+                'error': 'An unexpected error occurred'
+            })
         flash('An error occurred', 'error')
         return redirect(url_for('historical_data.upload'))
