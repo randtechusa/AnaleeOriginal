@@ -2,7 +2,7 @@
 Admin routes for subscription management and system administration
 Completely isolated from core application features
 """
-from flask import render_template, redirect, url_for, flash, request, current_app, abort, send_file
+from flask import render_template, redirect, url_for, flash, request, current_app, abort, send_file, session
 from flask_login import current_user, login_required
 from sqlalchemy import func
 from datetime import datetime, timedelta
@@ -47,7 +47,7 @@ def upload_chart_of_accounts():
                         found = True
                         break
                 if not found and expected_col in ['Account Code', 'Account Name', 'Category']:
-                    flash(f'Required column {expected_col} not found in Excel file', 'error')
+                    flash(f'Required column {expected_col} not found in Excel file', 'danger')
                     return redirect(url_for('admin.charts_of_accounts'))
 
             success_count = 0
@@ -67,6 +67,31 @@ def upload_chart_of_accounts():
                         skipped_count += 1
                         continue
 
+                    # Validate required fields
+                    if not account_code.strip():
+                        error_details.append({
+                            'row': idx + 2,
+                            'message': 'Account Code cannot be empty'
+                        })
+                        error_count += 1
+                        continue
+
+                    if not str(row[df_columns['Account Name']]).strip():
+                        error_details.append({
+                            'row': idx + 2,
+                            'message': 'Account Name cannot be empty'
+                        })
+                        error_count += 1
+                        continue
+
+                    if not str(row[df_columns['Category']]).strip():
+                        error_details.append({
+                            'row': idx + 2,
+                            'message': 'Category cannot be empty'
+                        })
+                        error_count += 1
+                        continue
+
                     # Create new account with mapped columns
                     account = AdminChartOfAccounts(
                         account_code=account_code,
@@ -81,28 +106,52 @@ def upload_chart_of_accounts():
 
                 except Exception as e:
                     error_count += 1
-                    error_msg = f"Row {idx + 2}: {str(e)}"
-                    error_details.append(error_msg)
-                    current_app.logger.error(error_msg)
+                    error_details.append({
+                        'row': idx + 2,
+                        'message': str(e)
+                    })
+                    current_app.logger.error(f"Row {idx + 2}: {str(e)}")
                     continue
 
             if error_details:
-                current_app.logger.error("Upload errors:\n" + "\n".join(error_details))
-                flash('Upload completed with errors. Check logs for details.', 'warning')
+                current_app.logger.error("Upload errors:\n" + "\n".join([f"Row {e['row']}: {e['message']}" for e in error_details]))
+                # Store error details in session for template rendering
+                session['upload_errors'] = error_details
+                flash('Upload completed with errors. See detailed error report below.', 'warning')
+            else:
+                session.pop('upload_errors', None)
 
             db.session.commit()
             flash(f'Uploaded {success_count} accounts successfully. {error_count} accounts failed. {skipped_count} accounts skipped (already exist).', 'info')
 
         except Exception as e:
             db.session.rollback()
-            flash(f'Error uploading Chart of Accounts: {str(e)}', 'error')
+            flash(f'Error uploading Chart of Accounts: {str(e)}', 'danger')
             current_app.logger.error(f"Error uploading COA: {str(e)}")
     else:
         for field, errors in form.errors.items():
             for error in errors:
-                flash(f'{getattr(form, field).label.text}: {error}', 'error')
+                flash(f'{getattr(form, field).label.text}: {error}', 'danger')
 
     return redirect(url_for('admin.charts_of_accounts'))
+
+@admin.route('/charts-of-accounts', methods=['GET'])
+@login_required
+@admin_required
+def charts_of_accounts():
+    """Manage system-wide Chart of Accounts"""
+    form = AdminChartOfAccountsForm()
+    upload_form = ChartOfAccountsUploadForm()
+    accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.account_code).all()
+
+    # Get upload errors from session if they exist
+    upload_errors = session.pop('upload_errors', None)
+
+    return render_template('admin/charts_of_accounts.html', 
+                         form=form, 
+                         upload_form=upload_form,
+                         accounts=accounts,
+                         upload_errors=upload_errors)
 
 @admin.route('/dashboard')
 @login_required
@@ -129,19 +178,6 @@ def dashboard():
                          active_users=active_users,
                          pending_users=pending_users,
                          deactivated_users=deactivated_users)
-
-@admin.route('/charts-of-accounts', methods=['GET'])
-@login_required
-@admin_required
-def charts_of_accounts():
-    """Manage system-wide Chart of Accounts"""
-    form = AdminChartOfAccountsForm()
-    upload_form = ChartOfAccountsUploadForm()
-    accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.account_code).all()
-    return render_template('admin/charts_of_accounts.html', 
-                         form=form, 
-                         upload_form=upload_form,
-                         accounts=accounts)
 
 @admin.route('/charts-of-accounts/add', methods=['POST'])
 @login_required
@@ -180,7 +216,6 @@ def add_chart_of_accounts():
                 flash(f'{getattr(form, field).label.text}: {error}', 'error')
 
     return redirect(url_for('admin.charts_of_accounts'))
-
 
 @admin.route('/charts-of-accounts/edit/<int:account_id>', methods=['GET', 'POST'])
 @login_required
@@ -297,4 +332,4 @@ def deactivate_subscriber(user_id):
         current_app.logger.error(f"Error deactivating subscription: {str(e)}")
         flash('Error deactivating subscription', 'error')
 
-    return redirect(url_for('admin.deactivated_subscribers'))
+    return redirect(url_for('admin.active_subscribers'))

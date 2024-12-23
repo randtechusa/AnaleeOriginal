@@ -3,15 +3,47 @@
 <div class="container mt-4">
     <h2>System Charts of Accounts</h2>
 
-    <!-- Excel Upload Form -->
+    <!-- Excel Upload Form with Error Display -->
     <div class="card mb-4">
         <div class="card-body">
             <h5 class="card-title">Upload Charts of Accounts</h5>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Upload Error Summary -->
+            {% if upload_errors %}
+            <div class="alert alert-warning mt-3">
+                <h6 class="alert-heading">Upload Errors Summary</h6>
+                <hr>
+                <div class="upload-errors-container" style="max-height: 200px; overflow-y: auto;">
+                    {% for error in upload_errors %}
+                        <div class="error-item mb-2">
+                            <span class="badge bg-danger">Row {{ error.row }}</span>
+                            <span class="ms-2">{{ error.message }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
             <form method="POST" action="{{ url_for('admin.upload_chart_of_accounts') }}" enctype="multipart/form-data">
                 {{ upload_form.csrf_token }}
                 <div class="form-group">
                     {{ upload_form.excel_file.label }}
                     {{ upload_form.excel_file(class="form-control") }}
+                    {% if upload_form.excel_file.errors %}
+                        {% for error in upload_form.excel_file.errors %}
+                            <span class="text-danger">{{ error }}</span>
+                        {% endfor %}
+                    {% endif %}
                 </div>
                 <button type="submit" class="btn btn-primary mt-3">{{ upload_form.submit.label }}</button>
             </form>
@@ -28,25 +60,50 @@
                     <div class="col-md-6 mb-3">
                         {{ form.account_code.label }}
                         {{ form.account_code(class="form-control") }}
+                        {% if form.account_code.errors %}
+                            {% for error in form.account_code.errors %}
+                                <span class="text-danger">{{ error }}</span>
+                            {% endfor %}
+                        {% endif %}
                     </div>
                     <div class="col-md-6 mb-3">
                         {{ form.name.label }}
                         {{ form.name(class="form-control") }}
+                        {% if form.name.errors %}
+                            {% for error in form.name.errors %}
+                                <span class="text-danger">{{ error }}</span>
+                            {% endfor %}
+                        {% endif %}
                     </div>
                 </div>
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         {{ form.category.label }}
                         {{ form.category(class="form-control") }}
+                        {% if form.category.errors %}
+                            {% for error in form.category.errors %}
+                                <span class="text-danger">{{ error }}</span>
+                            {% endfor %}
+                        {% endif %}
                     </div>
                     <div class="col-md-6 mb-3">
                         {{ form.sub_category.label }}
                         {{ form.sub_category(class="form-control") }}
+                        {% if form.sub_category.errors %}
+                            {% for error in form.sub_category.errors %}
+                                <span class="text-danger">{{ error }}</span>
+                            {% endfor %}
+                        {% endif %}
                     </div>
                 </div>
                 <div class="mb-3">
                     {{ form.description.label }}
                     {{ form.description(class="form-control") }}
+                    {% if form.description.errors %}
+                        {% for error in form.description.errors %}
+                            <span class="text-danger">{{ error }}</span>
+                        {% endfor %}
+                    {% endif %}
                 </div>
                 <button type="submit" class="btn btn-primary">Add Account</button>
             </form>
@@ -65,8 +122,6 @@
                             <th>Name</th>
                             <th>Category</th>
                             <th>Sub Category</th>
-                            <th>Account Type</th>
-                            <th>Balance Sheet Category</th>
                             <th>Description</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -79,8 +134,6 @@
                             <td>{{ account.name }}</td>
                             <td>{{ account.category }}</td>
                             <td>{{ account.sub_category }}</td>
-                            <td>{{ account.account_type }}</td>
-                            <td>{{ account.balance_sheet_category }}</td>
                             <td>{{ account.description }}</td>
                             <td>{{ account.status }}</td>
                             <td>
