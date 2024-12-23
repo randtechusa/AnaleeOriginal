@@ -4,21 +4,30 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Historical Data Upload</h2>
+    <h2>Upload New Bank Statement</h2>
 
     <!-- Upload Form -->
     <div class="card mb-4">
         <div class="card-body">
-            <h5 class="card-title">Upload Historical Data</h5>
             <form id="uploadForm" method="POST" enctype="multipart/form-data" action="{{ url_for('historical_data.upload') }}">
                 {{ form.csrf_token }}
+
+                <div class="mb-3">
+                    {{ form.account.label(class="form-label") }}
+                    {{ form.account(class="form-select") }}
+                    {% if form.account.description %}
+                    <div class="form-text">{{ form.account.description }}</div>
+                    {% endif %}
+                </div>
+
                 <div class="mb-3">
                     {{ form.file.label(class="form-label") }}
                     {{ form.file(class="form-control", accept=".csv,.xlsx") }}
                     <div class="form-text">
-                        File must contain the following columns: Date, Description, Amount, Explanation, Account
+                        File must contain the following columns: Date, Description, Amount, Explanation
                     </div>
                 </div>
+
                 {{ form.submit(class="btn btn-primary") }}
             </form>
         </div>
@@ -68,11 +77,17 @@
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('uploadForm');
     const fileInput = document.querySelector('input[type="file"]');
+    const accountSelect = document.querySelector('select[name="account"]');
 
     form.onsubmit = function(e) {
         if (!fileInput.files.length) {
             e.preventDefault();
             alert('Please select a file to upload');
+            return false;
+        }
+        if (!accountSelect.value) {
+            e.preventDefault();
+            alert('Please select a bank account');
             return false;
         }
         return true;

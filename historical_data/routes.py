@@ -8,7 +8,7 @@ from werkzeug.utils import secure_filename
 import re
 from decimal import Decimal, InvalidOperation
 from flask_wtf import FlaskForm
-from wtforms import FileField, SubmitField
+from wtforms import FileField, SubmitField, SelectField
 from wtforms.validators import DataRequired
 
 from models import db, Account, HistoricalData
@@ -21,8 +21,20 @@ logger = logging.getLogger(__name__)
 # Define upload form with CSRF protection
 class UploadForm(FlaskForm):
     """Form for file upload with CSRF protection"""
-    file = FileField('Select File (CSV or Excel)', validators=[DataRequired()])
+    account = SelectField('Select Bank Account', validators=[DataRequired()], 
+                         description='Select the bank account this statement belongs to (Accounts starting with ca.810)')
+    file = FileField('Bank Statement File', validators=[DataRequired()])
     submit = SubmitField('Upload')
+
+    def __init__(self, *args, **kwargs):
+        super(UploadForm, self).__init__(*args, **kwargs)
+        if current_user.is_authenticated:
+            # Get bank accounts (starting with ca.810)
+            bank_accounts = Account.query.filter(
+                Account.user_id == current_user.id,
+                Account.link.like('ca.810%')
+            ).all()
+            self.account.choices = [(str(acc.id), f"{acc.link} - {acc.name}") for acc in bank_accounts]
 
 def validate_file_type(filename):
     """Validate if the uploaded file is CSV or Excel."""
@@ -64,6 +76,9 @@ def upload():
         form = UploadForm()
 
         if request.method == 'POST':
+            logger.info("Processing upload request")
+
+            # Validate form submission
             if not form.validate_on_submit():
                 logger.error("Form validation failed")
                 for field, errors in form.errors.items():
@@ -71,67 +86,56 @@ def upload():
                         flash(f"{field}: {error}", 'error')
                 return redirect(url_for('historical_data.upload'))
 
-            logger.info("Processing file upload request")
-
-            if not form.file.data:
-                logger.warning("No file found in request")
-                flash('No file uploaded', 'error')
+            # Get selected bank account
+            try:
+                account_id = int(form.account.data)
+                account = Account.query.get(account_id)
+                if not account or account.user_id != current_user.id:
+                    flash('Invalid bank account selected', 'error')
+                    return redirect(url_for('historical_data.upload'))
+            except (ValueError, TypeError):
+                flash('Invalid bank account selection', 'error')
                 return redirect(url_for('historical_data.upload'))
 
+            # Process file upload
             file = form.file.data
-            if not file.filename:
-                logger.warning("Empty filename received")
+            if not file or not file.filename:
                 flash('No file selected', 'error')
                 return redirect(url_for('historical_data.upload'))
 
-            logger.info(f"Processing uploaded file: {file.filename}")
-
             if not validate_file_type(file.filename):
-                logger.warning(f"Invalid file format: {file.filename}")
                 flash('Invalid file format. Please upload a CSV or Excel file.', 'error')
                 return redirect(url_for('historical_data.upload'))
 
             try:
-                # Read the file based on its type
+                # Read file based on type
                 if file.filename.endswith('.xlsx'):
-                    logger.info(f"Reading Excel file: {file.filename}")
                     df = pd.read_excel(file, engine='openpyxl')
                 else:
-                    logger.info(f"Reading CSV file: {file.filename}")
                     try:
                         df = pd.read_csv(file, encoding='utf-8')
                     except UnicodeDecodeError:
-                        file.seek(0)  # Reset file pointer
+                        file.seek(0)
                         df = pd.read_csv(file, encoding='latin1')
-
-                # Get available accounts for mapping
-                accounts = Account.query.filter_by(user_id=current_user.id).all()
-                account_map = {acc.name: acc.id for acc in accounts}
 
                 # Process each row
                 success_count = 0
                 error_count = 0
+
                 for _, row in df.iterrows():
                     try:
-                        # Clean and validate data
+                        # Validate and clean data
                         date = validate_date(row.get('Date'))
                         amount = validate_amount(row.get('Amount'))
                         description = sanitize_text(row.get('Description', ''))
                         explanation = sanitize_text(row.get('Explanation', ''))
-                        account_name = sanitize_text(row.get('Account', ''))
 
-                        if not all([date, amount, description, account_name]):
-                            error_count += 1
-                            continue
-
-                        # Get account ID from mapping
-                        account_id = account_map.get(account_name)
-                        if not account_id:
+                        if not all([date, amount is not None, description]):
                             error_count += 1
                             continue
 
                         # Create historical data entry
-                        historical_entry = HistoricalData(
+                        entry = HistoricalData(
                             date=date,
                             description=description,
                             amount=amount,
@@ -139,7 +143,7 @@ def upload():
                             account_id=account_id,
                             user_id=current_user.id
                         )
-                        db.session.add(historical_entry)
+                        db.session.add(entry)
                         success_count += 1
 
                     except Exception as row_error:
@@ -163,10 +167,11 @@ def upload():
                 return redirect(url_for('historical_data.upload'))
 
         # GET request - show upload form and existing data
-        historical_entries = HistoricalData.query.filter_by(user_id=current_user.id) \
-            .order_by(HistoricalData.date.desc()) \
-            .limit(100) \
-            .all()
+        historical_entries = (HistoricalData.query
+                            .filter_by(user_id=current_user.id)
+                            .order_by(HistoricalData.date.desc())
+                            .limit(100)
+                            .all())
 
         return render_template(
             'historical_data/upload.html',
