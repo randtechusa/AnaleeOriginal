@@ -16,7 +16,7 @@
                     {{ form.file.label(class="form-label") }}
                     {{ form.file(class="form-control", accept=".csv,.xlsx") }}
                     <div class="form-text">
-                        File must contain the following columns: Date, Description, Amount, Explanation
+                        File must contain the following columns: Date, Description, Amount, Explanation, Account
                     </div>
                 </div>
                 {{ form.submit(class="btn btn-primary") }}
@@ -67,11 +67,10 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('uploadForm');
-    const fileInput = document.getElementById('file');
+    const fileInput = document.querySelector('input[type="file"]');
 
     form.onsubmit = function(e) {
-        const file = fileInput.files[0];
-        if (!file) {
+        if (!fileInput.files.length) {
             e.preventDefault();
             alert('Please select a file to upload');
             return false;

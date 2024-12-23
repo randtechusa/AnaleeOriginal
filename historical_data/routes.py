@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Define upload form with CSRF protection
 class UploadForm(FlaskForm):
     """Form for file upload with CSRF protection"""
-    file = FileField('File', validators=[DataRequired()])
+    file = FileField('Select File (CSV or Excel)', validators=[DataRequired()])
     submit = SubmitField('Upload')
 
 def validate_file_type(filename):
@@ -55,67 +55,6 @@ def sanitize_text(text, max_length=200):
     text = re.sub(r'[^\w\s.,;:!?()-]', '', text)
     return text.strip()[:max_length]
 
-def validate_data_frame(df):
-    """Validate the structure and content of the uploaded data."""
-    errors = []
-    warnings = []
-    valid_rows = []  # Initialize valid_rows list
-
-    # Check required columns
-    required_columns = ['Date', 'Description', 'Amount', 'Explanation', 'Account']
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    if missing_columns:
-        errors.append(f"Missing required columns: {', '.join(missing_columns)}")
-        return errors, warnings, valid_rows
-
-    # Validate each row
-    for idx, row in df.iterrows():
-        row_num = idx + 2  # Add 2 because idx starts at 0 and we skip header row
-        row_errors = []
-
-        # Date validation
-        date = validate_date(row['Date'])
-        if not date:
-            row_errors.append(f"Invalid date format")
-
-        # Description validation
-        if not row['Description'] or not isinstance(row['Description'], str):
-            row_errors.append(f"Invalid or empty description")
-        elif len(str(row['Description'])) > 200:
-            warnings.append(f"Row {row_num}: Description will be truncated to 200 characters")
-
-        # Amount validation
-        amount = validate_amount(row['Amount'])
-        if amount is None:
-            row_errors.append(f"Invalid amount value")
-
-        # Explanation validation
-        if not row['Explanation'] or not isinstance(row['Explanation'], str):
-            row_errors.append(f"Invalid or empty explanation")
-        elif len(str(row['Explanation'])) > 200:
-            warnings.append(f"Row {row_num}: Explanation will be truncated to 200 characters")
-
-        # Account validation
-        if not row['Account'] or not isinstance(row['Account'], str):
-            row_errors.append(f"Invalid or empty account")
-
-        if row_errors:
-            errors.append(f"Row {row_num}: {'; '.join(row_errors)}")
-        else:
-            valid_rows.append(idx)
-
-    return errors, warnings, valid_rows
-
-def sanitize_data(row):
-    """Sanitize and standardize data before database insertion."""
-    return {
-        'date': validate_date(row['Date']),
-        'description': sanitize_text(row['Description']),
-        'amount': validate_amount(row['Amount']),
-        'explanation': sanitize_text(row['Explanation']),
-        'account': sanitize_text(row['Account'])
-    }
-
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
@@ -124,15 +63,22 @@ def upload():
         # Initialize form with CSRF protection
         form = UploadForm()
 
-        if request.method == 'POST' and form.validate_on_submit():
+        if request.method == 'POST':
+            if not form.validate_on_submit():
+                logger.error("Form validation failed")
+                for field, errors in form.errors.items():
+                    for error in errors:
+                        flash(f"{field}: {error}", 'error')
+                return redirect(url_for('historical_data.upload'))
+
             logger.info("Processing file upload request")
 
-            if 'file' not in request.files:
+            if not form.file.data:
                 logger.warning("No file found in request")
                 flash('No file uploaded', 'error')
                 return redirect(url_for('historical_data.upload'))
 
-            file = request.files['file']
+            file = form.file.data
             if not file.filename:
                 logger.warning("Empty filename received")
                 flash('No file selected', 'error')
@@ -146,7 +92,7 @@ def upload():
                 return redirect(url_for('historical_data.upload'))
 
             try:
-                # Read the file with explicit encoding for CSV
+                # Read the file based on its type
                 if file.filename.endswith('.xlsx'):
                     logger.info(f"Reading Excel file: {file.filename}")
                     df = pd.read_excel(file, engine='openpyxl')
@@ -158,17 +104,6 @@ def upload():
                         file.seek(0)  # Reset file pointer
                         df = pd.read_csv(file, encoding='latin1')
 
-                # Validate data frame structure and content
-                validation_errors, warnings, valid_rows = validate_data_frame(df)
-                if validation_errors:
-                    for error in validation_errors[:5]:  # Show first 5 errors
-                        flash(error, 'error')
-                    for warning in warnings[:5]:
-                        flash(warning, 'warning')
-                    logger.error(f"Validation errors in upload: {validation_errors}")
-                    return redirect(url_for('historical_data.upload'))
-
-
                 # Get available accounts for mapping
                 accounts = Account.query.filter_by(user_id=current_user.id).all()
                 account_map = {acc.name: acc.id for acc in accounts}
@@ -176,62 +111,48 @@ def upload():
                 # Process each row
                 success_count = 0
                 error_count = 0
-                errors = []
-
-                # Initialize AI suggestions
-                ai_helper = HistoricalDataAI()
-                processed_data = []
-
-                for idx in valid_rows:
-                    row = df.iloc[idx]
+                for _, row in df.iterrows():
                     try:
-                        # Sanitize data
-                        clean_data = sanitize_data(row)
+                        # Clean and validate data
+                        date = validate_date(row.get('Date'))
+                        amount = validate_amount(row.get('Amount'))
+                        description = sanitize_text(row.get('Description', ''))
+                        explanation = sanitize_text(row.get('Explanation', ''))
+                        account_name = sanitize_text(row.get('Account', ''))
 
-                        # Get AI suggestions for missing details
-                        suggestions = ai_helper.suggest_missing_details(clean_data)
-                        if suggestions:
-                            clean_data.update(suggestions)
+                        if not all([date, amount, description, account_name]):
+                            error_count += 1
+                            continue
 
-                        # Validate account exists
-                        account_id = account_map.get(clean_data['account'])
+                        # Get account ID from mapping
+                        account_id = account_map.get(account_name)
                         if not account_id:
                             error_count += 1
-                            errors.append(f"Row {idx + 2}: Account not found: {clean_data['account']}")
                             continue
 
                         # Create historical data entry
                         historical_entry = HistoricalData(
-                            date=clean_data['date'],
-                            description=clean_data['description'],
-                            amount=clean_data['amount'],
-                            explanation=clean_data['explanation'],
+                            date=date,
+                            description=description,
+                            amount=amount,
+                            explanation=explanation,
                             account_id=account_id,
                             user_id=current_user.id
                         )
                         db.session.add(historical_entry)
                         success_count += 1
-                        processed_data.append(clean_data)
 
                     except Exception as row_error:
-                        logger.error(f"Error processing row {idx + 2}: {str(row_error)}")
+                        logger.error(f"Error processing row: {str(row_error)}")
                         error_count += 1
-                        errors.append(f"Row {idx + 2}: {str(row_error)}")
                         continue
 
                 if success_count > 0:
                     db.session.commit()
+                    flash(f'Successfully processed {success_count} entries.', 'success')
 
-                    # Apply AI enhancements to processed data
-                    enhanced_data = ai_helper.enhance_historical_data(processed_data)
-                    if enhanced_data:
-                        flash('AI suggestions have been generated for incomplete entries.', 'info')
-
-                flash(f'Successfully processed {success_count} entries.', 'success')
                 if error_count > 0:
                     flash(f'{error_count} entries had errors. Check logs for details.', 'warning')
-                    for error in errors[:5]:  # Show first 5 errors
-                        flash(error, 'error')
 
                 return redirect(url_for('historical_data.upload'))
 
@@ -249,14 +170,14 @@ def upload():
 
         return render_template(
             'historical_data/upload.html',
-            form=form,  # Pass the form to the template
+            form=form,
             entries=historical_entries
         )
 
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}")
         flash('An error occurred', 'error')
-        return redirect(url_for('main.dashboard'))
+        return redirect(url_for('historical_data.upload'))
 
 def preview_data_frame(df):
     """Preview and validate the uploaded data without saving."""
