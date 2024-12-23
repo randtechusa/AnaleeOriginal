@@ -3,10 +3,11 @@ import logging
 import sys
 from datetime import datetime
 from flask import Flask, current_app
-from flask_migrate import Migrate
+from flask_migrate import Migrate 
 from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
+from flask_wtf.csrf import CSRFProtect
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
 from admin import admin as admin_blueprint
 
@@ -30,6 +31,7 @@ load_dotenv()
 # Initialize Flask extensions
 migrate = Migrate()
 scheduler = APScheduler()
+csrf = CSRFProtect()
 
 def create_app(env=os.environ.get('FLASK_ENV', 'production')):
     """Create and configure the Flask application"""
@@ -56,6 +58,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
             'SQLALCHEMY_DATABASE_URI': database_url,
             'SQLALCHEMY_TRACK_MODIFICATIONS': False,
             'TEMPLATES_AUTO_RELOAD': True,
+            'WTF_CSRF_ENABLED': True,
             'SQLALCHEMY_ENGINE_OPTIONS': {
                 'pool_pre_ping': True,
                 'pool_size': 5,
@@ -72,6 +75,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         db.init_app(app)
         migrate.init_app(app, db)
         login_manager.init_app(app)
+        csrf.init_app(app)  # Initialize CSRF protection
         login_manager.login_view = 'main.login'
 
         # Initialize scheduler
