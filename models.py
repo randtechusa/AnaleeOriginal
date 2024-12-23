@@ -525,9 +525,22 @@ class AdminChartOfAccounts(db.Model):
     name = Column(String(100), nullable=False)  # Maps to 'Account Name' column
     category = Column(String(50), nullable=False)  # Maps to 'Category' column
     sub_category = Column(String(50))  # Maps to 'Sub Category' column
-    description = Column(Text)
+    description = Column(Text)  # Additional field for account details
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
         return f'<AdminChartOfAccounts {self.code}: {self.name}>'
+
+    @property
+    def serialize(self):
+        """Return object data in easily serializable format"""
+        return {
+            'id': self.id,
+            'link': self.link,
+            'code': self.code,
+            'name': self.name,
+            'category': self.category,
+            'sub_category': self.sub_category,
+            'description': self.description
+        }
