@@ -57,6 +57,26 @@
                     </ul>
                 </div>
 
+                <!-- File Format Requirements -->
+                <div class="alert alert-info mb-3">
+                    <h6 class="alert-heading">File Format Requirements:</h6>
+                    <ul class="mb-0">
+                        <li>Required columns:
+                            <ul>
+                                <li>Date (e.g., YYYY-MM-DD)</li>
+                                <li>Description (transaction details)</li>
+                                <li>Amount (numeric value)</li>
+                            </ul>
+                        </li>
+                        <li>Optional columns:
+                            <ul>
+                                <li>Explanation (additional notes)</li>
+                            </ul>
+                        </li>
+                        <li>Supported formats: CSV or Excel (.xlsx)</li>
+                    </ul>
+                </div>
+
                 {{ form.submit(class="btn btn-primary", id="submitButton") }}
             </form>
         </div>
@@ -116,7 +136,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const errorContainer = document.getElementById('errorContainer');
     const errorList = document.getElementById('errorList');
     const submitButton = document.getElementById('submitButton');
-    const csrfToken = document.querySelector('input[name="csrf_token"]').value;
 
     form.onsubmit = async function(e) {
         e.preventDefault();
@@ -126,7 +145,6 @@ document.addEventListener('DOMContentLoaded', function() {
         errorList.innerHTML = '';
         progressBar.style.width = '0%';
         progressBar.textContent = '0%';
-        progressBar.classList.remove('bg-danger');
 
         // Create FormData including CSRF token
         const formData = new FormData(form);
@@ -141,14 +159,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'POST',
                 body: formData,
                 headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRFToken': csrfToken
+                    'X-Requested-With': 'XMLHttpRequest'
                 }
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `Upload failed: ${response.status} ${response.statusText}`);
+                throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
             }
 
             const result = await response.json();
@@ -157,14 +173,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 statusText.textContent = 'Upload Complete!';
                 progressBar.style.width = '100%';
                 progressBar.textContent = '100%';
-
-                if (result.warning) {
-                    errorContainer.classList.remove('d-none');
-                    errorContainer.classList.remove('alert-danger');
-                    errorContainer.classList.add('alert-warning');
-                    errorList.innerHTML = `<li>${result.warning}</li>`;
-                }
-
                 setTimeout(() => window.location.reload(), 2000);
             } else {
                 throw new Error(result.error || 'Upload failed');

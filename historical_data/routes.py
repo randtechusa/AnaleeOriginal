@@ -60,26 +60,11 @@ def upload():
         logger.debug(f"Form data: {request.form}")
         logger.debug(f"Files: {request.files}")
 
-        # Handle AJAX request for checking CSRF token
-        if request.is_xhr and request.method == 'GET':
-            return jsonify({
-                'csrf_token': form.csrf_token._value()
-            })
-
         if request.method == 'POST':
             logger.info("Received POST request")
             logger.debug(f"CSRF token present: {'csrf_token' in request.form}")
             logger.debug(f"Form validation result: {form.validate()}")
             logger.debug(f"Form errors: {form.errors}")
-
-            # Fix for AJAX upload with proper CSRF validation
-            if request.is_xhr:
-                if 'csrf_token' not in request.form:
-                    logger.error("CSRF token missing in AJAX request")
-                    return jsonify({
-                        'success': False,
-                        'error': 'CSRF token missing'
-                    }), 400
 
             if not form.validate_on_submit():
                 logger.error("Form validation failed")
@@ -87,9 +72,8 @@ def upload():
                 if request.is_xhr:
                     return jsonify({
                         'success': False,
-                        'error': 'Form validation failed. Please ensure all fields are filled correctly.',
-                        'errors': form.errors
-                    }), 400
+                        'error': 'Form validation failed. Please ensure all fields are filled correctly.'
+                    })
                 for field, errors in form.errors.items():
                     for error in errors:
                         flash(f"{field}: {error}", 'error')
@@ -105,7 +89,7 @@ def upload():
                         return jsonify({
                             'success': False,
                             'error': 'Invalid bank account selected'
-                        }), 400
+                        })
                     flash('Invalid bank account selected', 'error')
                     return redirect(url_for('historical_data.upload'))
 
@@ -117,7 +101,7 @@ def upload():
                         return jsonify({
                             'success': False,
                             'error': 'Please select a file to upload'
-                        }), 400
+                        })
                     flash('No file selected', 'error')
                     return redirect(url_for('historical_data.upload'))
 
@@ -128,7 +112,7 @@ def upload():
                         return jsonify({
                             'success': False,
                             'error': 'Invalid file format. Please upload a CSV or Excel file.'
-                        }), 400
+                        })
                     flash('Invalid file format. Please upload a CSV or Excel file.', 'error')
                     return redirect(url_for('historical_data.upload'))
 
@@ -149,10 +133,6 @@ def upload():
                             df = pd.read_csv(file, encoding='latin1')
                             logger.info("Successfully read CSV file with Latin-1 encoding")
 
-                    # Log data validation before processing
-                    logger.debug(f"Data columns: {df.columns.tolist()}")
-                    logger.debug(f"Data shape: {df.shape}")
-
                     # Validate file structure
                     if not diagnostics.validate_file_structure(df):
                         logger.error("File structure validation failed")
@@ -161,23 +141,22 @@ def upload():
                             return jsonify({
                                 'success': False,
                                 'error': messages[0]['message'] if messages else 'File validation failed'
-                            }), 400
+                            })
                         for message in messages:
                             flash(message['message'], message['type'])
                         return redirect(url_for('historical_data.upload'))
 
-                    # Process rows with enhanced error handling
+                    # Process rows
                     success_count = 0
                     error_count = 0
                     total_rows = len(df)
-                    errors = []
 
                     for idx, row in df.iterrows():
                         row_num = idx + 2  # Add 2 for header row and 0-based index
-                        try:
-                            is_valid, cleaned_data = diagnostics.validate_row(row, row_num)
+                        is_valid, cleaned_data = diagnostics.validate_row(row, row_num)
 
-                            if is_valid:
+                        if is_valid:
+                            try:
                                 entry = HistoricalData(
                                     date=cleaned_data['date'],
                                     description=cleaned_data['description'],
@@ -192,13 +171,10 @@ def upload():
                                 # Commit every 100 rows to prevent memory issues
                                 if success_count % 100 == 0:
                                     db.session.commit()
-                                    logger.info(f"Committed {success_count} entries")
 
-                        except Exception as row_error:
-                            error_count += 1
-                            error_msg = f"Error processing row {row_num}: {str(row_error)}"
-                            logger.error(error_msg)
-                            errors.append(error_msg)
+                            except Exception as e:
+                                logger.error(f"Error saving row {row_num}: {str(e)}")
+                                error_count += 1
 
                     # Final commit for remaining entries
                     if success_count > 0:
@@ -207,51 +183,52 @@ def upload():
                         if request.is_xhr:
                             return jsonify({
                                 'success': True,
-                                'message': f'Successfully processed {success_count} entries.',
-                                'errors': errors if errors else None
+                                'message': f'Successfully processed {success_count} entries.'
                             })
                         flash(f'Successfully processed {success_count} entries.', 'success')
 
                     if error_count > 0:
-                        message = f'{error_count} entries had errors. Check the error log for details.'
-                        logger.warning(message)
-                        if request.is_xhr:
-                            return jsonify({
-                                'success': True,
-                                'warning': message,
-                                'errors': errors
-                            })
-                        flash(message, 'warning')
+                        flash(f'{error_count} entries had errors. Check the error log for details.', 'warning')
+
+                    # Display validation messages
+                    messages = diagnostics.get_user_friendly_messages()
+                    if request.is_xhr:
+                        return jsonify({
+                            'success': True,
+                            'messages': messages
+                        })
+                    for message in messages:
+                        flash(message['message'], message['type'])
 
                     return redirect(url_for('historical_data.upload'))
 
                 except Exception as e:
-                    logger.error(f"Error processing file: {str(e)}", exc_info=True)
+                    logger.error(f"Error processing file: {str(e)}")
                     db.session.rollback()
                     if request.is_xhr:
                         return jsonify({
                             'success': False,
                             'error': f'Error processing file: {str(e)}'
-                        }), 400
+                        })
                     flash('Error processing file: ' + str(e), 'error')
                     return redirect(url_for('historical_data.upload'))
 
             except Exception as e:
-                logger.error(f"Error in upload process: {str(e)}", exc_info=True)
+                logger.error(f"Error in upload process: {str(e)}")
                 if request.is_xhr:
                     return jsonify({
                         'success': False,
                         'error': f'Error in upload process: {str(e)}'
-                    }), 400
+                    })
                 flash('Error in upload process: ' + str(e), 'error')
                 return redirect(url_for('historical_data.upload'))
 
         # GET request - show upload form
         historical_entries = (HistoricalData.query
-                          .filter_by(user_id=current_user.id)
-                          .order_by(HistoricalData.date.desc())
-                          .limit(10)
-                          .all())
+                            .filter_by(user_id=current_user.id)
+                            .order_by(HistoricalData.date.desc())
+                            .limit(10)
+                            .all())
 
         return render_template('historical_data/upload.html',
                              form=form,
@@ -263,6 +240,6 @@ def upload():
             return jsonify({
                 'success': False,
                 'error': 'An unexpected error occurred'
-            }), 400
+            })
         flash('An error occurred', 'error')
         return redirect(url_for('historical_data.upload'))
