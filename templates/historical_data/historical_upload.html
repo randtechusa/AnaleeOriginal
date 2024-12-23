@@ -16,15 +16,16 @@
                     <ul>
                         <li>Date (supports multiple formats: DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD)</li>
                         <li>Description (transaction details)</li>
-                        <li>Amount (numeric value, positive for income/negative for expense)</li>
-                        <li>Account (must match existing account codes)</li>
+                        <li>Amount (numeric value)</li>
+                        <li>Account (account code)</li>
+                        <li>Category (for classification)</li>
                     </ul>
                 </li>
                 <li>Optional Columns:
                     <ul>
-                        <li>Category</li>
-                        <li>Reference</li>
+                        <li>Reference Number</li>
                         <li>Notes</li>
+                        <li>Subcategory</li>
                     </ul>
                 </li>
             </ul>
@@ -41,7 +42,7 @@
                     <label for="file" class="form-label">Historical Data File</label>
                     <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
                     <div class="form-text">
-                        Upload historical financial data in CSV or Excel format.
+                        Upload historical transaction data in CSV or Excel format
                     </div>
                 </div>
 
@@ -60,7 +61,7 @@
                     <p class="mb-1"><small>Processed: <span id="processedRows">0</span> / <span id="totalRows">0</span> rows</small></p>
                     <p class="mb-0"><small>Time remaining: <span id="timeRemaining">Calculating...</span></small></p>
                     <div id="validationErrors" class="mt-2 d-none">
-                        <h6 class="text-danger">Validation Errors:</h6>
+                        <h6 class="text-warning">Validation Issues:</h6>
                         <ul id="errorList" class="mb-0"></ul>
                     </div>
                 </div>
@@ -81,6 +82,7 @@
                             <th>Date</th>
                             <th>Description</th>
                             <th>Amount</th>
+                            <th>Category</th>
                             <th>Account</th>
                             <th>Status</th>
                         </tr>
@@ -94,6 +96,7 @@
                                 <td class="text-{{ 'success' if entry.amount > 0 else 'danger' }}">
                                     {{ "%.2f"|format(entry.amount) }}
                                 </td>
+                                <td>{{ entry.category }}</td>
                                 <td>{{ entry.account.name if entry.account else 'N/A' }}</td>
                                 <td>
                                     <span class="badge bg-{{ entry.validation_status_color }}">
@@ -104,7 +107,7 @@
                             {% endfor %}
                         {% else %}
                             <tr>
-                                <td colspan="5" class="text-center">No historical data uploaded yet.</td>
+                                <td colspan="6" class="text-center">No historical data uploaded yet.</td>
                             </tr>
                         {% endif %}
                     </tbody>
@@ -116,6 +119,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('historicalUploadForm');
@@ -170,11 +174,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 progressBar.style.width = '100%';
                 progressBar.textContent = '100%';
 
-                if (result.validation_errors && result.validation_errors.length > 0) {
+                if (result.validation_warnings && result.validation_warnings.length > 0) {
                     validationErrors.classList.remove('d-none');
-                    result.validation_errors.forEach(error => {
+                    result.validation_warnings.forEach(warning => {
                         const li = document.createElement('li');
-                        li.textContent = `Row ${error.row}: ${error.message}`;
+                        li.textContent = `Row ${warning.row}: ${warning.message}`;
                         errorList.appendChild(li);
                     });
                 } else {
