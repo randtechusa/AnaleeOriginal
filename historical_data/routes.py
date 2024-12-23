@@ -27,45 +27,20 @@ class UploadForm(FlaskForm):
     submit = SubmitField('Upload')
 
     def __init__(self, *args, **kwargs):
+        """Initialize form and populate account choices"""
         super(UploadForm, self).__init__(*args, **kwargs)
         if current_user.is_authenticated:
-            # Get bank accounts (starting with ca.810)
-            bank_accounts = Account.query.filter(
-                Account.user_id == current_user.id,
-                Account.link.like('ca.810%')
-            ).all()
-            self.account.choices = [(str(acc.id), f"{acc.link} - {acc.name}") for acc in bank_accounts]
-
-def validate_file_type(filename):
-    """Validate if the uploaded file is CSV or Excel."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'csv', 'xlsx'}
-
-def validate_date(date_str):
-    """Validate and parse date string."""
-    try:
-        return pd.to_datetime(date_str).date()
-    except Exception:
-        return None
-
-def validate_amount(amount_str):
-    """Validate and convert amount string to Decimal."""
-    try:
-        # Remove any currency symbols and whitespace
-        cleaned = re.sub(r'[^\d.-]', '', str(amount_str))
-        amount = Decimal(cleaned)
-        if -1000000000 <= amount <= 1000000000:  # Reasonable limits
-            return amount
-        return None
-    except (InvalidOperation, TypeError):
-        return None
-
-def sanitize_text(text, max_length=200):
-    """Sanitize and truncate text input."""
-    if not isinstance(text, str):
-        text = str(text)
-    # Remove any special characters except basic punctuation
-    text = re.sub(r'[^\w\s.,;:!?()-]', '', text)
-    return text.strip()[:max_length]
+            try:
+                # Get bank accounts (starting with ca.810)
+                bank_accounts = Account.query.filter(
+                    Account.user_id == current_user.id,
+                    Account.link.like('ca.810%')
+                ).all()
+                self.account.choices = [(str(acc.id), f"{acc.link} - {acc.name}") for acc in bank_accounts]
+                logger.info(f"Found {len(bank_accounts)} bank accounts for user {current_user.id}")
+            except Exception as e:
+                logger.error(f"Error loading bank accounts: {str(e)}")
+                self.account.choices = []
 
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -74,15 +49,21 @@ def upload():
     try:
         # Initialize form with CSRF protection
         form = UploadForm()
+        logger.info("Processing upload request")
 
         if request.method == 'POST':
-            logger.info("Processing upload request")
+            logger.info("Received POST request")
+
+            # Log form data for debugging
+            logger.debug(f"Form data: account={form.account.data}, file={form.file.data.filename if form.file.data else None}")
+            logger.debug(f"CSRF Token present: {form.csrf_token.current_token is not None}")
 
             # Validate form submission
             if not form.validate_on_submit():
                 logger.error("Form validation failed")
                 for field, errors in form.errors.items():
                     for error in errors:
+                        logger.error(f"Form error - {field}: {error}")
                         flash(f"{field}: {error}", 'error')
                 return redirect(url_for('historical_data.upload'))
 
@@ -91,32 +72,42 @@ def upload():
                 account_id = int(form.account.data)
                 account = Account.query.get(account_id)
                 if not account or account.user_id != current_user.id:
+                    logger.error(f"Invalid account selected: {account_id}")
                     flash('Invalid bank account selected', 'error')
                     return redirect(url_for('historical_data.upload'))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
+                logger.error(f"Error processing account selection: {str(e)}")
                 flash('Invalid bank account selection', 'error')
                 return redirect(url_for('historical_data.upload'))
 
             # Process file upload
             file = form.file.data
             if not file or not file.filename:
+                logger.error("No file selected")
                 flash('No file selected', 'error')
                 return redirect(url_for('historical_data.upload'))
 
-            if not validate_file_type(file.filename):
+            filename = secure_filename(file.filename)
+            logger.info(f"Processing file: {filename}")
+
+            if not filename.lower().endswith(('.csv', '.xlsx')):
+                logger.error(f"Invalid file type: {filename}")
                 flash('Invalid file format. Please upload a CSV or Excel file.', 'error')
                 return redirect(url_for('historical_data.upload'))
 
             try:
                 # Read file based on type
-                if file.filename.endswith('.xlsx'):
+                if filename.endswith('.xlsx'):
                     df = pd.read_excel(file, engine='openpyxl')
+                    logger.info("Successfully read Excel file")
                 else:
                     try:
                         df = pd.read_csv(file, encoding='utf-8')
+                        logger.info("Successfully read CSV file with UTF-8 encoding")
                     except UnicodeDecodeError:
                         file.seek(0)
                         df = pd.read_csv(file, encoding='latin1')
+                        logger.info("Successfully read CSV file with Latin-1 encoding")
 
                 # Process each row
                 success_count = 0
@@ -125,12 +116,13 @@ def upload():
                 for _, row in df.iterrows():
                     try:
                         # Validate and clean data
-                        date = validate_date(row.get('Date'))
-                        amount = validate_amount(row.get('Amount'))
-                        description = sanitize_text(row.get('Description', ''))
-                        explanation = sanitize_text(row.get('Explanation', ''))
+                        date = pd.to_datetime(row.get('Date')).date() if pd.notnull(row.get('Date')) else None
+                        amount = Decimal(str(row.get('Amount'))) if pd.notnull(row.get('Amount')) else None
+                        description = str(row.get('Description', '')).strip()[:200]
+                        explanation = str(row.get('Explanation', '')).strip()[:200]
 
                         if not all([date, amount is not None, description]):
+                            logger.warning(f"Invalid row data: date={date}, amount={amount}, description={description}")
                             error_count += 1
                             continue
 
@@ -154,9 +146,11 @@ def upload():
                 if success_count > 0:
                     db.session.commit()
                     flash(f'Successfully processed {success_count} entries.', 'success')
+                    logger.info(f"Successfully processed {success_count} entries")
 
                 if error_count > 0:
                     flash(f'{error_count} entries had errors. Check logs for details.', 'warning')
+                    logger.warning(f"{error_count} entries had errors")
 
                 return redirect(url_for('historical_data.upload'))
 
@@ -311,3 +305,34 @@ def preview_upload():
     except Exception as e:
         logger.error(f"Error in preview route: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+def validate_file_type(filename):
+    """Validate if the uploaded file is CSV or Excel."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'csv', 'xlsx'}
+
+def validate_date(date_str):
+    """Validate and parse date string."""
+    try:
+        return pd.to_datetime(date_str).date()
+    except Exception:
+        return None
+
+def validate_amount(amount_str):
+    """Validate and convert amount string to Decimal."""
+    try:
+        # Remove any currency symbols and whitespace
+        cleaned = re.sub(r'[^\d.-]', '', str(amount_str))
+        amount = Decimal(cleaned)
+        if -1000000000 <= amount <= 1000000000:  # Reasonable limits
+            return amount
+        return None
+    except (InvalidOperation, TypeError):
+        return None
+
+def sanitize_text(text, max_length=200):
+    """Sanitize and truncate text input."""
+    if not isinstance(text, str):
+        text = str(text)
+    # Remove any special characters except basic punctuation
+    text = re.sub(r'[^\w\s.,;:!?()-]', '', text)
+    return text.strip()[:max_length]
