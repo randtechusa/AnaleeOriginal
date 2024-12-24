@@ -56,7 +56,7 @@
 
                 <div id="errorContainer" class="alert alert-danger d-none"></div>
 
-                {{ form.submit(class="btn btn-primary") }}
+                {{ form.submit(class="btn btn-primary", id="uploadButton") }}
             </form>
         </div>
     </div>
@@ -110,6 +110,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusDiv = document.getElementById('uploadStatus');
     const statusText = document.getElementById('statusText');
     const errorContainer = document.getElementById('errorContainer');
+    const uploadButton = document.getElementById('uploadButton');
 
     form.onsubmit = async function(e) {
         e.preventDefault();
@@ -121,6 +122,7 @@ document.addEventListener('DOMContentLoaded', function() {
         progressBar.style.width = '0%';
         progressBar.textContent = '0%';
         statusText.textContent = 'Uploading...';
+        uploadButton.disabled = true;
 
         try {
             const formData = new FormData(form);
@@ -136,7 +138,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const result = await response.json();
 
             if (!response.ok) {
-                throw new Error(result.error || 'Upload failed');
+                throw new Error(result.error || `Upload failed: ${response.statusText}`);
             }
 
             if (result.success) {
@@ -156,6 +158,8 @@ document.addEventListener('DOMContentLoaded', function() {
             errorContainer.classList.remove('d-none');
             errorContainer.textContent = error.message;
             progressBar.classList.add('bg-danger');
+        } finally {
+            uploadButton.disabled = false;
         }
     };
 });

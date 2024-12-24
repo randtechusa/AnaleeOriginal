@@ -26,14 +26,11 @@ def upload():
         logger.info("Processing bank statement upload request")
 
         if request.method == 'POST':
+            # Log debugging information
             logger.debug(f"Form validation result: {form.validate()}")
             logger.debug(f"Form errors: {form.errors}")
             logger.debug(f"Request files: {request.files}")
             logger.debug(f"Form data: {request.form}")
-
-            # Add CSRF token to AJAX requests
-            if request.is_xhr:
-                form.csrf_token.data = request.form.get('csrf_token')
 
             if not form.validate_on_submit():
                 logger.error("Form validation failed")
@@ -42,7 +39,7 @@ def upload():
                         'success': False,
                         'error': 'Form validation failed',
                         'errors': form.errors
-                    })
+                    }), 400
                 flash('Please ensure all fields are filled correctly.', 'error')
                 return redirect(url_for('bank_statements.upload'))
 
@@ -56,7 +53,7 @@ def upload():
                         return jsonify({
                             'success': False,
                             'error': 'Invalid bank account selected'
-                        })
+                        }), 400
                     flash('Invalid bank account selected', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
@@ -68,7 +65,7 @@ def upload():
                         return jsonify({
                             'success': False,
                             'error': 'Please select a file to upload'
-                        })
+                        }), 400
                     flash('No file selected', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
@@ -100,7 +97,7 @@ def upload():
                     return jsonify({
                         'success': False,
                         'error': f'Error in upload process: {str(e)}'
-                    })
+                    }), 500
                 flash('Error in upload process: ' + str(e), 'error')
                 return redirect(url_for('bank_statements.upload'))
 
@@ -129,6 +126,6 @@ def upload():
             return jsonify({
                 'success': False,
                 'error': 'An unexpected error occurred'
-            })
+            }), 500
         flash('An error occurred', 'error')
         return redirect(url_for('bank_statements.upload'))
