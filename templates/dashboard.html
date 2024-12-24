@@ -5,8 +5,32 @@
     <div class="col-md-12">
         <div class="card">
             <div class="card-body">
-                <h2>Financial Dashboard</h2>
-                <p>Welcome to your financial dashboard.</p>
+                <h2>Welcome, {{ current_user.username }}</h2>
+                <p>Welcome to your financial dashboard. Here you can manage your financial data and view insights.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Quick Actions</h5>
+                <div class="list-group">
+                    <a href="{{ url_for('bank_statements.upload') }}" class="list-group-item list-group-item-action">
+                        Upload Bank Statements
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Recent Activity</h5>
+                <p>Your recent bank statement uploads and analysis will appear here.</p>
             </div>
         </div>
     </div>
