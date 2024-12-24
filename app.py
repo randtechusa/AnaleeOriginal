@@ -9,9 +9,6 @@ from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from flask_wtf.csrf import CSRFProtect
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
-from bank_statements.models import BankStatementUpload  # Add this line
-from admin import admin as admin_blueprint
-from bank_statements import bank_statements as bank_statements_blueprint
 
 # Configure logging with more detailed error reporting
 logging.basicConfig(
@@ -35,14 +32,24 @@ migrate = Migrate()
 scheduler = APScheduler()
 csrf = CSRFProtect()
 
+def verify_database_connection(database_url):
+    """Verify database connection before app creation"""
+    try:
+        from sqlalchemy import create_engine
+        engine = create_engine(database_url)
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+            logger.info("Database connection verified successfully")
+            return True
+    except Exception as e:
+        logger.error(f"Database connection verification failed: {str(e)}")
+        return False
+
 def create_app(env=os.environ.get('FLASK_ENV', 'production')):
     """Create and configure the Flask application"""
     try:
         # Initialize Flask application
         app = Flask(__name__)
-
-        # Load the appropriate configuration
-        app.config.from_object(f'config.{env.capitalize()}Config')
 
         # Get appropriate database URL based on environment
         database_url = os.environ.get('DATABASE_URL')
@@ -53,6 +60,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         # Handle legacy database URL format
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+        # Verify database connection before proceeding
+        if not verify_database_connection(database_url):
+            logger.error("Failed to verify database connection")
+            return None
 
         # Configure Flask app with enhanced security
         config = {
@@ -75,12 +87,17 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         app.config.update(config)
         logger.debug("Flask app configuration completed")
 
-        # Initialize Flask extensions
-        db.init_app(app)
-        migrate.init_app(app, db)
-        login_manager.init_app(app)
-        csrf.init_app(app)  # Initialize CSRF protection
-        login_manager.login_view = 'main.login'
+        # Initialize Flask extensions with proper error handling
+        try:
+            db.init_app(app)
+            migrate.init_app(app, db)
+            login_manager.init_app(app)
+            csrf.init_app(app)
+            login_manager.login_view = 'main.login'
+            logger.info("Flask extensions initialized successfully")
+        except Exception as ext_error:
+            logger.error(f"Error initializing Flask extensions: {str(ext_error)}")
+            return None
 
         # Initialize scheduler with error handling
         try:
@@ -92,12 +109,19 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
             # Continue without scheduler - non-critical component
 
         with app.app_context():
-            # Register blueprints with proper error handling
             try:
-                # Core blueprints - protected components
+                # Register blueprints with proper error handling
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
-                logger.info("Main blueprint registered successfully")
+                logger.info("Main blueprint registered")
+
+                from admin import admin as admin_blueprint
+                app.register_blueprint(admin_blueprint, url_prefix='/admin')
+                logger.info("Admin blueprint registered")
+
+                from bank_statements import bank_statements as bank_statements_blueprint
+                app.register_blueprint(bank_statements_blueprint, url_prefix='/bank-statements')
+                logger.info("Bank statements blueprint registered")
 
                 from reports import reports as reports_blueprint
                 app.register_blueprint(reports_blueprint, url_prefix='/reports')
@@ -113,10 +137,6 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(chat_blueprint, url_prefix='/chat')
                 logger.info("Chat blueprint registered successfully")
 
-                # Bank statements blueprint (new, isolated functionality)
-                logger.info("Registering bank statements blueprint")
-                app.register_blueprint(bank_statements_blueprint, url_prefix='/bank-statements')
-                logger.info("Bank statements blueprint registered successfully")
 
                 # Error monitoring blueprint
                 from errors import errors as errors_blueprint
@@ -138,20 +158,8 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(recommendations_blueprint, url_prefix='/recommendations')
                 logger.info("Recommendations blueprint registered successfully")
 
-                # Admin blueprint (new)
-                logger.info("Registering admin blueprint")
-                app.register_blueprint(admin_blueprint, url_prefix='/admin')
 
                 logger.info("All blueprints registered successfully")
-
-                # Verify database connection before proceeding
-                try:
-                    with db.engine.connect() as connection:
-                        connection.execute(text("SELECT 1"))
-                    logger.info("Database connection verified")
-                except Exception as db_error:
-                    logger.error(f"Database connection error: {str(db_error)}")
-                    return None
 
                 return app
 
@@ -182,7 +190,7 @@ if __name__ == '__main__':
         app.run(
             host='0.0.0.0',
             port=port,
-            debug=True,  # Enable debug mode
+            debug=True,
             use_reloader=False  # Disable reloader to prevent duplicate processes
         )
     except Exception as e:
