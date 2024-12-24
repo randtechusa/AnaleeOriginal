@@ -6,6 +6,7 @@ Separate from historical data processing
 import logging
 from flask import render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
+from werkzeug.utils import secure_filename
 
 from . import bank_statements
 from .forms import BankStatementUploadForm
@@ -26,13 +27,21 @@ def upload():
 
         if request.method == 'POST':
             logger.debug(f"Form validation result: {form.validate()}")
+            logger.debug(f"Form errors: {form.errors}")
+            logger.debug(f"Request files: {request.files}")
+            logger.debug(f"Form data: {request.form}")
+
+            # Add CSRF token to AJAX requests
+            if request.is_xhr:
+                form.csrf_token.data = request.form.get('csrf_token')
 
             if not form.validate_on_submit():
                 logger.error("Form validation failed")
                 if request.is_xhr:
                     return jsonify({
                         'success': False,
-                        'error': 'Form validation failed'
+                        'error': 'Form validation failed',
+                        'errors': form.errors
                     })
                 flash('Please ensure all fields are filled correctly.', 'error')
                 return redirect(url_for('bank_statements.upload'))
@@ -63,6 +72,10 @@ def upload():
                     flash('No file selected', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
+                # Secure the filename
+                filename = secure_filename(file.filename)
+                logger.info(f"Processing file: {filename}")
+
                 # Process upload using service
                 service = BankStatementService()
                 success, response = service.process_upload(
@@ -92,6 +105,13 @@ def upload():
                 return redirect(url_for('bank_statements.upload'))
 
         # GET request - show upload form
+        # Get user's bank accounts that start with ca.810
+        bank_accounts = Account.query.filter(
+            Account.user_id == current_user.id,
+            Account.link.startswith('ca.810')
+        ).all()
+        logger.info(f"Found {len(bank_accounts)} bank accounts for user {current_user.id}")
+
         recent_files = (BankStatementUpload.query
                        .filter_by(user_id=current_user.id)
                        .order_by(BankStatementUpload.upload_date.desc())
@@ -100,6 +120,7 @@ def upload():
 
         return render_template('bank_statements/upload.html',
                              form=form,
+                             bank_accounts=bank_accounts,
                              recent_files=recent_files)
 
     except Exception as e:
