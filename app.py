@@ -9,6 +9,7 @@ from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from flask_wtf.csrf import CSRFProtect
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
+from bank_statements.models import BankStatementUpload  # Add this line
 from admin import admin as admin_blueprint
 from bank_statements import bank_statements as bank_statements_blueprint
 

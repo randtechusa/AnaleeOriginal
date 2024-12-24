@@ -4,49 +4,17 @@ Implements secure file handling and validation
 Separate from historical data processing
 """
 import logging
-from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
-from werkzeug.utils import secure_filename
-from flask_wtf import FlaskForm
-from wtforms import FileField, SelectField, SubmitField
-from wtforms.validators import DataRequired
 
-from models import db, Account, UploadedFile
-from .upload_validator import BankStatementValidator
-from . import bank_statements  # Import the blueprint from __init__.py
+from . import bank_statements
+from .forms import BankStatementUploadForm
+from .services import BankStatementService
+from .models import BankStatementUpload
+from models import Account
 
 # Configure logging
 logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler('bank_statements.log')
-file_handler.setFormatter(logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-))
-logger.addHandler(file_handler)
-logger.setLevel(logging.DEBUG)
-
-class BankStatementUploadForm(FlaskForm):
-    """Form for bank statement upload with CSRF protection"""
-    account = SelectField('Select Bank Account', validators=[DataRequired()],
-                         description='Select the bank account this statement belongs to')
-    file = FileField('Bank Statement File', validators=[DataRequired()])
-    submit = SubmitField('Upload')
-
-    def __init__(self, *args, **kwargs):
-        """Initialize form and populate account choices"""
-        super(BankStatementUploadForm, self).__init__(*args, **kwargs)
-        if current_user.is_authenticated:
-            try:
-                # Get bank accounts (starting with ca.810)
-                bank_accounts = Account.query.filter(
-                    Account.user_id == current_user.id,
-                    Account.link.like('ca.810%')
-                ).all()
-                self.account.choices = [(str(acc.id), f"{acc.link} - {acc.name}") for acc in bank_accounts]
-                logger.info(f"Found {len(bank_accounts)} bank accounts for user {current_user.id}")
-            except Exception as e:
-                logger.error(f"Error loading bank accounts: {str(e)}")
-                self.account.choices = []
 
 @bank_statements.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -95,28 +63,21 @@ def upload():
                     flash('No file selected', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
-                filename = secure_filename(file.filename)
+                # Process upload using service
+                service = BankStatementService()
+                success, response = service.process_upload(
+                    file=file,
+                    account_id=account_id,
+                    user_id=current_user.id
+                )
 
-                # Initialize validator
-                validator = BankStatementValidator()
+                if request.is_xhr:
+                    return jsonify(response)
 
-                # Validate and process file
-                if validator.validate_and_process(file, account_id, current_user.id):
-                    if request.is_xhr:
-                        return jsonify({
-                            'success': True,
-                            'message': 'Bank statement processed successfully'
-                        })
+                if success:
                     flash('Bank statement processed successfully', 'success')
                 else:
-                    error_messages = validator.get_error_messages()
-                    if request.is_xhr:
-                        return jsonify({
-                            'success': False,
-                            'error': error_messages[0] if error_messages else 'Processing failed'
-                        })
-                    for message in error_messages:
-                        flash(message, 'error')
+                    flash(response.get('error', 'Processing failed'), 'error')
 
                 return redirect(url_for('bank_statements.upload'))
 
@@ -131,9 +92,9 @@ def upload():
                 return redirect(url_for('bank_statements.upload'))
 
         # GET request - show upload form
-        recent_files = (UploadedFile.query
+        recent_files = (BankStatementUpload.query
                        .filter_by(user_id=current_user.id)
-                       .order_by(UploadedFile.upload_date.desc())
+                       .order_by(BankStatementUpload.upload_date.desc())
                        .limit(10)
                        .all())
 

@@ -19,6 +19,14 @@ args = "Flask Server"
 task = "workflow.run"
 args = "ICountant Demo"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Database Migration"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Database Init"
+
 [[workflows.workflow]]
 name = "Flask Server"
 author = "agent"
@@ -47,6 +55,34 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python icountant_demo.py"
+
+[[workflows.workflow]]
+name = "Database Migration"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "flask db migrate -m 'Add bank statement uploads table' && flask db upgrade"
+
+[[workflows.workflow]]
+name = "Database Init"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "flask db init && flask db migrate -m 'Initial migration with core tables' && flask db upgrade"
 
 [deployment]
 run = ["sh", "-c", "python app.py"]
