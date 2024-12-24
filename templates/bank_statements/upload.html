@@ -15,8 +15,12 @@
                 <div class="mb-3">
                     {{ form.account.label(class="form-label") }}
                     {{ form.account(class="form-select") }}
-                    {% if form.account.description %}
-                        <div class="form-text">{{ form.account.description }}</div>
+                    {% if form.account.errors %}
+                        <div class="alert alert-danger">
+                            {% for error in form.account.errors %}
+                                <small>{{ error }}</small>
+                            {% endfor %}
+                        </div>
                     {% endif %}
                     {% if not form.account.choices %}
                         <div class="alert alert-warning mt-2">
@@ -28,50 +32,31 @@
                 <div class="mb-3">
                     {{ form.file.label(class="form-label") }}
                     {{ form.file(class="form-control", accept=".csv,.xlsx") }}
+                    {% if form.file.errors %}
+                        <div class="alert alert-danger">
+                            {% for error in form.file.errors %}
+                                <small>{{ error }}</small>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
                     <div class="form-text">
                         Upload bank statement in CSV or Excel format
                     </div>
                 </div>
 
-                <!-- Upload Progress -->
+                <!-- Progress and Status -->
                 <div class="progress mb-3 d-none" id="uploadProgress">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                         role="progressbar" style="width: 0%" 
-                         aria-valuenow="0" 
-                         aria-valuemin="0" 
-                         aria-valuemax="100">0%</div>
+                    <div class="progress-bar" role="progressbar" style="width: 0%" 
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                 </div>
 
-                <!-- Status Display -->
-                <div id="uploadStatus" class="alert d-none mb-3">
+                <div id="uploadStatus" class="alert d-none">
                     <p class="mb-1"><strong>Status:</strong> <span id="statusText">Processing...</span></p>
-                    <p class="mb-1"><small>Processed: <span id="processedRows">0</span> / <span id="totalRows">0</span> rows</small></p>
-                    <p class="mb-0"><small>Time remaining: <span id="timeRemaining">Calculating...</span></small></p>
                 </div>
 
-                <!-- Error Display -->
-                <div id="errorContainer" class="alert alert-danger d-none mb-3">
-                    <h6 class="alert-heading">Upload Errors:</h6>
-                    <ul id="errorList" class="mb-0">
-                    </ul>
-                </div>
+                <div id="errorContainer" class="alert alert-danger d-none"></div>
 
-                <!-- File Format Requirements -->
-                <div class="alert alert-info mb-3">
-                    <h6 class="alert-heading">File Format Requirements:</h6>
-                    <ul class="mb-0">
-                        <li>Required columns:
-                            <ul>
-                                <li>Date (e.g., YYYY-MM-DD)</li>
-                                <li>Description (transaction details)</li>
-                                <li>Amount (numeric value)</li>
-                            </ul>
-                        </li>
-                        <li>Supported formats: CSV or Excel (.xlsx)</li>
-                    </ul>
-                </div>
-
-                {{ form.submit(class="btn btn-primary", id="submitButton") }}
+                {{ form.submit(class="btn btn-primary") }}
             </form>
         </div>
     </div>
@@ -79,39 +64,38 @@
     <!-- Recent Uploads -->
     <div class="card">
         <div class="card-body">
-            <h5 class="card-title">Recent Bank Statements</h5>
-            <div class="table-responsive">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>File Name</th>
-                            <th>Upload Date</th>
-                            <th>Account</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% if recent_files %}
+            <h5 class="card-title">Recent Uploads</h5>
+            {% if recent_files %}
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Upload Date</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
                             {% for file in recent_files %}
-                            <tr>
-                                <td>{{ file.filename }}</td>
-                                <td>{{ file.upload_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                                <td>{{ file.account.name if file.account else 'N/A' }}</td>
-                                <td>
-                                    <div class="btn-group" role="group">
-                                        <a href="{{ url_for('main.analyze', file_id=file.id) }}" class="btn btn-sm btn-primary">Analyze</a>
-                                    </div>
-                                </td>
-                            </tr>
+                                <tr>
+                                    <td>{{ file.filename }}</td>
+                                    <td>{{ file.upload_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td>{{ file.status }}</td>
+                                    <td>
+                                        {% if file.status == 'completed' %}
+                                            <a href="{{ url_for('main.analyze', file_id=file.id) }}" 
+                                               class="btn btn-sm btn-primary">View</a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
                             {% endfor %}
-                        {% else %}
-                            <tr>
-                                <td colspan="4" class="text-center">No bank statements uploaded yet.</td>
-                            </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted">No recent uploads</p>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -125,32 +109,23 @@ document.addEventListener('DOMContentLoaded', function() {
     const progressDiv = document.getElementById('uploadProgress');
     const statusDiv = document.getElementById('uploadStatus');
     const statusText = document.getElementById('statusText');
-    const processedRows = document.getElementById('processedRows');
-    const totalRows = document.getElementById('totalRows');
-    const timeRemaining = document.getElementById('timeRemaining');
     const errorContainer = document.getElementById('errorContainer');
-    const errorList = document.getElementById('errorList');
-    const submitButton = document.getElementById('submitButton');
 
     form.onsubmit = async function(e) {
         e.preventDefault();
 
-        // Reset display elements
-        errorContainer.classList.add('d-none');
-        errorList.innerHTML = '';
-        progressBar.style.width = '0%';
-        progressBar.textContent = '0%';
-
-        // Create FormData including CSRF token
-        const formData = new FormData(form);
-
-        // Show progress elements
+        // Reset UI state
         progressDiv.classList.remove('d-none');
         statusDiv.classList.remove('d-none');
-        submitButton.disabled = true;
+        errorContainer.classList.add('d-none');
+        progressBar.style.width = '0%';
+        progressBar.textContent = '0%';
+        statusText.textContent = 'Uploading...';
 
         try {
-            const response = await fetch(window.location.href, {
+            const formData = new FormData(form);
+
+            const response = await fetch(form.action || window.location.href, {
                 method: 'POST',
                 body: formData,
                 headers: {
@@ -158,16 +133,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
 
-            if (!response.ok) {
-                throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
-            }
-
             const result = await response.json();
 
+            if (!response.ok) {
+                throw new Error(result.error || 'Upload failed');
+            }
+
             if (result.success) {
-                statusText.textContent = 'Upload Complete!';
                 progressBar.style.width = '100%';
                 progressBar.textContent = '100%';
+                statusText.textContent = 'Upload successful!';
+                statusDiv.className = 'alert alert-success';
                 setTimeout(() => window.location.reload(), 2000);
             } else {
                 throw new Error(result.error || 'Upload failed');
@@ -175,12 +151,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         } catch (error) {
             console.error('Upload error:', error);
-            statusText.textContent = error.message;
+            statusText.textContent = 'Upload failed';
+            statusDiv.className = 'alert alert-danger';
             errorContainer.classList.remove('d-none');
-            errorList.innerHTML = `<li>${error.message}</li>`;
+            errorContainer.textContent = error.message;
             progressBar.classList.add('bg-danger');
-        } finally {
-            submitButton.disabled = false;
         }
     };
 });
