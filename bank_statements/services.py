@@ -3,19 +3,22 @@ Service layer for bank statement processing
 Handles business logic separately from routes
 """
 import logging
+import os
 from typing import Tuple, Dict, Any
 from werkzeug.datastructures import FileStorage
+from werkzeug.utils import secure_filename
 from .models import BankStatementUpload
-from .upload_validator import BankStatementValidator
+from .excel_reader import BankStatementExcelReader
 from models import db
 
 logger = logging.getLogger(__name__)
 
 class BankStatementService:
     """Service for handling bank statement uploads and processing"""
-    
+
     def __init__(self):
-        self.validator = BankStatementValidator()
+        self.excel_reader = BankStatementExcelReader()
+        self.errors = []
 
     def process_upload(
         self,
@@ -30,7 +33,7 @@ class BankStatementService:
         try:
             # Create upload record
             upload = BankStatementUpload(
-                filename=file.filename,
+                filename=secure_filename(file.filename),
                 account_id=account_id,
                 user_id=user_id,
                 status='processing'
@@ -38,33 +41,51 @@ class BankStatementService:
             db.session.add(upload)
             db.session.commit()
 
-            # Validate and process file
-            success = self.validator.validate_and_process(file, account_id, user_id)
-            
-            # Update upload status
-            if success:
-                upload.status = 'completed'
-                response = {
+            # Save file temporarily
+            temp_path = os.path.join('/tmp', secure_filename(file.filename))
+            file.save(temp_path)
+
+            try:
+                # Read and validate Excel file
+                df = self.excel_reader.read_excel(temp_path)
+                if df is None:
+                    upload.set_error('; '.join(self.excel_reader.get_errors()))
+                    db.session.commit()
+                    return False, {
+                        'success': False,
+                        'error': 'Error reading bank statement',
+                        'errors': self.excel_reader.get_errors()
+                    }
+
+                # Validate data
+                if not self.excel_reader.validate_data(df):
+                    upload.set_error('; '.join(self.excel_reader.get_errors()))
+                    db.session.commit()
+                    return False, {
+                        'success': False,
+                        'error': 'Invalid bank statement data',
+                        'errors': self.excel_reader.get_errors()
+                    }
+
+                # If everything is valid, mark as success
+                upload.set_success(f"Processed {len(df)} transactions")
+                db.session.commit()
+
+                return True, {
                     'success': True,
-                    'message': 'Bank statement processed successfully'
-                }
-            else:
-                upload.status = 'failed'
-                error_messages = self.validator.get_error_messages()
-                upload.error_message = '; '.join(error_messages)
-                response = {
-                    'success': False,
-                    'error': error_messages[0] if error_messages else 'Processing failed'
+                    'message': f'Successfully processed {len(df)} transactions',
+                    'rows_processed': len(df)
                 }
 
-            db.session.commit()
-            return success, response
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
         except Exception as e:
             logger.error(f"Error processing bank statement: {str(e)}")
-            if upload.id:
-                upload.status = 'failed'
-                upload.error_message = str(e)
+            if 'upload' in locals():
+                upload.set_error(str(e))
                 db.session.commit()
             return False, {
                 'success': False,
