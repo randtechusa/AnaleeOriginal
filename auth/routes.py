@@ -14,10 +14,43 @@ import base64
 
 from . import auth
 from models import db, User
-from forms.auth import LoginForm, RequestPasswordResetForm, ResetPasswordForm, VerifyMFAForm, SetupMFAForm
+from forms.auth import (
+    LoginForm, RequestPasswordResetForm, ResetPasswordForm, 
+    VerifyMFAForm, SetupMFAForm, RegistrationForm
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+@auth.route('/register', methods=['GET', 'POST'])
+def register():
+    """Handle new user registration"""
+    if current_user.is_authenticated:
+        return redirect(url_for('main.dashboard'))
+
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        try:
+            user = User(
+                username=form.username.data,
+                email=form.email.data.lower().strip(),
+                subscription_status='pending'  # Set initial status as pending
+            )
+            user.set_password(form.password.data)
+
+            db.session.add(user)
+            db.session.commit()
+
+            flash('Registration successful! Please wait for admin approval before logging in.', 'success')
+            logger.info(f"New user registered: {user.email}")
+            return redirect(url_for('auth.login'))
+
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Registration error: {str(e)}")
+            flash('An error occurred during registration.', 'error')
+
+    return render_template('auth/register.html', form=form)
 
 def create_admin_if_not_exists():
     """Create admin user if it doesn't exist"""
