@@ -90,9 +90,6 @@ def login():
             login_user(user, remember=form.remember_me.data)
             logger.info(f"User {user.email} logged in successfully")
 
-            # Create admin if it doesn't exist (this ensures admin exists after first login)
-            create_admin_if_not_exists()
-
             # Redirect based on user type with proper flash message
             if user.is_admin:
                 flash('Welcome back, Administrator!', 'success')

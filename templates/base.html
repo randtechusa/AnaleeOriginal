@@ -12,7 +12,7 @@
 <body class="bg-light">
     {% if current_user.is_authenticated %}
         {% if current_user.is_admin %}
-            {% include "admin/base.html" %}
+            {% include "admin/layout.html" %}
         {% else %}
             <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
                 <div class="container">
@@ -27,7 +27,7 @@
                                 <a class="nav-link" href="{{ url_for('main.analyze_list') }}">Analyze Data</a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('historical_data.upload') }}">Historical Data</a>
+                                <a class="nav-link" href="{{ url_for('bank_statements.upload') }}">Bank Statements</a>
                             </li>
                             <li class="nav-item">
                                 <a class="nav-link" href="{{ url_for('main.settings') }}">Chart of Accounts</a>
@@ -41,12 +41,6 @@
                             </li>
                             <li class="nav-item">
                                 <a class="nav-link" href="{{ url_for('main.financial_insights') }}">Financial Insights</a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('chat.chat_interface') }}">AI Assistant Chat</a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('main.expense_forecast') }}">Expense Forecast</a>
                             </li>
                             <li class="nav-item">
                                 <a class="nav-link" href="{{ url_for('main.company_settings') }}">Company Settings</a>
