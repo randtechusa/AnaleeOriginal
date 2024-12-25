@@ -55,8 +55,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
             'SQLALCHEMY_TRACK_MODIFICATIONS': False,
             'TEMPLATES_AUTO_RELOAD': True,
             'WTF_CSRF_ENABLED': True,
-            'WTF_CSRF_SECRET_KEY': os.environ.get("WTF_CSRF_SECRET_KEY", os.urandom(32)),
             'WTF_CSRF_TIME_LIMIT': 3600,  # 1 hour CSRF token validity
+            'SESSION_COOKIE_SECURE': True,
+            'SESSION_COOKIE_HTTPONLY': True,
+            'REMEMBER_COOKIE_SECURE': True,
+            'REMEMBER_COOKIE_HTTPONLY': True,
             'SQLALCHEMY_ENGINE_OPTIONS': {
                 'pool_pre_ping': True,
                 'pool_size': 5,
