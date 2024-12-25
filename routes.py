@@ -50,6 +50,39 @@ def dashboard():
         flash('Error loading dashboard data')
         return render_template('dashboard.html', transactions=[])
 
+@main.route('/api/suggest-explanation', methods=['POST'])
+@login_required
+def suggest_explanation_api():
+    """API endpoint for explanation suggestions"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+
+        # Find similar transactions based on description
+        similar_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.description.ilike(f"%{description}%")
+        ).limit(5).all()
+
+        # Convert to JSON-serializable format
+        transactions = [{
+            'id': t.id,
+            'description': t.description,
+            'explanation': t.explanation
+        } for t in similar_transactions]
+
+        return jsonify({
+            'success': True,
+            'transactions': transactions
+        })
+
+    except Exception as e:
+        logger.error(f"Error in suggestion API: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @main.route('/logout')
 @login_required
 def logout():
@@ -133,34 +166,6 @@ def company_settings():
         months=months
     )
 
-@main.route('/api/suggest-explanation', methods=['POST'])
-@login_required
-def suggest_explanation_api():
-    """API endpoint for explanation suggestions"""
-    try:
-        data = request.get_json()
-        description = data.get('description', '').strip()
-
-        if not description:
-            return jsonify({'error': 'Description is required'}), 400
-
-        similar_transactions = []
-        for transaction in Transaction.query.filter_by(user_id=current_user.id).all():
-            if description.lower() in transaction.description.lower():
-                similar_transactions.append({
-                    'id': transaction.id,
-                    'description': transaction.description,
-                    'explanation': transaction.explanation
-                })
-
-        return jsonify({
-            'success': True,
-            'transactions': similar_transactions[:5]  # Limit to top 5 matches
-        })
-
-    except Exception as e:
-        logger.error(f"Error in suggestion API: {str(e)}")
-        return jsonify({'error': str(e)}), 500
 
 @main.route('/analyze')
 @login_required
@@ -825,8 +830,7 @@ def icountant_interface():
             message = "No transactions pending for processing"
 
         # Get recently processed transactions        
-        recently_processed = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
+        recently_processed = Transaction.query.filter(            Transaction.user_id == current_user.id,
             Transaction.account_id.isnot(None)
         ).order_by(Transaction.date.desc()).limit(5).all()
         

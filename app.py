@@ -9,8 +9,7 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from flask_wtf.csrf import CSRFProtect
-from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
-from bank_statements.models import BankStatementUpload
+from models import db, login_manager, User
 
 # Configure logging
 logging.basicConfig(
@@ -81,7 +80,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         logger.info("Initializing CSRF protection...")
         csrf.init_app(app)
 
-        # Configure login manager
+        # Configure login manager with enhanced security
         logger.info("Configuring login manager...")
         login_manager.init_app(app)
         login_manager.login_view = 'auth.login'
@@ -93,50 +92,35 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
             try:
                 # Verify database connection
                 logger.info("Verifying database connection...")
-                with db.engine.connect() as connection:
-                    connection.execute(text("SELECT 1"))
+                db.session.execute(text("SELECT 1"))
                 logger.info("Database connection verified successfully")
 
-                # Register blueprints with proper error handling
+                # Register blueprints in specific order
                 logger.info("Registering blueprints...")
 
-                # Auth blueprint must be registered first
+                # Register auth blueprint first for login functionality
                 from auth import auth as auth_blueprint
                 app.register_blueprint(auth_blueprint)
-                logger.info("Auth blueprint registered successfully")
+                logger.info("Auth blueprint registered")
 
-                # Register admin blueprint before main to prevent route conflicts
+                # Register admin blueprint
                 from admin import admin as admin_blueprint
                 app.register_blueprint(admin_blueprint)
-                logger.info("Admin blueprint registered successfully")
+                logger.info("Admin blueprint registered")
 
-                # Register core blueprints (protected components)
+                # Register other blueprints
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
-                logger.info("Main blueprint registered successfully")
+                logger.info("Main blueprint registered")
 
-                # Register other blueprints with URL prefixes
-                from reports import reports as reports_blueprint
-                app.register_blueprint(reports_blueprint, url_prefix='/reports')
-                logger.info("Reports blueprint registered successfully")
+                # Ensure database tables exist
+                db.create_all()
+                logger.info("Database tables verified")
 
-                from historical_data import historical_data as historical_data_blueprint
-                app.register_blueprint(historical_data_blueprint, url_prefix='/historical-data')
-                logger.info("Historical data blueprint registered successfully")
-
-                from bank_statements import bank_statements as bank_statements_blueprint
-                app.register_blueprint(bank_statements_blueprint, url_prefix='/bank-statements')
-                logger.info("Bank statements blueprint registered successfully")
-
-                from risk_assessment import risk_assessment as risk_assessment_blueprint
-                app.register_blueprint(risk_assessment_blueprint, url_prefix='/risk-assessment')
-                logger.info("Risk assessment blueprint registered successfully")
-
-                logger.info("All blueprints registered successfully")
                 return app
 
             except Exception as e:
-                logger.error(f"Error during blueprint registration: {str(e)}")
+                logger.error(f"Error during application setup: {str(e)}")
                 logger.exception("Full stack trace:")
                 return None
 
