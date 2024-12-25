@@ -27,6 +27,10 @@ args = "Database Migration"
 task = "workflow.run"
 args = "Database Init"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Database Setup"
+
 [[workflows.workflow]]
 name = "Flask Server"
 author = "agent"
@@ -82,7 +86,21 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "flask db init && flask db migrate -m 'Initial migration with core tables' && flask db upgrade"
+args = "rm -rf migrations && flask db init && flask db migrate -m 'Initial migration with core tables' && flask db upgrade"
+
+[[workflows.workflow]]
+name = "Database Setup"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "flask db upgrade"
 
 [deployment]
 run = ["sh", "-c", "python app.py"]

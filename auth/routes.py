@@ -19,9 +19,32 @@ from forms.auth import LoginForm, RequestPasswordResetForm, ResetPasswordForm, V
 # Configure logging
 logger = logging.getLogger(__name__)
 
+def create_admin_if_not_exists():
+    """Create admin user if it doesn't exist"""
+    try:
+        admin = User.query.filter_by(email='admin@example.com').first()
+        if not admin:
+            admin = User(
+                username='admin',
+                email='admin@example.com',
+                is_admin=True,
+                subscription_status='active'
+            )
+            admin.set_password('admin123')
+            db.session.add(admin)
+            db.session.commit()
+            logger.info("Admin user created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating admin user: {str(e)}")
+        return False
+
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login with enhanced security and session management."""
+    # Create admin user if it doesn't exist
+    create_admin_if_not_exists()
+
     # If user is already authenticated, redirect appropriately
     if current_user.is_authenticated:
         logger.info(f"Already authenticated user {current_user.id} redirected to appropriate dashboard")
