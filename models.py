@@ -21,6 +21,13 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256))
     is_admin = db.Column(db.Boolean, default=False)
 
+    # Subscription fields
+    subscription_status = db.Column(db.String(20), default='pending')  # pending, active, expired, cancelled
+    subscription_type = db.Column(db.String(20), default='free')  # free, basic, premium
+    subscription_start = db.Column(db.DateTime)
+    subscription_end = db.Column(db.DateTime)
+    subscription_features = db.Column(db.JSON)  # Store enabled features as JSON
+
     # Relationships
     accounts = db.relationship('Account', backref='user', lazy=True)
     transactions = db.relationship('Transaction', backref='user', lazy=True)
@@ -29,6 +36,7 @@ class User(UserMixin, db.Model):
     risk_assessments = db.relationship('RiskAssessment', backref='user', lazy=True)
     bank_statement_uploads = db.relationship('BankStatementUpload', backref='user', lazy=True)
     uploaded_files = db.relationship('UploadedFile', backref='user', lazy=True)
+    subscription_history = db.relationship('SubscriptionHistory', backref='user', lazy=True)
 
     def set_password(self, password):
         """Set hashed password."""
@@ -37,6 +45,50 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         """Check if provided password matches hash."""
         return check_password_hash(self.password_hash, password)
+
+    def has_feature_access(self, feature_name):
+        """Check if user has access to a specific feature"""
+        if self.is_admin:
+            return True
+        if not self.subscription_features:
+            return False
+        return feature_name in self.subscription_features.get('enabled_features', [])
+
+    def is_subscription_active(self):
+        """Check if user has an active subscription"""
+        if self.is_admin:
+            return True
+        return (self.subscription_status == 'active' and 
+                self.subscription_end and 
+                self.subscription_end > datetime.utcnow())
+
+class SubscriptionHistory(db.Model):
+    """Model for tracking subscription changes"""
+    __tablename__ = 'subscription_history'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    change_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    old_status = db.Column(db.String(20))
+    new_status = db.Column(db.String(20), nullable=False)
+    old_type = db.Column(db.String(20))
+    new_type = db.Column(db.String(20), nullable=False)
+    change_reason = db.Column(db.String(200))
+    changed_by_admin = db.Column(db.Boolean, default=False)
+
+class SubscriptionPlan(db.Model):
+    """Model for defining subscription plans"""
+    __tablename__ = 'subscription_plan'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False, unique=True)
+    description = db.Column(db.Text)
+    price = db.Column(db.Numeric(10, 2), nullable=False)
+    duration_days = db.Column(db.Integer, nullable=False)
+    features = db.Column(db.JSON, nullable=False)  # List of features included
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Account(db.Model):
     """Account model for bank accounts"""
