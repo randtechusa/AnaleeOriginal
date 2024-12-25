@@ -66,12 +66,24 @@ def create_app():
                 db.session.execute(text('SELECT 1'))
                 logger.info("Database connection successful")
 
-                # Register blueprints
+                # Register all blueprints
                 from auth import auth as auth_blueprint
                 from main import main as main_blueprint
+                from bank_statements import bank_statements as bank_statements_blueprint
+                from historical_data import historical_data as historical_data_blueprint
+                from reports import reports as reports_blueprint
+                from risk_assessment import risk_assessment as risk_assessment_blueprint
+                from recommendations import recommendations as recommendations_blueprint
+                from errors import errors as errors_blueprint
 
                 app.register_blueprint(auth_blueprint, url_prefix='/auth')
                 app.register_blueprint(main_blueprint)
+                app.register_blueprint(bank_statements_blueprint)
+                app.register_blueprint(historical_data_blueprint)
+                app.register_blueprint(reports_blueprint)
+                app.register_blueprint(risk_assessment_blueprint)
+                app.register_blueprint(recommendations_blueprint)
+                app.register_blueprint(errors_blueprint)
 
                 logger.info("All blueprints registered successfully")
                 return app
