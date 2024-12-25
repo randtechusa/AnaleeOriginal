@@ -65,10 +65,22 @@ def create_app():
                 db.session.execute(text('SELECT 1'))
                 logger.info("Database connection successful")
 
-                # Register main blueprint
+                # Register blueprints
                 from routes import main as main_blueprint
+                from bank_statements import bank_statements as bank_statements_blueprint
+                from reports import reports as reports_blueprint
+                from historical_data import historical_data as historical_data_blueprint
+                from risk_assessment import risk_assessment as risk_assessment_blueprint
+                from errors import errors as errors_blueprint
+
                 app.register_blueprint(main_blueprint)
-                logger.info("Main blueprint registered")
+                app.register_blueprint(bank_statements_blueprint)
+                app.register_blueprint(reports_blueprint)
+                app.register_blueprint(historical_data_blueprint)
+                app.register_blueprint(risk_assessment_blueprint)
+                app.register_blueprint(errors_blueprint)
+
+                logger.info("All blueprints registered successfully")
 
             except Exception as e:
                 logger.error(f"Database connection failed: {str(e)}")
