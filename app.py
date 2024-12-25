@@ -9,8 +9,9 @@ from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from flask_wtf.csrf import CSRFProtect
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
-from bank_statements.models import BankStatementUpload  # Add this line
+from bank_statements.models import BankStatementUpload
 from admin import admin as admin_blueprint
+from auth.routes import auth as auth_blueprint  # Add auth blueprint import
 from bank_statements import bank_statements as bank_statements_blueprint
 
 # Configure logging with more detailed error reporting
@@ -94,6 +95,10 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         with app.app_context():
             # Register blueprints with proper error handling
             try:
+                # Register auth blueprint first for proper route resolution
+                app.register_blueprint(auth_blueprint)
+                logger.info("Auth blueprint registered successfully")
+
                 # Core blueprints - protected components
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)

@@ -5,6 +5,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import text
 from admin.forms import CompanySettingsForm
+from forms.auth import LoginForm  # Add this import
 
 from models import db, User, CompanySettings, Account, Transaction, UploadedFile
 from utils.chart_of_accounts_dev import ChartOfAccountsLoader
@@ -100,27 +101,16 @@ def register():
 
 @main.route('/login', methods=['GET', 'POST'])
 def login():
-    """Handle user login with enhanced error handling and session management."""
+    """Handle user login with enhanced security and session management."""
     if current_user.is_authenticated:
         logger.info(f"Already authenticated user {current_user.id} redirected to dashboard")
         if current_user.is_admin:
             return redirect(url_for('admin.dashboard'))
         return redirect(url_for('main.dashboard'))
 
-    # Clear any existing session data
-    session.clear()
-    logger.info("Starting login process with cleared session")
-
-    if request.method == 'POST':
+    form = LoginForm()
+    if form.validate_on_submit():
         try:
-            email = request.form.get('email', '').strip()
-            password = request.form.get('password', '')
-
-            if not email or not password:
-                logger.warning("Login attempt with missing credentials")
-                flash('Please provide both email and password')
-                return render_template('login.html')
-
             # Verify database connection before proceeding
             try:
                 db.session.execute(text('SELECT 1'))
@@ -128,41 +118,36 @@ def login():
                 logger.error(f"Database connection error: {str(db_error)}")
                 db.session.rollback()
                 flash('Unable to connect to database. Please try again.')
-                return render_template('login.html')
+                return render_template('login.html', form=form)
 
             # Find and verify user
-            user = User.query.filter_by(email=email).first()
-            if not user:
-                logger.warning(f"Login attempt for non-existent user: {email}")
+            user = User.query.filter_by(email=form.email.data.strip()).first()
+            if not user or not user.check_password(form.password.data):
+                logger.warning(f"Failed login attempt for email: {form.email.data}")
                 flash('Invalid email or password')
-                return render_template('login.html')
+                return render_template('login.html', form=form)
 
             logger.info(f"Found user {user.username} with ID {user.id}")
 
-            if not user.check_password(password):
-                logger.warning(f"Password verification failed for user: {email}")
-                flash('Invalid email or password')
-                return render_template('login.html')
-
             # Check if user is pending approval
             if user.subscription_status == 'pending':
-                logger.warning(f"Login attempt by pending user: {email}")
+                logger.warning(f"Login attempt by pending user: {user.email}")
                 flash('Your account is pending approval. Please wait for administrator approval.')
-                return render_template('login.html')
+                return render_template('login.html', form=form)
 
             # Check if user is deactivated
             if user.subscription_status == 'deactivated':
-                logger.warning(f"Login attempt by deactivated user: {email}")
+                logger.warning(f"Login attempt by deactivated user: {user.email}")
                 flash('Your account has been deactivated. Please contact administrator.')
-                return render_template('login.html')
+                return render_template('login.html', form=form)
 
             # Login successful - set up session
-            login_user(user, remember=True)
-            logger.info(f"User {email} logged in successfully")
+            login_user(user, remember=form.remember_me.data)
+            logger.info(f"User {user.email} logged in successfully")
 
             # Handle redirect based on user type
             if user.is_admin:
-                logger.info(f"Admin user {email} redirecting to admin dashboard")
+                logger.info(f"Admin user {user.email} redirecting to admin dashboard")
                 return redirect(url_for('admin.dashboard'))
 
             # Regular user redirect
@@ -179,8 +164,8 @@ def login():
             db.session.rollback()
             flash('An error occurred during login. Please try again.')
 
-    # GET request - show login form
-    return render_template('login.html')
+    # GET request or form validation failed - show login form
+    return render_template('login.html', form=form)
 
 @main.route('/')
 def index():

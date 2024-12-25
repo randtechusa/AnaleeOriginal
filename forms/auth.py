@@ -1,9 +1,20 @@
 """
-Authentication related forms including password reset and MFA
+Authentication related forms including login, password reset and MFA
 """
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField
+from wtforms import StringField, PasswordField, SubmitField, BooleanField
 from wtforms.validators import DataRequired, Email, EqualTo, Length
+
+class LoginForm(FlaskForm):
+    """Form for user login with CSRF protection"""
+    email = StringField('Email', validators=[
+        DataRequired(),
+        Email(),
+        Length(max=120)
+    ])
+    password = PasswordField('Password', validators=[DataRequired()])
+    remember_me = BooleanField('Remember Me')
+    submit = SubmitField('Login')
 
 class RequestPasswordResetForm(FlaskForm):
     """Form for requesting a password reset"""
