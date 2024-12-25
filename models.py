@@ -27,6 +27,8 @@ class User(UserMixin, db.Model):
     company_settings = db.relationship('CompanySettings', backref='user', lazy=True)
     historical_data = db.relationship('HistoricalData', backref='user', lazy=True)
     risk_assessments = db.relationship('RiskAssessment', backref='user', lazy=True)
+    bank_statement_uploads = db.relationship('BankStatementUpload', backref='user', lazy=True)
+    uploaded_files = db.relationship('UploadedFile', backref='user', lazy=True)
 
     def set_password(self, password):
         """Set hashed password."""
@@ -41,14 +43,31 @@ class Account(db.Model):
     __tablename__ = 'account'
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(128), nullable=False)
-    link = db.Column(db.String(128), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    link = db.Column(db.String(20), nullable=False)
+    category = db.Column(db.String(50))
+    sub_category = db.Column(db.String(50))
+    account_code = db.Column(db.String(20))
+    is_active = db.Column(db.Boolean, default=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    transactions = db.relationship('Transaction', backref='account', lazy=True)
+    historical_data = db.relationship('HistoricalData', backref='account', lazy=True)
+
+class UploadedFile(db.Model):
+    """Model for tracking uploaded files"""
+    __tablename__ = 'uploaded_file'
+
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(256), nullable=False)
+    upload_date = db.Column(db.DateTime, nullable=False, server_default=db.func.now())
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
     # Relationships
-    bank_statement_uploads = db.relationship('BankStatementUpload', backref='account', lazy=True)
-    transactions = db.relationship('Transaction', backref='account', lazy=True)
-    historical_data = db.relationship('HistoricalData', backref='account', lazy=True)
+    transactions = db.relationship('Transaction', backref='uploaded_file', lazy=True)
 
 class BankStatementUpload(db.Model):
     """Model for tracking bank statement uploads"""
@@ -77,11 +96,15 @@ class CompanySettings(db.Model):
     __tablename__ = 'company_settings'
 
     id = db.Column(db.Integer, primary_key=True)
-    company_name = db.Column(db.String(128), nullable=False)
-    financial_year_end = db.Column(db.Date, nullable=False)
+    company_name = db.Column(db.String(200), nullable=False)
+    financial_year_end = db.Column(db.Integer, nullable=False)  # Keep as INTEGER to match existing DB
+    registration_number = db.Column(db.String(50))
+    tax_number = db.Column(db.String(50))
+    vat_number = db.Column(db.String(50))
+    address = db.Column(db.Text)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Transaction(db.Model):
     """Model for financial transactions"""
@@ -93,7 +116,7 @@ class Transaction(db.Model):
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     bank_account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    file_id = db.Column(db.Integer, db.ForeignKey('bank_statement_upload.id'))
+    file_id = db.Column(db.Integer, db.ForeignKey('uploaded_file.id'))
     explanation = db.Column(db.Text)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -105,12 +128,12 @@ class HistoricalData(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, nullable=False)
     description = db.Column(db.String(200), nullable=False)
-    amount = db.Column(db.Numeric(10, 2), nullable=False)
-    explanation = db.Column(db.Text)
-    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    explanation = db.Column(db.String(200))
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class RiskAssessment(db.Model):
     """Model for financial risk assessments"""

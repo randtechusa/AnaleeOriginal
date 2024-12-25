@@ -1,37 +1,44 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-body">
-                <h2>Welcome, {{ current_user.username }}</h2>
-                <p>Welcome to your financial dashboard. Here you can manage your financial data and view insights.</p>
-            </div>
-        </div>
-    </div>
+<div class="bg-white shadow rounded-lg p-6">
+    <h1 class="text-2xl font-bold mb-4">Welcome, {{ current_user.username }}</h1>
+    <p class="text-gray-600 mb-6">Welcome to your financial dashboard. Here you can manage your financial data and view insights.</p>
 </div>
 
-<div class="row">
-    <div class="col-md-6 mb-4">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">Quick Actions</h5>
-                <div class="list-group">
-                    <a href="{{ url_for('bank_statements.upload') }}" class="list-group-item list-group-item-action">
-                        Upload Bank Statements
-                    </a>
-                </div>
-            </div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+    <div class="bg-white shadow rounded-lg p-6">
+        <h2 class="text-xl font-semibold mb-4">Quick Actions</h2>
+        <div class="space-y-2">
+            <a href="{{ url_for('bank_statements.upload') }}" 
+               class="block w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white rounded text-center">
+                Upload Bank Statements
+            </a>
+            {% if current_user.is_admin %}
+            <a href="{{ url_for('admin.dashboard') }}" 
+               class="block w-full py-2 px-4 bg-green-500 hover:bg-green-600 text-white rounded text-center">
+                Admin Dashboard
+            </a>
+            {% endif %}
         </div>
     </div>
 
-    <div class="col-md-6 mb-4">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">Recent Activity</h5>
-                <p>Your recent bank statement uploads and analysis will appear here.</p>
-            </div>
+    <div class="bg-white shadow rounded-lg p-6">
+        <h2 class="text-xl font-semibold mb-4">Recent Activity</h2>
+        <div class="space-y-4">
+            {% if current_user.bank_statement_uploads %}
+                {% for upload in current_user.bank_statement_uploads[-5:] %}
+                <div class="border-b pb-2">
+                    <p class="font-medium">{{ upload.filename }}</p>
+                    <p class="text-sm text-gray-600">{{ upload.upload_date.strftime('%Y-%m-%d %H:%M') }}</p>
+                    <p class="text-sm {{ 'text-green-600' if upload.status == 'success' else 'text-red-600' }}">
+                        {{ upload.status }}
+                    </p>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="text-gray-600">No recent activity</p>
+            {% endif %}
         </div>
     </div>
 </div>
