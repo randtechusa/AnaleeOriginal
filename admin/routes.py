@@ -165,32 +165,6 @@ def upload_chart_of_accounts():
 
     return redirect(url_for('admin.charts_of_accounts'))
 
-@admin.route('/dashboard')
-@login_required
-@admin_required
-def dashboard():
-    """Admin dashboard showing subscription and system statistics"""
-    # Gather subscription statistics
-    total_users = User.query.filter(User.is_admin == False).count()
-    active_users = User.query.filter(
-        User.is_admin == False,
-        User.subscription_status == 'active'
-    ).count()
-    pending_users = User.query.filter(
-        User.is_admin == False,
-        User.subscription_status == 'pending'
-    ).count()
-    deactivated_users = User.query.filter(
-        User.is_admin == False,
-        User.subscription_status == 'deactivated'
-    ).count()
-
-    return render_template('admin/dashboard.html',
-                         total_users=total_users,
-                         active_users=active_users,
-                         pending_users=pending_users,
-                         deactivated_users=deactivated_users)
-
 @admin.route('/charts-of-accounts/add', methods=['POST'])
 @login_required
 @admin_required
@@ -272,6 +246,33 @@ def delete_chart_of_accounts(account_id):
         current_app.logger.error(f"Error deleting admin COA: {str(e)}")
 
     return redirect(url_for('admin.charts_of_accounts'))
+
+
+@admin.route('/dashboard')
+@login_required
+@admin_required
+def dashboard():
+    """Admin dashboard showing subscription and system statistics"""
+    # Gather subscription statistics
+    total_users = User.query.filter(User.is_admin == False).count()
+    active_users = User.query.filter(
+        User.is_admin == False,
+        User.subscription_status == 'active'
+    ).count()
+    pending_users = User.query.filter(
+        User.is_admin == False,
+        User.subscription_status == 'pending'
+    ).count()
+    deactivated_users = User.query.filter(
+        User.is_admin == False,
+        User.subscription_status == 'deactivated'
+    ).count()
+
+    return render_template('admin/dashboard.html',
+                         total_users=total_users,
+                         active_users=active_users,
+                         pending_users=pending_users,
+                         deactivated_users=deactivated_users)
 
 @admin.route('/active-subscribers')
 @login_required

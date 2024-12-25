@@ -7,6 +7,7 @@ from flask import (
     request, session, current_app
 )
 from flask_login import current_user, login_user, logout_user, login_required
+from werkzeug.security import generate_password_hash
 import qrcode
 import io
 import base64
@@ -32,11 +33,18 @@ def login():
     if form.validate_on_submit():
         try:
             # Find and verify user
-            user = User.query.filter_by(email=form.email.data.strip()).first()
+            user = User.query.filter_by(email=form.email.data.lower().strip()).first()
+
             if not user or not user.check_password(form.password.data):
                 logger.warning(f"Failed login attempt for email: {form.email.data}")
                 flash('Invalid email or password', 'error')
                 return render_template('auth/login.html', form=form)
+
+            # Handle MFA if enabled
+            if user.mfa_enabled:
+                session['mfa_user_id'] = user.id
+                logger.info(f"MFA verification required for user {user.email}")
+                return redirect(url_for('auth.verify_mfa'))
 
             # Only check subscription status for non-admin users
             if not user.is_admin:
@@ -49,12 +57,6 @@ def login():
                     logger.warning(f"Login attempt by deactivated user: {user.email}")
                     flash('Your account has been deactivated.', 'error')
                     return render_template('auth/login.html', form=form)
-
-            # Handle MFA if enabled
-            if user.mfa_enabled:
-                session['mfa_user_id'] = user.id
-                logger.info(f"MFA verification required for user {user.email}")
-                return redirect(url_for('auth.verify_mfa'))
 
             # Login successful
             login_user(user, remember=form.remember_me.data)
@@ -95,6 +97,69 @@ def logout():
         flash('Error during logout.', 'error')
 
     return redirect(url_for('auth.login'))
+
+@auth.route('/setup_mfa', methods=['GET', 'POST'])
+@login_required
+def setup_mfa():
+    """Handle MFA setup"""
+    if current_user.mfa_enabled:
+        flash('MFA is already enabled', 'info')
+        return redirect(url_for('main.dashboard'))
+
+    form = SetupMFAForm()
+
+    # Generate MFA secret if not exists
+    if not current_user.mfa_secret:
+        current_user.generate_mfa_secret()
+        db.session.commit()
+
+    # Generate QR code
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(current_user.get_totp_uri())
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # Convert image to base64
+    img_buffer = io.BytesIO()
+    img.save(img_buffer, format='PNG')
+    img_str = f"data:image/png;base64,{base64.b64encode(img_buffer.getvalue()).decode()}"
+
+    if form.validate_on_submit():
+        if current_user.verify_totp(form.token.data):
+            current_user.mfa_enabled = True
+            db.session.commit()
+            flash('MFA has been enabled successfully', 'success')
+            return redirect(url_for('main.dashboard'))
+        else:
+            flash('Invalid verification code', 'error')
+
+    return render_template(
+        'auth/setup_mfa.html',
+        form=form,
+        qr_code=img_str,
+        secret_key=current_user.mfa_secret
+    )
+
+@auth.route('/verify_mfa', methods=['GET', 'POST'])
+def verify_mfa():
+    """Handle MFA verification during login"""
+    if not session.get('mfa_user_id'):
+        return redirect(url_for('auth.login'))
+
+    form = VerifyMFAForm()
+    if form.validate_on_submit():
+        user = User.query.get(session['mfa_user_id'])
+        if user and user.verify_totp(form.token.data):
+            login_user(user)
+            session.pop('mfa_user_id', None)
+
+            if user.is_admin:
+                return redirect(url_for('admin.dashboard'))
+            return redirect(url_for('main.dashboard'))
+        else:
+            flash('Invalid verification code', 'error')
+
+    return render_template('auth/verify_mfa.html', form=form)
 
 def send_reset_email(user):
     """Send password reset email to user"""
@@ -150,64 +215,3 @@ def reset_password(token):
         return redirect(url_for('auth.login'))
 
     return render_template('auth/reset_password.html', form=form)
-
-@auth.route('/setup_mfa', methods=['GET', 'POST'])
-@login_required
-def setup_mfa():
-    """Handle MFA setup"""
-    if current_user.mfa_enabled:
-        flash('MFA is already enabled', 'info')
-        return redirect(url_for('main.index'))
-
-    form = SetupMFAForm()
-
-    # Generate MFA secret if not exists
-    if not current_user.mfa_secret:
-        current_user.generate_mfa_secret()
-        db.session.commit()
-
-    # Generate QR code
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(current_user.get_totp_uri())
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-
-    # Convert image to base64
-    img_buffer = io.BytesIO()
-    img.save(img_buffer, format='PNG')
-    img_str = f"data:image/png;base64,{base64.b64encode(img_buffer.getvalue()).decode()}"
-
-    if form.validate_on_submit():
-        if current_user.verify_totp(form.token.data):
-            current_user.mfa_enabled = True
-            db.session.commit()
-            flash('MFA has been enabled successfully', 'success')
-            return redirect(url_for('main.index'))
-        else:
-            flash('Invalid verification code', 'error')
-
-    return render_template(
-        'auth/setup_mfa.html',
-        form=form,
-        qr_code=img_str,
-        secret_key=current_user.mfa_secret
-    )
-
-@auth.route('/verify_mfa', methods=['GET', 'POST'])
-def verify_mfa():
-    """Handle MFA verification during login"""
-    if not session.get('mfa_user_id'):
-        return redirect(url_for('auth.login'))
-
-    form = VerifyMFAForm()
-    if form.validate_on_submit():
-        user = User.query.get(session['mfa_user_id'])
-        if user and user.verify_totp(form.token.data):
-            login_user(user)
-            session.pop('mfa_user_id', None)
-            next_page = session.pop('next', None)
-            return redirect(next_page or url_for('main.index'))
-        else:
-            flash('Invalid verification code', 'error')
-
-    return render_template('auth/verify_mfa.html', form=form)
