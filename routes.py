@@ -1,11 +1,10 @@
-"""Main application routes including authentication and core functionality"""
+"""Main application routes including core functionality"""
 import logging
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from flask_login import login_user, logout_user, login_required, current_user
+from flask_login import login_required, current_user, logout_user
 from sqlalchemy import text
 from admin.forms import CompanySettingsForm
-from forms.auth import LoginForm  # Add this import
 
 from models import db, User, CompanySettings, Account, Transaction, UploadedFile
 from utils.chart_of_accounts_dev import ChartOfAccountsLoader
@@ -17,156 +16,6 @@ logger = logging.getLogger(__name__)
 # Create blueprint
 main = Blueprint('main', __name__)
 
-@main.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        try:
-            # Verify database connection first
-            try:
-                db.session.execute(text('SELECT 1'))
-                logger.info("Database connection verified for registration")
-            except Exception as db_error:
-                logger.error(f"Database connection failed during registration: {str(db_error)}")
-                flash('Unable to connect to database. Please try again.')
-                return render_template('register.html')
-
-            # Get and validate form data
-            username = request.form.get('username', '').strip()
-            email = request.form.get('email', '').strip()
-            password = request.form.get('password', '')
-
-            # Validate required fields
-            if not username or not email or not password:
-                logger.warning("Registration attempt with missing fields")
-                flash('All fields are required')
-                return render_template('register.html')
-
-            # Validate email format
-            from email_validator import validate_email, EmailNotValidError
-            try:
-                validate_email(email)
-            except EmailNotValidError as e:
-                logger.warning(f"Invalid email format during registration: {email}")
-                flash('Please enter a valid email address')
-                return render_template('register.html')
-
-            # Check for existing user
-            existing_user = User.query.filter(
-                (User.username == username) | (User.email == email)
-            ).first()
-            if existing_user:
-                logger.warning(f"Registration attempt with existing username/email: {username}/{email}")
-                flash('Username or email already exists')
-                return render_template('register.html')
-
-            # Create new user with enhanced error handling
-            try:
-                user = User(
-                    username=username,
-                    email=email,
-                    subscription_status='pending'  # Set initial status as pending
-                )
-                user.set_password(password)
-                logger.info(f"Created new user object for {username}")
-
-                db.session.add(user)
-                db.session.commit()
-                logger.info(f"Successfully registered new user: {username}")
-
-                # Create default Chart of Accounts for the new user
-                try:
-                    User.create_default_accounts(user.id)
-                    logger.info(f"Default Chart of Accounts created for user {user.id}")
-                    flash('Registration successful. Your account is pending approval.')
-                    return redirect(url_for('main.login'))
-                except Exception as e:
-                    logger.error(f"Error creating default accounts: {str(e)}")
-                    db.session.rollback()
-                    flash('Error during registration. Please try again.')
-                    return render_template('register.html')
-
-            except Exception as user_error:
-                logger.error(f"Error creating user: {str(user_error)}")
-                db.session.rollback()
-                flash('Error creating user account. Please try again.')
-                return render_template('register.html')
-
-        except Exception as e:
-            logger.error(f'Unexpected error during registration: {str(e)}')
-            logger.exception("Full registration error stacktrace:")
-            db.session.rollback()
-            flash('Registration failed. Please try again.')
-
-    return render_template('register.html')
-
-@main.route('/login', methods=['GET', 'POST'])
-def login():
-    """Handle user login with enhanced security and session management."""
-    if current_user.is_authenticated:
-        logger.info(f"Already authenticated user {current_user.id} redirected to dashboard")
-        if current_user.is_admin:
-            return redirect(url_for('admin.dashboard'))
-        return redirect(url_for('main.dashboard'))
-
-    form = LoginForm()
-    if form.validate_on_submit():
-        try:
-            # Verify database connection before proceeding
-            try:
-                db.session.execute(text('SELECT 1'))
-            except Exception as db_error:
-                logger.error(f"Database connection error: {str(db_error)}")
-                db.session.rollback()
-                flash('Unable to connect to database. Please try again.')
-                return render_template('login.html', form=form)
-
-            # Find and verify user
-            user = User.query.filter_by(email=form.email.data.strip()).first()
-            if not user or not user.check_password(form.password.data):
-                logger.warning(f"Failed login attempt for email: {form.email.data}")
-                flash('Invalid email or password')
-                return render_template('login.html', form=form)
-
-            logger.info(f"Found user {user.username} with ID {user.id}")
-
-            # Check if user is pending approval
-            if user.subscription_status == 'pending':
-                logger.warning(f"Login attempt by pending user: {user.email}")
-                flash('Your account is pending approval. Please wait for administrator approval.')
-                return render_template('login.html', form=form)
-
-            # Check if user is deactivated
-            if user.subscription_status == 'deactivated':
-                logger.warning(f"Login attempt by deactivated user: {user.email}")
-                flash('Your account has been deactivated. Please contact administrator.')
-                return render_template('login.html', form=form)
-
-            # Login successful - set up session
-            login_user(user, remember=form.remember_me.data)
-            logger.info(f"User {user.email} logged in successfully")
-
-            # Handle redirect based on user type
-            if user.is_admin:
-                logger.info(f"Admin user {user.email} redirecting to admin dashboard")
-                return redirect(url_for('admin.dashboard'))
-
-            # Regular user redirect
-            next_page = request.args.get('next')
-            if not next_page or not next_page.startswith('/'):
-                next_page = url_for('main.dashboard')
-
-            logger.info(f"Login successful, redirecting to: {next_page}")
-            return redirect(next_page)
-
-        except Exception as e:
-            logger.error(f"Error during login process: {str(e)}")
-            logger.exception("Full login error stacktrace:")
-            db.session.rollback()
-            flash('An error occurred during login. Please try again.')
-
-    # GET request or form validation failed - show login form
-    return render_template('login.html', form=form)
-
 @main.route('/')
 def index():
     """Root route - redirects to appropriate dashboard based on user type"""
@@ -176,17 +25,25 @@ def index():
             return redirect(url_for('admin.dashboard'))
         logger.info(f"Regular user {current_user.email} redirected to main dashboard")
         return redirect(url_for('main.dashboard'))
-    return redirect(url_for('main.login'))
+    return redirect(url_for('auth.login'))
 
-@main.route('/historical-data', methods=['GET', 'POST'])
+# Core Protected Features - These routes handle critical functionality
+@main.route('/analyze')
 @login_required
-def historical_data():
-    """Redirect to the proper historical data blueprint route"""
-    return redirect(url_for('historical_data.upload'))
+def analyze_list():
+    """Show list of files available for analysis - Protected Core Feature"""
+    try:
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+        return render_template('analyze_list.html', files=files)
+    except Exception as e:
+        logger.error(f"Error loading files for analysis: {str(e)}")
+        flash('Error loading files', 'error')
+        return redirect(url_for('main.dashboard'))
 
 @main.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
+    """Protected Chart of Accounts management - Core Feature"""
     if request.method == 'POST':
         try:
             account = Account(
@@ -209,11 +66,18 @@ def settings():
     accounts = Account.query.filter_by(user_id=current_user.id).all()
     return render_template('settings.html', accounts=accounts)
 
+@main.route('/historical-data', methods=['GET', 'POST'])
+@login_required
+def historical_data():
+    """Redirect to the proper historical data blueprint route - Protected Core Feature"""
+    return redirect(url_for('historical_data.upload'))
+
 @main.route('/logout')
 @login_required
 def logout():
+    """Redirect logout to auth blueprint"""
     logout_user()
-    return redirect(url_for('main.login'))
+    return redirect(url_for('auth.login'))
 
 @main.route('/company-settings', methods=['GET', 'POST'])
 @login_required
@@ -266,18 +130,6 @@ def company_settings():
         settings=settings,
         months=months
     )
-
-@main.route('/analyze')
-@login_required
-def analyze_list():
-    """Show list of files available for analysis"""
-    try:
-        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-        return render_template('analyze_list.html', files=files)
-    except Exception as e:
-        logger.error(f"Error loading files for analysis: {str(e)}")
-        flash('Error loading files', 'error')
-        return redirect(url_for('main.dashboard'))
 
 @main.route('/analyze/<int:file_id>')
 @login_required
@@ -959,61 +811,14 @@ def suggest_explanation_api():
 
     except Exception as e:
         logger.error(f"Error in ESF: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({''error': str(e)}), 500
 
 @main.route('/upload-progress')
 @login_required
 def upload_progress():
-    try:
-        status = session.get('upload_status', {})
-        if not status:
-            return jsonify({
-                'status': 'no_upload',
-                'message': 'No upload in progress'
-            })
-
-        return jsonify({
-            'status': status.get('status', 'unknown'),
-            'filename': status.get('filename', ''),
-            'total_rows': status.get('total_rows', 0),
-            'processed_rows': status.get('processed_rows', 0),
-            'current_chunk': status.get('current_chunk', 0),
-            'progress': status.get('progress', 0),
-            'last_update': status.get('last_update'),
-            'errors': status.get('errors', [])
-        })
-
-    except Exception as e:
-        logger.error(f"Error checking upload progress: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': 'Error checking upload progress'
-        }), 500
-
-def process_transaction(transaction, description):
-    try:
-        if not transaction or not transaction.description:
-            logger.warning(f"Invalid transaction data: {transaction}")
-            return None
-
-        similarity = calculate_similarity(transaction.description, description)
-        if similarity >= TEXT_THRESHOLD or similarity >= SEMANTIC_THRESHOLD:
-            return {
-                'transaction': transaction,
-                'similarity': similarity
-            }
-        return None
-    except Exception as e:
-        logger.error(f"Error processing transaction: {str(e)}")
-        return None
-
-def calculate_similarity(description1, description2):
-    #Implementation for similarity calculation would go here. Placeholder for now.
-    return 0.5 #Placeholder
-
-
-TEXT_THRESHOLD = 0.8
-SEMANTIC_THRESHOLD = 0.7
+    """Get the current upload progress"""
+    progress = session.get('upload_progress', {})
+    return jsonify(progress)
 
 @main.route('/icountant', methods=['GET', 'POST'])
 @login_required
