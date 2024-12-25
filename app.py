@@ -12,7 +12,7 @@ from flask_wtf.csrf import CSRFProtect
 from models import db, login_manager, User, Account, Transaction, CompanySettings, UploadedFile, HistoricalData
 from bank_statements.models import BankStatementUpload
 
-# Configure logging with more detailed error reporting
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -22,7 +22,6 @@ logging.basicConfig(
     ]
 )
 
-# Create module logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -106,31 +105,31 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(auth_blueprint)
                 logger.info("Auth blueprint registered successfully")
 
+                # Register admin blueprint before main to prevent route conflicts
+                from admin import admin as admin_blueprint
+                app.register_blueprint(admin_blueprint)
+                logger.info("Admin blueprint registered successfully")
+
                 # Register core blueprints (protected components)
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
                 logger.info("Main blueprint registered successfully")
 
-                # Register admin blueprint for secure admin functionality
-                from admin import admin as admin_blueprint
-                app.register_blueprint(admin_blueprint)
-                logger.info("Admin blueprint registered successfully")
-
-                # Register other blueprints while protecting core functionality
+                # Register other blueprints with URL prefixes
                 from reports import reports as reports_blueprint
-                app.register_blueprint(reports_blueprint)
+                app.register_blueprint(reports_blueprint, url_prefix='/reports')
                 logger.info("Reports blueprint registered successfully")
 
                 from historical_data import historical_data as historical_data_blueprint
-                app.register_blueprint(historical_data_blueprint)
+                app.register_blueprint(historical_data_blueprint, url_prefix='/historical-data')
                 logger.info("Historical data blueprint registered successfully")
 
                 from bank_statements import bank_statements as bank_statements_blueprint
-                app.register_blueprint(bank_statements_blueprint)
+                app.register_blueprint(bank_statements_blueprint, url_prefix='/bank-statements')
                 logger.info("Bank statements blueprint registered successfully")
 
                 from risk_assessment import risk_assessment as risk_assessment_blueprint
-                app.register_blueprint(risk_assessment_blueprint)
+                app.register_blueprint(risk_assessment_blueprint, url_prefix='/risk-assessment')
                 logger.info("Risk assessment blueprint registered successfully")
 
                 logger.info("All blueprints registered successfully")

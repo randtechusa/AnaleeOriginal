@@ -21,9 +21,12 @@ logger = logging.getLogger(__name__)
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login with enhanced security and session management."""
+    # If user is already authenticated, redirect appropriately
     if current_user.is_authenticated:
-        logger.info(f"Already authenticated user {current_user.id} redirected to index")
-        return redirect(url_for('main.index'))
+        logger.info(f"Already authenticated user {current_user.id} redirected to appropriate dashboard")
+        if current_user.is_admin:
+            return redirect(url_for('admin.dashboard'))
+        return redirect(url_for('main.dashboard'))
 
     form = LoginForm()
     if form.validate_on_submit():
@@ -35,16 +38,17 @@ def login():
                 flash('Invalid email or password', 'error')
                 return render_template('auth/login.html', form=form)
 
-            # Check subscription status
-            if user.subscription_status == 'pending':
-                logger.warning(f"Login attempt by pending user: {user.email}")
-                flash('Your account is pending approval.', 'warning')
-                return render_template('auth/login.html', form=form)
+            # Only check subscription status for non-admin users
+            if not user.is_admin:
+                if user.subscription_status == 'pending':
+                    logger.warning(f"Login attempt by pending user: {user.email}")
+                    flash('Your account is pending approval.', 'warning')
+                    return render_template('auth/login.html', form=form)
 
-            if user.subscription_status == 'deactivated':
-                logger.warning(f"Login attempt by deactivated user: {user.email}")
-                flash('Your account has been deactivated.', 'error')
-                return render_template('auth/login.html', form=form)
+                if user.subscription_status == 'deactivated':
+                    logger.warning(f"Login attempt by deactivated user: {user.email}")
+                    flash('Your account has been deactivated.', 'error')
+                    return render_template('auth/login.html', form=form)
 
             # Handle MFA if enabled
             if user.mfa_enabled:
@@ -56,9 +60,11 @@ def login():
             login_user(user, remember=form.remember_me.data)
             logger.info(f"User {user.email} logged in successfully")
 
-            # Redirect based on user type
+            # Redirect based on user type with proper flash message
             if user.is_admin:
+                flash('Welcome back, Administrator!', 'success')
                 return redirect(url_for('admin.dashboard'))
+            flash('Login successful!', 'success')
             return redirect(url_for('main.dashboard'))
 
         except Exception as e:
@@ -72,11 +78,18 @@ def login():
 @auth.route('/logout')
 @login_required
 def logout():
-    """Handle user logout"""
+    """Handle user logout with proper cleanup"""
     try:
+        # Store user type before logout for proper message
+        was_admin = current_user.is_admin
+        user_email = current_user.email
+
         logout_user()
-        session.clear()
-        flash('You have been logged out.', 'info')
+        session.clear()  # Clear all session data
+
+        logger.info(f"User {user_email} logged out successfully")
+        flash('You have been logged out successfully.', 'info')
+
     except Exception as e:
         logger.error(f"Logout error: {str(e)}")
         flash('Error during logout.', 'error')

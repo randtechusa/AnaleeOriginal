@@ -2,11 +2,12 @@
 Admin module for managing subscriptions and system-wide settings
 This module is completely separate from core features to ensure their protection
 """
-from flask import Blueprint, abort, redirect, url_for
+from flask import Blueprint, abort, redirect, url_for, flash
 from flask_login import login_required, current_user
 from functools import wraps
 
-admin = Blueprint('admin', __name__)
+# Create admin blueprint with URL prefix
+admin = Blueprint('admin', __name__, url_prefix='/admin')
 
 def admin_required(f):
     """Decorator to protect admin routes"""
@@ -14,6 +15,7 @@ def admin_required(f):
     @login_required
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated or not current_user.is_admin:
+            flash('Access denied. Admin privileges required.', 'error')
             return redirect(url_for('auth.login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -25,5 +27,6 @@ from . import routes
 @admin.before_request
 def restrict_admin_access():
     """Ensure only admin users can access admin routes"""
-    if not getattr(current_user, 'is_authenticated', False) or not getattr(current_user, 'is_admin', False):
+    if not current_user.is_authenticated or not current_user.is_admin:
+        flash('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('auth.login'))

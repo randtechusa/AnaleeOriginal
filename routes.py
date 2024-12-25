@@ -4,9 +4,10 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_login import login_required, current_user, logout_user
 from sqlalchemy import text
+from werkzeug.utils import secure_filename
 
 from models import db, User, CompanySettings, Account, Transaction, UploadedFile
-from admin.forms import CompanySettingsForm
+from forms.company import CompanySettingsForm
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,57 +27,35 @@ def index():
         return redirect(url_for('main.dashboard'))
     return redirect(url_for('auth.login'))
 
-def find_similar_transactions(description):
-    """Find similar transactions based on description"""
-    try:
-        similar_transactions = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.description.ilike(f"%{description}%")
-        ).all()
-
-        return [{
-            'id': t.id,
-            'description': t.description,
-            'explanation': t.explanation
-        } for t in similar_transactions]
-    except Exception as e:
-        logger.error(f"Error finding similar transactions: {str(e)}")
-        return []
-
-@main.route('/api/suggest-explanation', methods=['POST'])
+@main.route('/dashboard')
 @login_required
-def suggest_explanation_api():
-    """API endpoint for ESF (Explanation Suggestion Feature)"""
+def dashboard():
+    """Main dashboard view"""
     try:
-        data = request.get_json()
-        description = data.get('description', '').strip()
+        company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
+        if not company_settings:
+            flash('Please configure company settings first.')
+            return redirect(url_for('main.company_settings'))
 
-        if not description:
-            return jsonify({'error': 'Description is required'}), 400
+        recent_transactions = Transaction.query.filter_by(user_id=current_user.id)\
+            .order_by(Transaction.date.desc())\
+            .limit(5)\
+            .all()
 
-        similar_transactions = find_similar_transactions(description)
-
-        return jsonify({
-            'success': True,
-            'transactions': similar_transactions
-        })
+        return render_template('dashboard.html',
+                            transactions=recent_transactions)
 
     except Exception as e:
-        logger.error(f"Error in ESF: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error loading dashboard: {str(e)}")
+        flash('Error loading dashboard data')
+        return render_template('dashboard.html', transactions=[])
 
-# Core Protected Features - These routes handle critical functionality
-@main.route('/analyze')
+@main.route('/logout')
 @login_required
-def analyze_list():
-    """Show list of files available for analysis"""
-    try:
-        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-        return render_template('analyze_list.html', files=files)
-    except Exception as e:
-        logger.error(f"Error loading files for analysis: {str(e)}")
-        flash('Error loading files', 'error')
-        return redirect(url_for('main.dashboard'))
+def logout():
+    """Redirect logout to auth blueprint"""
+    logout_user()
+    return redirect(url_for('auth.login'))
 
 @main.route('/settings', methods=['GET', 'POST'])
 @login_required
@@ -104,13 +83,6 @@ def settings():
     accounts = Account.query.filter_by(user_id=current_user.id).all()
     return render_template('settings.html', accounts=accounts)
 
-@main.route('/logout')
-@login_required
-def logout():
-    """Redirect logout to auth blueprint"""
-    logout_user()
-    return redirect(url_for('auth.login'))
-
 @main.route('/company-settings', methods=['GET', 'POST'])
 @login_required
 def company_settings():
@@ -124,7 +96,6 @@ def company_settings():
                 settings = CompanySettings(user_id=current_user.id)
                 db.session.add(settings)
 
-            # Update settings from form data
             settings.company_name = form.company_name.data
             settings.registration_number = form.registration_number.data
             settings.tax_number = form.tax_number.data
@@ -140,7 +111,6 @@ def company_settings():
             flash('Error updating company settings')
             db.session.rollback()
 
-    # Pre-populate form with existing data
     if settings:
         form.company_name.data = settings.company_name
         form.registration_number.data = settings.registration_number
@@ -162,6 +132,47 @@ def company_settings():
         settings=settings,
         months=months
     )
+
+@main.route('/api/suggest-explanation', methods=['POST'])
+@login_required
+def suggest_explanation_api():
+    """API endpoint for explanation suggestions"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+
+        similar_transactions = []
+        for transaction in Transaction.query.filter_by(user_id=current_user.id).all():
+            if description.lower() in transaction.description.lower():
+                similar_transactions.append({
+                    'id': transaction.id,
+                    'description': transaction.description,
+                    'explanation': transaction.explanation
+                })
+
+        return jsonify({
+            'success': True,
+            'transactions': similar_transactions[:5]  # Limit to top 5 matches
+        })
+
+    except Exception as e:
+        logger.error(f"Error in suggestion API: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/analyze')
+@login_required
+def analyze_list():
+    """Show list of files available for analysis"""
+    try:
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+        return render_template('analyze_list.html', files=files)
+    except Exception as e:
+        logger.error(f"Error loading files for analysis: {str(e)}")
+        flash('Error loading files', 'error')
+        return redirect(url_for('main.dashboard'))
 
 @main.route('/analyze/<int:file_id>')
 @login_required
@@ -305,106 +316,6 @@ def delete_account(account_id):
         db.session.rollback()
     return redirect(url_for('main.settings'))
 
-
-@main.route('/dashboard')
-@login_required
-def dashboard():
-    company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
-    if not company_settings:
-        flash('Please configure company settings first.')
-        return redirect(url_for('main.company_settings'))
-
-    # Get year from request or use earliest transaction year
-    earliest_transaction = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date).first()
-    latest_transaction = Transaction.query.filter_by(user_id=current_user.id).order_by(Transaction.date.desc()).first()
-
-    # Initialize current_date
-    current_date = datetime.utcnow()
-    selected_year = request.args.get('year', type=int)
-
-    if not selected_year and earliest_transaction:
-        # Default to the year of the earliest transaction
-        if earliest_transaction.date.month > company_settings.financial_year_end:
-            selected_year = earliest_transaction.date.year
-            current_date = earliest_transaction.date
-        else:
-            selected_year = earliest_transaction.date.year - 1
-            current_date = earliest_transaction.date
-    elif not selected_year:
-        # If no transactions exist, use current year
-        if current_date.month > company_settings.financial_year_end:
-            selected_year = current_date.year
-        else:
-            selected_year = current_date.year - 1
-    else:
-        # If year is selected, create a date object for that year
-        current_date = datetime(selected_year, company_settings.financial_year_end, 1)
-
-    fy_dates = company_settings.get_financial_year(current_date)
-    start_date = fy_dates['start_date']
-    end_date = fy_dates['end_date']
-
-    transactions = Transaction.query.filter(
-        Transaction.user_id == current_user.id,
-        Transaction.date.between(start_date, end_date)
-    ).order_by(Transaction.date.desc()).all()
-
-    total_income = sum(t.amount for t in transactions if t.amount > 0)
-    total_expenses = abs(sum(t.amount for t in transactions if t.amount < 0))
-    transaction_count = len(transactions)
-
-    monthly_data = {}
-    for transaction in transactions:
-        month_key = transaction.date.strftime('%Y-%m')
-        if month_key not in monthly_data:
-            monthly_data[month_key] = {'income': 0, 'expenses': 0}
-        if transaction.amount > 0:
-            monthly_data[month_key]['income'] += transaction.amount
-        else:
-            monthly_data[month_key]['expenses'] += abs(transaction.amount)
-
-    sorted_months = sorted(monthly_data.keys())
-    monthly_labels = [datetime.strptime(m, '%Y-%m').strftime('%b %Y') for m in sorted_months]
-    monthly_income = [monthly_data[m]['income'] for m in sorted_months]
-    monthly_expenses = [monthly_data[m]['expenses'] for m in sorted_months]
-
-    category_data = {}
-    for transaction in transactions:
-        if transaction.account and transaction.amount < 0:
-            category = transaction.account.category or 'Uncategorized'
-            category_data[category] = category_data.get(category, 0) + abs(transaction.amount)
-
-    sorted_categories = sorted(category_data.items(), key=lambda x: x[1], reverse=True)
-    category_labels = [cat[0] for cat in sorted_categories]
-    category_amounts = [cat[1] for cat in sorted_categories]
-
-    financial_years = set()
-    for t in Transaction.query.filter_by(user_id=current_user.id).all():
-        if t.date.month > company_settings.financial_year_end:
-            financial_years.add(t.date.year)
-        else:
-            financial_years.add(t.date.year - 1)
-    financial_years = sorted(list(financial_years))
-
-    recent_transactions = Transaction.query.filter_by(user_id=current_user.id)\
-        .order_by(Transaction.date.desc())\
-        .limit(5)\
-        .all()
-
-    return render_template('dashboard.html',
-                         transactions=recent_transactions,
-                         total_income=total_income,
-                         total_expenses=total_expenses,
-                         transaction_count=transaction_count,
-                         monthly_labels=monthly_labels,
-                         monthly_income=monthly_income,
-                         monthly_expenses=monthly_expenses,
-                         category_labels=category_labels,
-                         category_amounts=category_amounts,
-                         financial_years=financial_years,
-                         current_year=selected_year)
-
-from werkzeug.utils import secure_filename
 
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -816,29 +727,6 @@ def expense_forecast():
         flash('Error generating expense forecast')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/api/suggest-explanation', methods=['POST'])
-@login_required
-def suggest_explanation_api():
-    """API endpoint for ESF (Explanation Suggestion Feature)"""
-    try:
-        data = request.get_json()
-        description = data.get('description', '').strip()
-
-        if not description:
-            return jsonify({'error': 'Description is required'}), 400
-
-        similar_transactions = find_similar_transactions(description)
-        suggestion = suggest_explanation(description, similar_transactions)
-
-        return jsonify({
-            'success': True,
-            'suggestion': suggestion
-        })
-
-    except Exception as e:
-        logger.error(f"Error in ESF: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
 @main.route('/upload-progress')
 @login_required
 def upload_progress():
@@ -936,17 +824,17 @@ def icountant_interface():
             transaction_info = None
             message = "No transactions pending for processing"
 
-        # Get recently processed transactions
+        # Get recently processed transactions        
         recently_processed = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.account_id.isnot(None)
         ).order_by(Transaction.date.desc()).limit(5).all()
-
+        
         processed_count = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.account_id.isnot(None)
         ).count()
-
+        
         return render_template(
             'icountant.html',
             transaction=current_transaction,
@@ -957,23 +845,23 @@ def icountant_interface():
             processed_count=processed_count,
             total_count=total_count
         )
-
+        
     except Exception as e:
         logger.error(f"Error in iCountant interface: {str(e)}")
         db.session.rollback()
         flash('Error processing transaction')
         return redirect(url_for('main.dashboard'))
-
+        
 class ICountant:
     def __init__(self, accounts):
         self.accounts = accounts
-
+        
     def process_transaction(self, transaction_data):
         # Placeholder for actual iCountant logic
         message = "iCountant is processing this transaction. Please select an account."
         transaction_info = {}
         return message, transaction_info
-
+        
     def complete_transaction(self, selected_account_index):
         # Placeholder for actual iCountant logic
         if 0 <= selected_account_index < len(self.accounts):
@@ -985,11 +873,11 @@ class ICountant:
             success = False
             completed = False
         return success, message, completed
-
+        
 def suggest_explanation(description, similar_transactions):
     #Implementation for suggestion would go here. Placeholder for now.
     return "Explanation suggestion will be available in the next update"
-
+    
 def process_uploaded_file(file, status):
     """Process the uploaded file and return dataframe and total rows."""
     import pandas as pd
@@ -1000,13 +888,13 @@ def process_uploaded_file(file, status):
             df = pd.read_csv(file)
         else:
             raise ValueError('Invalid file format')
-
+            
         total_rows = len(df)
         return df, total_rows
     except Exception as e:
         logger.error(f"Error processing file: {str(e)}")
         raise
-
+        
 def init_upload_status(filename):
     """Initialize the upload status dictionary."""
     return {
@@ -1019,12 +907,12 @@ def init_upload_status(filename):
         'last_update': datetime.utcnow().isoformat(),
         'errors': []
     }
-
+    
 def process_transaction_rows(df, uploaded_file, user):
     """Process transaction rows from dataframe."""
     processed_rows = 0
     error_rows = []
-
+    
     try:
         for index, row in df.iterrows():
             try:
@@ -1042,17 +930,17 @@ def process_transaction_rows(df, uploaded_file, user):
                     'row': index + 2,  # +2 for Excel row number (header + 1-based index)
                     'error': str(e)
                 })
-
+                
         db.session.commit()
         return processed_rows, error_rows
-
+        
     except Exception as e:
         logger.error(f"Error processing transactions: {str(e)}")
         db.session.rollback()
         raise
-
+        
 from predictive_utils import find_similar_transactions, TEXT_THRESHOLD, SEMANTIC_THRESHOLD
-
+        
 @main.route('/api/generate-insights', methods=['POST'])
 @login_required
 def generate_insights_api():
@@ -1061,13 +949,13 @@ def generate_insights_api():
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
         if not company_settings:
             return jsonify({'error': 'Please configure company settings first.'}), 400
-
+            
         fy_dates = company_settings.get_financial_year()
         transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.date.between(fy_dates['start_date'], fy_dates['end_date'])
         ).order_by(Transaction.date.desc()).all()
-
+        
         # Format transactions for response
         transaction_data = [{
             'id': t.id,
@@ -1076,20 +964,20 @@ def generate_insights_api():
             'amount': float(t.amount),
             'category': t.account.category if t.account else 'Uncategorized'
         } for t in transactions]
-
+        
         # Generate insights using AI
         insights_generator = FinancialInsightsGenerator()
         insights = insights_generator.generate_insights(transaction_data)
-
+        
         return jsonify({
             'transactions': transaction_data,
             'insights': insights
         })
-
+        
     except Exception as e:
         logger.error(f"Error generating AI insights: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
+        
 @main.route('/system-maintenance')
 @login_required
 def system_maintenance():
@@ -1100,22 +988,22 @@ def system_maintenance():
     try:
         # Initialize maintenance monitor
         monitor = MaintenanceMonitor()
-
+        
         # Get health metrics for current user
         health_metrics = monitor.check_module_health(current_user.id)
-
+        
         # Get maintenance predictions
         maintenance_needs = monitor.predict_maintenance_needs()
-
+        
         return render_template('system_maintenance.html',
                              health_metrics=health_metrics,
                              maintenance_needs=maintenance_needs)
-
+        
     except Exception as e:
         logger.error(f"Error in system maintenance: {str(e)}")
         flash('Error checking system health')
         return redirect(url_for('main.dashboard'))
-
+        
 @main.route('/alerts')
 @login_required
 def alert_dashboard():
@@ -1126,20 +1014,20 @@ def alert_dashboard():
             AlertHistory.user_id == current_user.id,
             AlertHistory.status != 'resolved'
         ).order_by(AlertHistory.created_at.desc()).all()
-
+        
         configurations = AlertConfiguration.query.filter_by(
             user_id=current_user.id
         ).order_by(AlertConfiguration.created_at.desc()).all()
-
+        
         return render_template('alerts/alert_dashboard.html',
                              active_alerts=active_alerts,
                              configurations=configurations)
-
+        
     except Exception as e:
         logger.error(f"Error loading alert dashboard: {str(e)}")
         flash('Error loading alert dashboard')
         return redirect(url_for('main.dashboard'))
-
+        
 @main.route('/alerts/create', methods=['POST'])
 @login_required
 def create_alert_config():
@@ -1157,7 +1045,7 @@ def create_alert_config():
         db.session.commit()
         flash('Alert configuration created successfully')
         return redirect(url_for('main.alert_dashboard'))
-
+        
     except ValueError as ve:
         logger.error(f"Invalid alert configuration values: {str(ve)}")
         flash('Invalid configuration values')
@@ -1167,7 +1055,7 @@ def create_alert_config():
         db.session.rollback()
         flash('Error creating alert configuration')
         return redirect(url_for('main.alert_dashboard'))
-
+        
 @main.route('/alerts/acknowledge/<int:alert_id>', methods=['POST'])
 @login_required
 def acknowledge_alert(alert_id):
@@ -1175,15 +1063,15 @@ def acknowledge_alert(alert_id):
     try:
         alert_system = AlertSystem()
         success = alert_system.acknowledge_alert(alert_id, current_user.id)
-
+        
         if success:
             return jsonify({'success': True})
         return jsonify({'error': 'Alert not found or unauthorized'}), 404
-
+        
     except Exception as e:
         logger.error(f"Error acknowledging alert: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
+        
 @main.route('/alerts/check')
 @login_required
 def check_alerts():
@@ -1191,7 +1079,7 @@ def check_alerts():
     try:
         alert_system = AlertSystem()
         anomalies = alert_system.check_anomalies(current_user.id)
-
+        
         created_alerts = []
         for anomaly in anomalies:
             alert = alert_system.create_alert(
@@ -1201,16 +1089,16 @@ def check_alerts():
             )
             if alert:
                 created_alerts.append(alert)
-
+                
         return jsonify({
             'success': True,
             'alerts_created': len(created_alerts)
         })
-
+        
     except Exception as e:
         logger.error(f"Error checking alerts: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
+        
 @main.route('/goals')
 @login_required
 def goals_dashboard():
@@ -1219,12 +1107,12 @@ def goals_dashboard():
         goals = FinancialGoal.query.filter_by(
             user_id=current_user.id
         ).order_by(FinancialGoal.created_at.desc()).all()
-
+        
         # Calculate overall progress statistics
         total_goals = len(goals)
         completed_goals = sum(1 for g in goals if g.status == 'completed')
         active_goals = sum(1 for g in goals if g.status == 'active')
-
+        
         # Group goals by category
         goals_by_category = {}
         for goal in goals:
@@ -1232,19 +1120,19 @@ def goals_dashboard():
             if category not in goals_by_category:
                 goals_by_category[category] = []
             goals_by_category[category].append(goal)
-
+            
         return render_template('goals_dashboard.html',
                             goals=goals,
                             total_goals=total_goals,
                             completed_goals=completed_goals,
                             active_goals=active_goals,
                             goals_by_category=goals_by_category)
-
+        
     except Exception as e:
         logger.error(f"Error loading goals dashboard: {str(e)}")
         flash('Error loading goals dashboard')
         return redirect(url_for('main.dashboard'))
-
+        
 @main.route('/goals/create', methods=['GET', 'POST'])
 @login_required
 def create_goal():
@@ -1266,15 +1154,15 @@ def create_goal():
             db.session.commit()
             flash('Financial goal created successfully')
             return redirect(url_for('main.goals_dashboard'))
-
+            
         except Exception as e:
             logger.error(f"Error creating financial goal: {str(e)}")
             db.session.rollback()
             flash('Error creating financial goal')
             return redirect(url_for('main.goals_dashboard'))
-
+            
     return render_template('create_goal.html')
-
+    
 @main.route('/goals/<int:goal_id>/update', methods=['POST'])
 @login_required
 def update_goal(goal_id):
@@ -1284,34 +1172,34 @@ def update_goal(goal_id):
             id=goal_id,
             user_id=current_user.id
         ).first_or_404()
-
+        
         # Update goal progress
         goal.current_amount = float(request.form['current_amount'])
-
+        
         # Update status if goal is completed
         if goal.calculate_progress() >= 100:
             goal.status = 'completed'
-
+            
         db.session.commit()
         return jsonify({
             'success': True,
             'progress': goal.calculate_progress(),
             'status': goal.status
         })
-
+        
     except Exception as e:
         logger.error(f"Error updating goal: {str(e)}")
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-
-def find_similar_transactions(description, explanation=None):
-    """Find similar transactions based on description and explanation"""
+        
+def find_similar_transactions(description):
+    """Find similar transactions based on description"""
     try:
         similar_transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.description.ilike(f"%{description}%")
         ).all()
-
+        
         return [{
             'id': t.id,
             'description': t.description,
@@ -1320,7 +1208,7 @@ def find_similar_transactions(description, explanation=None):
     except Exception as e:
         logger.error(f"Error finding similar transactions: {str(e)}")
         return []
-
+        
 @main.route('/suggest-explanation', methods=['POST'])
 @login_required
 def suggest_explanation_api():
@@ -1328,18 +1216,37 @@ def suggest_explanation_api():
     try:
         data = request.get_json()
         description = data.get('description', '').strip()
-
+        
         if not description:
             return jsonify({'error': 'Description is required'}), 400
-
+            
         similar_transactions = find_similar_transactions(description)
         suggestion = suggest_explanation(description, similar_transactions)
-
+        
         return jsonify({
             'success': True,
             'suggestion': suggestion
         })
-
+        
     except Exception as e:
         logger.error(f"Error in ESF: {str(e)}")
         return jsonify({'error': str(e)}), 500
+        
+from werkzeug.utils import secure_filename
+        
+def find_similar_transactions(description):
+    """Find similar transactions based on description"""
+    try:
+        similar_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.description.ilike(f"%{description}%")
+        ).all()
+        
+        return [{
+            'id': t.id,
+            'description': t.description,
+            'explanation': t.explanation
+        } for t in similar_transactions]
+    except Exception as e:
+        logger.error(f"Error finding similar transactions: {str(e)}")
+        return []
