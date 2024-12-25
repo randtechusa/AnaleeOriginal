@@ -253,70 +253,90 @@ def delete_chart_of_accounts(account_id):
 @admin_required
 def dashboard():
     """Admin dashboard showing subscription and system statistics"""
-    # Gather subscription statistics
-    total_users = User.query.filter(User.is_admin == False).count()
-    active_users = User.query.filter(
-        User.is_admin == False,
-        User.subscription_status == 'active'
-    ).count()
-    pending_users = User.query.filter(
-        User.is_admin == False,
-        User.subscription_status == 'pending'
-    ).count()
-    deactivated_users = User.query.filter(
-        User.is_admin == False,
-        User.subscription_status == 'deactivated'
-    ).count()
+    try:
+        # Gather subscription statistics
+        total_users = User.query.filter(User.is_admin == False).count()
+        active_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'active'
+        ).count()
+        pending_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'pending'
+        ).count()
+        deactivated_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'deactivated'
+        ).count()
 
-    return render_template('admin/dashboard.html',
-                         total_users=total_users,
-                         active_users=active_users,
-                         pending_users=pending_users,
-                         deactivated_users=deactivated_users)
+        return render_template('admin/dashboard.html',
+                           total_users=total_users,
+                           active_users=active_users,
+                           pending_users=pending_users,
+                           deactivated_users=deactivated_users)
+    except Exception as e:
+        current_app.logger.error(f"Error in admin dashboard: {str(e)}")
+        flash('Error loading admin dashboard', 'error')
+        return redirect(url_for('auth.login'))
 
 @admin.route('/active-subscribers')
 @login_required
 @admin_required
 def active_subscribers():
     """View and manage active subscribers"""
-    users = User.query.filter(
-        User.is_admin == False,
-        User.subscription_status == 'active'
-    ).all()
-    return render_template('admin/active_subscribers.html', users=users)
+    try:
+        users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'active'
+        ).all()
+        return render_template('admin/active_subscribers.html', users=users)
+    except Exception as e:
+        current_app.logger.error(f"Error loading active subscribers: {str(e)}")
+        flash('Error loading active subscribers', 'error')
+        return redirect(url_for('admin.dashboard'))
 
 @admin.route('/deactivated-subscribers')
 @login_required
 @admin_required
 def deactivated_subscribers():
     """View deactivated subscribers"""
-    users = User.query.filter(
-        User.is_admin == False,
-        User.subscription_status == 'deactivated'
-    ).all()
-    return render_template('admin/deactivated_subscribers.html', users=users)
+    try:
+        users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'deactivated'
+        ).all()
+        return render_template('admin/deactivated_subscribers.html', users=users)
+    except Exception as e:
+        current_app.logger.error(f"Error loading deactivated subscribers: {str(e)}")
+        flash('Error loading deactivated subscribers', 'error')
+        return redirect(url_for('admin.dashboard'))
 
 @admin.route('/pending-subscribers')
 @login_required
 @admin_required
 def pending_subscribers():
     """View pending subscriber requests"""
-    users = User.query.filter(
-        User.is_admin == False,
-        User.subscription_status == 'pending'
-    ).all()
-    return render_template('admin/pending_subscribers.html', users=users)
+    try:
+        users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'pending'
+        ).all()
+        return render_template('admin/pending_subscribers.html', users=users)
+    except Exception as e:
+        current_app.logger.error(f"Error loading pending subscribers: {str(e)}")
+        flash('Error loading pending subscribers', 'error')
+        return redirect(url_for('admin.dashboard'))
 
 @admin.route('/subscriber/<int:user_id>/approve', methods=['POST'])
 @login_required
 @admin_required
 def approve_subscriber(user_id):
     """Approve a pending subscriber"""
-    user = User.query.get_or_404(user_id)
-    if user.is_admin:
-        abort(400)  # Bad Request
-
     try:
+        user = User.query.get_or_404(user_id)
+        if user.is_admin:
+            abort(400)  # Bad Request
+
         user.subscription_status = 'active'
         db.session.commit()
         flash(f'Subscription activated for user {user.username}', 'success')
@@ -332,11 +352,11 @@ def approve_subscriber(user_id):
 @admin_required
 def deactivate_subscriber(user_id):
     """Deactivate a subscriber"""
-    user = User.query.get_or_404(user_id)
-    if user.is_admin:
-        abort(400)  # Bad Request
-
     try:
+        user = User.query.get_or_404(user_id)
+        if user.is_admin:
+            abort(400)  # Bad Request
+
         user.subscription_status = 'deactivated'
         db.session.commit()
         flash(f'Subscription deactivated for user {user.username}', 'success')
