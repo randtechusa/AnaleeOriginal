@@ -75,6 +75,7 @@ def create_app():
                 from risk_assessment import risk_assessment as risk_assessment_blueprint
                 from recommendations import recommendations as recommendations_blueprint
                 from errors import errors as errors_blueprint
+                from admin import admin as admin_blueprint
 
                 app.register_blueprint(auth_blueprint, url_prefix='/auth')
                 app.register_blueprint(main_blueprint)
@@ -84,6 +85,7 @@ def create_app():
                 app.register_blueprint(risk_assessment_blueprint)
                 app.register_blueprint(recommendations_blueprint)
                 app.register_blueprint(errors_blueprint)
+                app.register_blueprint(admin_blueprint, url_prefix='/admin')
 
                 logger.info("All blueprints registered successfully")
                 return app
