@@ -59,13 +59,14 @@ def login():
             # Redirect based on user type
             if user.is_admin:
                 return redirect(url_for('admin.dashboard'))
-            return redirect(url_for('main.index'))
+            return redirect(url_for('main.dashboard'))
 
         except Exception as e:
             logger.error(f"Login error: {str(e)}")
             db.session.rollback()
             flash('An error occurred during login.', 'error')
 
+    # GET request or form validation failed
     return render_template('auth/login.html', form=form)
 
 @auth.route('/logout')
