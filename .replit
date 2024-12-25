@@ -13,10 +13,6 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Flask Server"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "ICountant Demo"
 
 [[workflows.workflow.tasks]]
@@ -25,26 +21,11 @@ args = "Database Migration"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Database Init"
+args = "Database Setup"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Database Setup"
-
-[[workflows.workflow]]
-name = "Flask Server"
-author = "agent"
-
-[workflows.workflow.metadata]
-agentRequireRestartOnSave = false
-
-[[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python app.py"
-waitForPort = 5000
+args = "Flask Server"
 
 [[workflows.workflow]]
 name = "ICountant Demo"
@@ -75,20 +56,6 @@ task = "shell.exec"
 args = "flask db migrate -m 'Add bank statement uploads table' && flask db upgrade"
 
 [[workflows.workflow]]
-name = "Database Init"
-author = "agent"
-
-[workflows.workflow.metadata]
-agentRequireRestartOnSave = false
-
-[[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "rm -rf migrations && flask db init && flask db migrate -m 'Initial migration with core tables' && flask db upgrade"
-
-[[workflows.workflow]]
 name = "Database Setup"
 author = "agent"
 
@@ -101,6 +68,21 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "flask db upgrade"
+
+[[workflows.workflow]]
+name = "Flask Server"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python app.py"
+waitForPort = 5000
 
 [deployment]
 run = ["sh", "-c", "python app.py"]
