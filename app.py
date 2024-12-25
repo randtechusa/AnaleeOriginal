@@ -34,7 +34,7 @@ def create_app():
         # Initialize Flask application
         app = Flask(__name__)
 
-        # Get database URL
+        # Get database URL from environment
         database_url = os.environ.get('DATABASE_URL')
         if not database_url:
             logger.error("DATABASE_URL is not set")
@@ -50,6 +50,7 @@ def create_app():
             'SQLALCHEMY_DATABASE_URI': database_url,
             'SQLALCHEMY_TRACK_MODIFICATIONS': False,
             'WTF_CSRF_ENABLED': True,
+            'TEMPLATES_AUTO_RELOAD': True
         })
 
         # Initialize extensions
@@ -57,7 +58,7 @@ def create_app():
         migrate.init_app(app, db)
         csrf.init_app(app)
         login_manager.init_app(app)
-        login_manager.login_view = 'main.login'
+        login_manager.login_view = 'auth.login'
 
         # Test database connection
         with app.app_context():
@@ -66,28 +67,15 @@ def create_app():
                 logger.info("Database connection successful")
 
                 # Register blueprints
-                from routes import main as main_blueprint
-                from bank_statements import bank_statements as bank_statements_blueprint
-                from reports import reports as reports_blueprint
-                from historical_data import historical_data as historical_data_blueprint
-                from risk_assessment import risk_assessment as risk_assessment_blueprint
-                from errors import errors as errors_blueprint
-
-                app.register_blueprint(main_blueprint)
-                app.register_blueprint(bank_statements_blueprint)
-                app.register_blueprint(reports_blueprint)
-                app.register_blueprint(historical_data_blueprint)
-                app.register_blueprint(risk_assessment_blueprint)
-                app.register_blueprint(errors_blueprint)
+                from auth import auth as auth_blueprint
+                app.register_blueprint(auth_blueprint)
 
                 logger.info("All blueprints registered successfully")
+                return app
 
             except Exception as e:
                 logger.error(f"Database connection failed: {str(e)}")
                 return None
-
-        logger.info("Flask application created successfully")
-        return app
 
     except Exception as e:
         logger.error(f"Error creating Flask application: {str(e)}")

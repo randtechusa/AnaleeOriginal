@@ -26,6 +26,7 @@ class User(UserMixin, db.Model):
     transactions = db.relationship('Transaction', backref='user', lazy=True)
     company_settings = db.relationship('CompanySettings', backref='user', lazy=True)
     historical_data = db.relationship('HistoricalData', backref='user', lazy=True)
+    risk_assessments = db.relationship('RiskAssessment', backref='user', lazy=True)
 
     def set_password(self, password):
         """Set hashed password."""
@@ -110,6 +111,34 @@ class HistoricalData(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class RiskAssessment(db.Model):
+    """Model for financial risk assessments"""
+    __tablename__ = 'risk_assessment'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    risk_score = db.Column(db.Float, nullable=False)
+    risk_level = db.Column(db.String(32), nullable=False)
+    assessment_type = db.Column(db.String(64), nullable=False)
+    findings = db.Column(db.Text)
+    recommendations = db.Column(db.Text)
+    assessment_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    # Relationship with risk indicators
+    indicators = db.relationship('RiskIndicator', backref='assessment', lazy=True)
+
+class RiskIndicator(db.Model):
+    """Model for individual risk indicators within an assessment"""
+    __tablename__ = 'risk_indicator'
+
+    id = db.Column(db.Integer, primary_key=True)
+    assessment_id = db.Column(db.Integer, db.ForeignKey('risk_assessment.id'), nullable=False)
+    indicator_name = db.Column(db.String(64), nullable=False)
+    indicator_value = db.Column(db.Float, nullable=False)
+    threshold_value = db.Column(db.Float, nullable=False)
+    is_breach = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 @login_manager.user_loader
 def load_user(user_id):
