@@ -33,14 +33,17 @@ def upload():
             logger.debug(f"Form data: {request.form}")
 
             if not form.validate_on_submit():
-                logger.error("Form validation failed")
+                logger.error(f"Form validation failed: {form.errors}")
+                error_messages = []
+                for field, errors in form.errors.items():
+                    error_messages.extend(errors)
                 if request.is_xhr:
                     return jsonify({
                         'success': False,
-                        'error': 'Form validation failed',
+                        'error': 'Validation failed: ' + '; '.join(error_messages),
                         'errors': form.errors
                     }), 400
-                flash('Please ensure all fields are filled correctly.', 'error')
+                flash('Please ensure all fields are filled correctly: ' + '; '.join(error_messages), 'error')
                 return redirect(url_for('bank_statements.upload'))
 
             try:
@@ -92,7 +95,7 @@ def upload():
                 return redirect(url_for('bank_statements.upload'))
 
             except Exception as e:
-                logger.error(f"Error in upload process: {str(e)}")
+                logger.error(f"Error in upload process: {str(e)}", exc_info=True)
                 if request.is_xhr:
                     return jsonify({
                         'success': False,
@@ -125,7 +128,7 @@ def upload():
         if request.is_xhr:
             return jsonify({
                 'success': False,
-                'error': 'An unexpected error occurred'
+                'error': 'An unexpected error occurred: ' + str(e)
             }), 500
-        flash('An error occurred', 'error')
+        flash('An unexpected error occurred: ' + str(e), 'error')
         return redirect(url_for('bank_statements.upload'))

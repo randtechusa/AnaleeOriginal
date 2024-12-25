@@ -52,9 +52,12 @@
 
                 <div id="uploadStatus" class="alert d-none">
                     <p class="mb-1"><strong>Status:</strong> <span id="statusText">Processing...</span></p>
+                    <p class="mb-1"><small>Processed: <span id="processedRows">0</span> rows</small></p>
                 </div>
 
-                <div id="errorContainer" class="alert alert-danger d-none"></div>
+                <div id="errorContainer" class="alert alert-danger d-none">
+                    <p class="mb-0" id="errorText"></p>
+                </div>
 
                 {{ form.submit(class="btn btn-primary", id="uploadButton") }}
             </form>
@@ -109,8 +112,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const progressDiv = document.getElementById('uploadProgress');
     const statusDiv = document.getElementById('uploadStatus');
     const statusText = document.getElementById('statusText');
+    const processedRows = document.getElementById('processedRows');
     const errorContainer = document.getElementById('errorContainer');
+    const errorText = document.getElementById('errorText');
     const uploadButton = document.getElementById('uploadButton');
+    const csrfToken = document.querySelector('input[name="csrf_token"]').value;
 
     form.onsubmit = async function(e) {
         e.preventDefault();
@@ -131,11 +137,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'POST',
                 body: formData,
                 headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': csrfToken
                 }
             });
 
-            const result = await response.json();
+            let result;
+            try {
+                result = await response.json();
+            } catch (jsonError) {
+                throw new Error('Invalid server response');
+            }
 
             if (!response.ok) {
                 throw new Error(result.error || `Upload failed: ${response.statusText}`);
@@ -146,6 +158,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 progressBar.textContent = '100%';
                 statusText.textContent = 'Upload successful!';
                 statusDiv.className = 'alert alert-success';
+                if (result.rows_processed) {
+                    processedRows.textContent = result.rows_processed;
+                }
                 setTimeout(() => window.location.reload(), 2000);
             } else {
                 throw new Error(result.error || 'Upload failed');
@@ -156,7 +171,7 @@ document.addEventListener('DOMContentLoaded', function() {
             statusText.textContent = 'Upload failed';
             statusDiv.className = 'alert alert-danger';
             errorContainer.classList.remove('d-none');
-            errorContainer.textContent = error.message;
+            errorText.textContent = error.message;
             progressBar.classList.add('bg-danger');
         } finally {
             uploadButton.disabled = false;
