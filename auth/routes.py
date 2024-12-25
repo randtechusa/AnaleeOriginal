@@ -1,23 +1,86 @@
 """
-Authentication routes including password reset and MFA functionality
+Authentication routes including login, password reset and MFA functionality
 """
+import logging
+from flask import (
+    render_template, redirect, url_for, flash,
+    request, session, current_app
+)
+from flask_login import current_user, login_user, logout_user, login_required
 import qrcode
 import io
 import base64
-from flask import (
-    Blueprint, render_template, redirect, url_for, flash,
-    current_app, request, session
-)
-from flask_login import current_user, login_required, login_user
-from flask_mail import Message
 
+from . import auth
 from models import db, User
-from forms.auth import (
-    RequestPasswordResetForm, ResetPasswordForm,
-    VerifyMFAForm, SetupMFAForm
-)
+from forms.auth import LoginForm, RequestPasswordResetForm, ResetPasswordForm, VerifyMFAForm, SetupMFAForm
 
-auth = Blueprint('auth', __name__)
+# Configure logging
+logger = logging.getLogger(__name__)
+
+@auth.route('/login', methods=['GET', 'POST'])
+def login():
+    """Handle user login with enhanced security and session management."""
+    if current_user.is_authenticated:
+        logger.info(f"Already authenticated user {current_user.id} redirected to index")
+        return redirect(url_for('main.index'))
+
+    form = LoginForm()
+    if form.validate_on_submit():
+        try:
+            # Find and verify user
+            user = User.query.filter_by(email=form.email.data.strip()).first()
+            if not user or not user.check_password(form.password.data):
+                logger.warning(f"Failed login attempt for email: {form.email.data}")
+                flash('Invalid email or password', 'error')
+                return render_template('auth/login.html', form=form)
+
+            # Check subscription status
+            if user.subscription_status == 'pending':
+                logger.warning(f"Login attempt by pending user: {user.email}")
+                flash('Your account is pending approval.', 'warning')
+                return render_template('auth/login.html', form=form)
+
+            if user.subscription_status == 'deactivated':
+                logger.warning(f"Login attempt by deactivated user: {user.email}")
+                flash('Your account has been deactivated.', 'error')
+                return render_template('auth/login.html', form=form)
+
+            # Handle MFA if enabled
+            if user.mfa_enabled:
+                session['mfa_user_id'] = user.id
+                logger.info(f"MFA verification required for user {user.email}")
+                return redirect(url_for('auth.verify_mfa'))
+
+            # Login successful
+            login_user(user, remember=form.remember_me.data)
+            logger.info(f"User {user.email} logged in successfully")
+
+            # Redirect based on user type
+            if user.is_admin:
+                return redirect(url_for('admin.dashboard'))
+            return redirect(url_for('main.index'))
+
+        except Exception as e:
+            logger.error(f"Login error: {str(e)}")
+            db.session.rollback()
+            flash('An error occurred during login.', 'error')
+
+    return render_template('auth/login.html', form=form)
+
+@auth.route('/logout')
+@login_required
+def logout():
+    """Handle user logout"""
+    try:
+        logout_user()
+        session.clear()
+        flash('You have been logged out.', 'info')
+    except Exception as e:
+        logger.error(f"Logout error: {str(e)}")
+        flash('Error during logout.', 'error')
+
+    return redirect(url_for('auth.login'))
 
 def send_reset_email(user):
     """Send password reset email to user"""
