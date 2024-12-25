@@ -103,15 +103,30 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(auth_blueprint)
                 logger.info("Auth blueprint registered")
 
-                # Register admin blueprint
+                # Register admin blueprint with proper prefix
                 from admin import admin as admin_blueprint
-                app.register_blueprint(admin_blueprint)
+                app.register_blueprint(admin_blueprint, url_prefix='/admin')
                 logger.info("Admin blueprint registered")
+
+                # Register suggestions blueprint
+                from suggestions import suggestions as suggestions_blueprint
+                app.register_blueprint(suggestions_blueprint)
+                logger.info("Suggestions blueprint registered")
 
                 # Register other blueprints
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
                 logger.info("Main blueprint registered")
+
+                # Register report blueprint
+                from reports import reports as reports_blueprint
+                app.register_blueprint(reports_blueprint, url_prefix='/reports')
+                logger.info("Reports blueprint registered")
+
+                # Register bank statements blueprint
+                from bank_statements import bank_statements as bank_statements_blueprint
+                app.register_blueprint(bank_statements_blueprint)
+                logger.info("Bank statements blueprint registered")
 
                 # Ensure database tables exist
                 db.create_all()

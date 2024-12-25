@@ -50,38 +50,8 @@ def dashboard():
         flash('Error loading dashboard data')
         return render_template('dashboard.html', transactions=[])
 
-@main.route('/api/suggest-explanation', methods=['POST'])
-@login_required
-def suggest_explanation_api():
-    """API endpoint for explanation suggestions"""
-    try:
-        data = request.get_json()
-        description = data.get('description', '').strip()
+# Moving explanation API to a separate blueprint to avoid conflicts
 
-        if not description:
-            return jsonify({'error': 'Description is required'}), 400
-
-        # Find similar transactions based on description
-        similar_transactions = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            Transaction.description.ilike(f"%{description}%")
-        ).limit(5).all()
-
-        # Convert to JSON-serializable format
-        transactions = [{
-            'id': t.id,
-            'description': t.description,
-            'explanation': t.explanation
-        } for t in similar_transactions]
-
-        return jsonify({
-            'success': True,
-            'transactions': transactions
-        })
-
-    except Exception as e:
-        logger.error(f"Error in suggestion API: {str(e)}")
-        return jsonify({'error': str(e)}), 500
 
 @main.route('/logout')
 @login_required
@@ -165,6 +135,7 @@ def company_settings():
         settings=settings,
         months=months
     )
+
 
 
 @main.route('/analyze')
@@ -850,6 +821,7 @@ def icountant_interface():
             total_count=total_count
         )
         
+
     except Exception as e:
         logger.error(f"Error in iCountant interface: {str(e)}")
         db.session.rollback()
