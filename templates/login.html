@@ -7,27 +7,21 @@
             <div class="card-body">
                 <h2 class="card-title text-center mb-4">Login</h2>
                 <form method="POST">
-                    {{ form.csrf_token }}
+                    <!-- Add CSRF Token -->
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
-                        {{ form.email.label(class="form-label") }}
-                        {{ form.email(class="form-control") }}
-                        {% if form.email.errors %}
-                            {% for error in form.email.errors %}
-                                <small class="text-danger">{{ error }}</small>
-                            {% endfor %}
-                        {% endif %}
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
                     </div>
                     <div class="mb-3">
-                        {{ form.password.label(class="form-label") }}
-                        {{ form.password(class="form-control") }}
-                        {% if form.password.errors %}
-                            {% for error in form.password.errors %}
-                                <small class="text-danger">{{ error }}</small>
-                            {% endfor %}
-                        {% endif %}
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
                     </div>
-                    {{ form.submit(class="btn btn-primary w-100") }}
+                    <button type="submit" class="btn btn-primary w-100">Login</button>
                 </form>
+                <div class="text-center mt-3">
+                    <a href="{{ url_for('main.register') }}">Register</a>
+                </div>
             </div>
         </div>
     </div>

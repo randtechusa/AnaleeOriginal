@@ -11,7 +11,8 @@ from werkzeug.utils import secure_filename
 from . import bank_statements
 from .forms import BankStatementUploadForm
 from .services import BankStatementService
-from models import Account, BankStatementUpload  # Updated import from main models.py
+from .models import BankStatementUpload
+from models import Account
 
 # Configure logging
 logger = logging.getLogger(__name__)
