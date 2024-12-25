@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 def create_admin_if_not_exists():
     """Create admin user if it doesn't exist"""
     try:
-        admin = User.query.filter_by(email='admin@example.com').first()
+        admin = User.query.filter_by(email='festusa@cnbs.co.za').first()
         if not admin:
             admin = User(
                 username='admin',
-                email='admin@example.com',
+                email='festusa@cnbs.co.za',
                 is_admin=True,
                 subscription_status='active'
             )
