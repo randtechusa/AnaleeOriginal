@@ -6,7 +6,7 @@ from flask import Blueprint, abort, redirect, url_for
 from flask_login import login_required, current_user
 from functools import wraps
 
-admin = Blueprint('admin', __name__, url_prefix='/admin')
+admin = Blueprint('admin', __name__)
 
 def admin_required(f):
     """Decorator to protect admin routes"""
@@ -14,9 +14,9 @@ def admin_required(f):
     @login_required
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated or not current_user.is_admin:
-            return redirect(url_for('main.index'))  # Redirect non-admin users to main page
+            return redirect(url_for('auth.login'))
         return f(*args, **kwargs)
-    return decorated_function  # Return the decorated function, not the decorator name
+    return decorated_function
 
 # Import routes after blueprint creation to avoid circular imports
 from . import routes
@@ -25,5 +25,5 @@ from . import routes
 @admin.before_request
 def restrict_admin_access():
     """Ensure only admin users can access admin routes"""
-    if not current_user.is_authenticated or not current_user.is_admin:
-        return redirect(url_for('main.index'))  # Redirect non-admin users to main page
+    if not getattr(current_user, 'is_authenticated', False) or not getattr(current_user, 'is_admin', False):
+        return redirect(url_for('auth.login'))

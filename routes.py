@@ -4,10 +4,9 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_login import login_required, current_user, logout_user
 from sqlalchemy import text
-from admin.forms import CompanySettingsForm
 
 from models import db, User, CompanySettings, Account, Transaction, UploadedFile
-from utils.chart_of_accounts_dev import ChartOfAccountsLoader
+from admin.forms import CompanySettingsForm
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -27,11 +26,50 @@ def index():
         return redirect(url_for('main.dashboard'))
     return redirect(url_for('auth.login'))
 
+def find_similar_transactions(description):
+    """Find similar transactions based on description"""
+    try:
+        similar_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.description.ilike(f"%{description}%")
+        ).all()
+
+        return [{
+            'id': t.id,
+            'description': t.description,
+            'explanation': t.explanation
+        } for t in similar_transactions]
+    except Exception as e:
+        logger.error(f"Error finding similar transactions: {str(e)}")
+        return []
+
+@main.route('/api/suggest-explanation', methods=['POST'])
+@login_required
+def suggest_explanation_api():
+    """API endpoint for ESF (Explanation Suggestion Feature)"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+
+        similar_transactions = find_similar_transactions(description)
+
+        return jsonify({
+            'success': True,
+            'transactions': similar_transactions
+        })
+
+    except Exception as e:
+        logger.error(f"Error in ESF: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 # Core Protected Features - These routes handle critical functionality
 @main.route('/analyze')
 @login_required
 def analyze_list():
-    """Show list of files available for analysis - Protected Core Feature"""
+    """Show list of files available for analysis"""
     try:
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
         return render_template('analyze_list.html', files=files)
@@ -43,7 +81,7 @@ def analyze_list():
 @main.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
-    """Protected Chart of Accounts management - Core Feature"""
+    """Protected Chart of Accounts management"""
     if request.method == 'POST':
         try:
             account = Account(
@@ -65,12 +103,6 @@ def settings():
 
     accounts = Account.query.filter_by(user_id=current_user.id).all()
     return render_template('settings.html', accounts=accounts)
-
-@main.route('/historical-data', methods=['GET', 'POST'])
-@login_required
-def historical_data():
-    """Redirect to the proper historical data blueprint route - Protected Core Feature"""
-    return redirect(url_for('historical_data.upload'))
 
 @main.route('/logout')
 @login_required
@@ -795,15 +827,9 @@ def suggest_explanation_api():
         if not description:
             return jsonify({'error': 'Description is required'}), 400
 
-        similar_transactions = find_similar_transactions(
-            description,
-            Transaction.query.filter(
-                Transaction.user_id == current_user.id,
-                Transaction.explanation.isnot(None)
-            ).all()
-        )
-
+        similar_transactions = find_similar_transactions(description)
         suggestion = suggest_explanation(description, similar_transactions)
+
         return jsonify({
             'success': True,
             'suggestion': suggestion
@@ -811,7 +837,7 @@ def suggest_explanation_api():
 
     except Exception as e:
         logger.error(f"Error in ESF: {str(e)}")
-        return jsonify({''error': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/upload-progress')
 @login_required
@@ -1276,4 +1302,44 @@ def update_goal(goal_id):
     except Exception as e:
         logger.error(f"Error updating goal: {str(e)}")
         db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+def find_similar_transactions(description, explanation=None):
+    """Find similar transactions based on description and explanation"""
+    try:
+        similar_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.description.ilike(f"%{description}%")
+        ).all()
+
+        return [{
+            'id': t.id,
+            'description': t.description,
+            'explanation': t.explanation
+        } for t in similar_transactions]
+    except Exception as e:
+        logger.error(f"Error finding similar transactions: {str(e)}")
+        return []
+
+@main.route('/suggest-explanation', methods=['POST'])
+@login_required
+def suggest_explanation_api():
+    """API endpoint for ESF (Explanation Suggestion Feature)"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+
+        similar_transactions = find_similar_transactions(description)
+        suggestion = suggest_explanation(description, similar_transactions)
+
+        return jsonify({
+            'success': True,
+            'suggestion': suggestion
+        })
+
+    except Exception as e:
+        logger.error(f"Error in ESF: {str(e)}")
         return jsonify({'error': str(e)}), 500

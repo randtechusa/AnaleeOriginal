@@ -50,18 +50,14 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
 
         logger.info("Database URL found, configuring application...")
 
-        # Generate a strong secret key for CSRF protection
-        csrf_key = os.environ.get("WTF_CSRF_SECRET_KEY", os.urandom(32))
-        secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
-
         # Configure Flask app with enhanced security
         config = {
-            'SECRET_KEY': secret_key,
+            'SECRET_KEY': os.environ.get("FLASK_SECRET_KEY", os.urandom(32)),
             'SQLALCHEMY_DATABASE_URI': database_url,
             'SQLALCHEMY_TRACK_MODIFICATIONS': False,
             'TEMPLATES_AUTO_RELOAD': True,
             'WTF_CSRF_ENABLED': True,
-            'WTF_CSRF_SECRET_KEY': csrf_key,
+            'WTF_CSRF_SECRET_KEY': os.environ.get("WTF_CSRF_SECRET_KEY", os.urandom(32)),
             'WTF_CSRF_TIME_LIMIT': 3600,  # 1 hour CSRF token validity
             'SQLALCHEMY_ENGINE_OPTIONS': {
                 'pool_pre_ping': True,
@@ -82,7 +78,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         logger.info("Initializing migrations...")
         migrate.init_app(app, db)
 
-        # Initialize CSRF protection before blueprints
+        # Initialize CSRF protection
         logger.info("Initializing CSRF protection...")
         csrf.init_app(app)
 
@@ -115,23 +111,27 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(main_blueprint)
                 logger.info("Main blueprint registered successfully")
 
-                # Register admin blueprint
+                # Register admin blueprint for secure admin functionality
                 from admin import admin as admin_blueprint
-                app.register_blueprint(admin_blueprint, url_prefix='/admin')
+                app.register_blueprint(admin_blueprint)
                 logger.info("Admin blueprint registered successfully")
 
                 # Register other blueprints while protecting core functionality
                 from reports import reports as reports_blueprint
-                app.register_blueprint(reports_blueprint, url_prefix='/reports')
+                app.register_blueprint(reports_blueprint)
                 logger.info("Reports blueprint registered successfully")
 
                 from historical_data import historical_data as historical_data_blueprint
-                app.register_blueprint(historical_data_blueprint, url_prefix='/historical-data')
+                app.register_blueprint(historical_data_blueprint)
                 logger.info("Historical data blueprint registered successfully")
 
                 from bank_statements import bank_statements as bank_statements_blueprint
-                app.register_blueprint(bank_statements_blueprint, url_prefix='/bank-statements')
+                app.register_blueprint(bank_statements_blueprint)
                 logger.info("Bank statements blueprint registered successfully")
+
+                from risk_assessment import risk_assessment as risk_assessment_blueprint
+                app.register_blueprint(risk_assessment_blueprint)
+                logger.info("Risk assessment blueprint registered successfully")
 
                 logger.info("All blueprints registered successfully")
                 return app
@@ -147,24 +147,10 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         return None
 
 if __name__ == '__main__':
-    try:
-        logger.info("Creating Flask application...")
-        app = create_app()
-
-        if not app:
-            logger.error("Application creation failed")
-            sys.exit(1)
-
+    app = create_app()
+    if app:
         port = int(os.environ.get('PORT', 5000))
-        logger.info(f"Starting Flask application on port {port}")
-
-        app.run(
-            host='0.0.0.0',
-            port=port,
-            debug=True,
-            use_reloader=False
-        )
-    except Exception as e:
-        logger.error(f"Critical error starting application: {str(e)}")
-        logger.exception("Full stack trace:")
+        app.run(host='0.0.0.0', port=port)
+    else:
+        logger.error("Application creation failed")
         sys.exit(1)
