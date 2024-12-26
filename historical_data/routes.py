@@ -49,39 +49,32 @@ class UploadForm(FlaskForm):
                 logger.error(f"Error loading bank accounts: {str(e)}")
                 self.account.choices = []
 
-@historical_data.route('/')
+@historical_data.route('/', methods=['GET'])
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
     """Handle historical data upload and processing with validation"""
     try:
+        logger.info("Processing historical data upload request")
         form = UploadForm()
-        logger.info("Processing upload request")
 
         if request.method == 'POST':
             if not form.validate_on_submit():
-                logger.error("Form validation failed")
-                logger.error(f"Form errors: {form.errors}")
-                if request.is_xhr:
-                    return jsonify({
-                        'success': False,
-                        'error': 'Form validation failed'
-                    })
+                logger.error(f"Form validation failed: {form.errors}")
                 for field, errors in form.errors.items():
                     for error in errors:
                         flash(f"{field}: {error}", 'error')
                 return redirect(url_for('historical_data.upload'))
 
             try:
-                # Get selected bank account
                 account_id = int(form.account.data)
                 account = Account.query.get(account_id)
+
                 if not account or account.user_id != current_user.id:
                     logger.error(f"Invalid account selected: {account_id}")
                     flash('Invalid bank account selected', 'error')
                     return redirect(url_for('historical_data.upload'))
 
-                # Process file upload with enhanced validation
                 file = form.file.data
                 if not file:
                     flash('No file selected', 'error')
@@ -92,11 +85,11 @@ def upload():
                     flash('Invalid file format. Please upload a CSV or Excel file.', 'error')
                     return redirect(url_for('historical_data.upload'))
 
-                # Initialize diagnostics
+                # Initialize upload diagnostics
                 diagnostics = UploadDiagnostics()
 
-                # Read and validate file
                 try:
+                    # Read file based on extension
                     if filename.endswith('.xlsx'):
                         df = pd.read_excel(file, engine='openpyxl')
                     else:
@@ -105,6 +98,7 @@ def upload():
                         except UnicodeDecodeError:
                             df = pd.read_csv(file, encoding='latin1')
 
+                    # Validate file structure
                     if not diagnostics.validate_file_structure(df):
                         messages = diagnostics.get_user_friendly_messages()
                         for message in messages:
@@ -156,13 +150,14 @@ def upload():
                 flash(f'Error in upload process: {str(e)}', 'error')
                 return redirect(url_for('historical_data.upload'))
 
-        # GET request - show upload form
+        # GET request - show upload form with recent entries
         historical_entries = (HistoricalData.query
                             .filter_by(user_id=current_user.id)
                             .order_by(HistoricalData.date.desc())
                             .limit(10)
                             .all())
 
+        logger.info("Rendering historical data upload template")
         return render_template('upload.html',
                              form=form,
                              entries=historical_entries)
