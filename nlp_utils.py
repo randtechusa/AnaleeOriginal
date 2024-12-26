@@ -60,7 +60,6 @@ def get_openai_client() -> Optional[OpenAI]:
             return None
 
         # Initialize new client with updated configuration
-        # Removed proxies argument as it's no longer supported
         _openai_client = OpenAI(
             api_key=api_key,
             timeout=30.0  # Set reasonable timeout

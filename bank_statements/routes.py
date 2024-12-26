@@ -4,9 +4,10 @@ Implements secure file handling and validation
 Separate from historical data processing
 """
 import logging
-from flask import render_template, request, redirect, url_for, flash, jsonify
+from flask import render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
+import os
 
 from . import bank_statements
 from .forms import BankStatementUploadForm
@@ -37,12 +38,6 @@ def upload():
                 error_messages = []
                 for field, errors in form.errors.items():
                     error_messages.extend(errors)
-                if request.is_xhr:
-                    return jsonify({
-                        'success': False,
-                        'error': 'Validation failed: ' + '; '.join(error_messages),
-                        'errors': form.errors
-                    }), 400
                 flash('Please ensure all fields are filled correctly: ' + '; '.join(error_messages), 'error')
                 return redirect(url_for('bank_statements.upload'))
 
@@ -52,11 +47,6 @@ def upload():
                 account = Account.query.get(account_id)
                 if not account or account.user_id != current_user.id:
                     logger.error(f"Invalid account selected: {account_id}")
-                    if request.is_xhr:
-                        return jsonify({
-                            'success': False,
-                            'error': 'Invalid bank account selected'
-                        }), 400
                     flash('Invalid bank account selected', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
@@ -64,16 +54,15 @@ def upload():
                 file = form.file.data
                 if not file or not file.filename:
                     logger.error("No file selected")
-                    if request.is_xhr:
-                        return jsonify({
-                            'success': False,
-                            'error': 'Please select a file to upload'
-                        }), 400
                     flash('No file selected', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
-                # Secure the filename
+                # Secure the filename and create upload directory if needed
                 filename = secure_filename(file.filename)
+                upload_folder = current_app.config.get('UPLOAD_FOLDER', 'uploads')
+                if not os.path.exists(upload_folder):
+                    os.makedirs(upload_folder)
+
                 logger.info(f"Processing file: {filename}")
 
                 # Process upload using service
@@ -84,9 +73,6 @@ def upload():
                     user_id=current_user.id
                 )
 
-                if request.is_xhr:
-                    return jsonify(response)
-
                 if success:
                     flash('Bank statement processed successfully', 'success')
                 else:
@@ -96,11 +82,6 @@ def upload():
 
             except Exception as e:
                 logger.error(f"Error in upload process: {str(e)}", exc_info=True)
-                if request.is_xhr:
-                    return jsonify({
-                        'success': False,
-                        'error': f'Error in upload process: {str(e)}'
-                    }), 500
                 flash('Error in upload process: ' + str(e), 'error')
                 return redirect(url_for('bank_statements.upload'))
 
@@ -108,7 +89,7 @@ def upload():
         # Get user's bank accounts that start with ca.810
         bank_accounts = Account.query.filter(
             Account.user_id == current_user.id,
-            Account.link.startswith('ca.810')
+            Account.number.startswith('ca.810')  # Updated to use number field
         ).all()
         logger.info(f"Found {len(bank_accounts)} bank accounts for user {current_user.id}")
 
@@ -125,10 +106,5 @@ def upload():
 
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}", exc_info=True)
-        if request.is_xhr:
-            return jsonify({
-                'success': False,
-                'error': 'An unexpected error occurred: ' + str(e)
-            }), 500
         flash('An unexpected error occurred: ' + str(e), 'error')
         return redirect(url_for('bank_statements.upload'))

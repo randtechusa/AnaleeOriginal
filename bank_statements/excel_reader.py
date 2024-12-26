@@ -30,7 +30,7 @@ class BankStatementExcelReader:
             logger.info(f"Found columns: {df.columns.tolist()}")
 
             # Check for required columns (case-insensitive)
-            df.columns = [col.strip() for col in df.columns]
+            df.columns = [col.strip() if isinstance(col, str) else str(col) for col in df.columns]
             missing_columns = []
             for required_col in self.required_columns:
                 if not any(col.lower() == required_col.lower() for col in df.columns):
@@ -67,7 +67,7 @@ class BankStatementExcelReader:
             # Convert amount to float and handle formatting
             try:
                 # Remove any currency symbols and commas
-                df['Amount'] = df['Amount'].astype(str).str.replace('$', '').str.replace(',', '')
+                df['Amount'] = df['Amount'].astype(str).str.replace('$', '').str.replace(',', '').str.strip()
                 df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
 
                 # Check for invalid amounts
