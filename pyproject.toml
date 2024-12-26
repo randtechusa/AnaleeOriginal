@@ -34,4 +34,5 @@ dependencies = [
     "flask-cors>=5.0.0",
     "twilio>=9.4.1",
     "trafilatura>=2.0.0",
+    "wtforms>=3.2.1",
 ]

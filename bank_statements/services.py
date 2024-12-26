@@ -9,7 +9,7 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 from .models import BankStatementUpload
 from .excel_reader import BankStatementExcelReader
-from models import db
+from models import db, Transaction
 
 logger = logging.getLogger(__name__)
 
@@ -67,14 +67,37 @@ class BankStatementService:
                         'errors': self.excel_reader.get_errors()
                     }
 
+                # Process transactions
+                transactions_created = 0
+                for _, row in df.iterrows():
+                    try:
+                        # Create transaction record
+                        transaction = Transaction(
+                            date=row['Date'],
+                            description=row['Description'],
+                            amount=row['Amount'],
+                            account_id=account_id,
+                            user_id=user_id,
+                            status='pending',
+                            source='bank_statement'
+                        )
+                        db.session.add(transaction)
+                        transactions_created += 1
+                    except Exception as e:
+                        logger.error(f"Error processing transaction: {str(e)}")
+                        continue
+
+                # Commit all valid transactions
+                db.session.commit()
+
                 # If everything is valid, mark as success
-                upload.set_success(f"Processed {len(df)} transactions")
+                upload.set_success(f"Processed {transactions_created} transactions")
                 db.session.commit()
 
                 return True, {
                     'success': True,
-                    'message': f'Successfully processed {len(df)} transactions',
-                    'rows_processed': len(df)
+                    'message': f'Successfully processed {transactions_created} transactions',
+                    'rows_processed': transactions_created
                 }
 
             finally:
