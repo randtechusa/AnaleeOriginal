@@ -12,8 +12,8 @@ from flask_login import login_required, current_user
 from sqlalchemy import desc, or_
 
 from models import db, Transaction, Account
-from ai_utils import get_openai_client, handle_rate_limit # Importing the new decorator
-from nlp_utils import get_openai_client as nlp_openai_client
+from ai_insights import FinancialInsightsGenerator
+from nlp_utils import get_openai_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -56,39 +56,24 @@ def send_message():
                 'error': 'Empty message'
             })
 
-        # Get OpenAI client with enhanced error handling
-        try:
-            client = get_openai_client()
-            if not client:
-                logger.error("Failed to initialize OpenAI client")
-                return jsonify({
-                    'success': False,
-                    'error': 'AI service temporarily unavailable. Please try again later.'
-                })
-        except Exception as e:
-            logger.error(f"Error initializing OpenAI client: {str(e)}")
+        # Get OpenAI client
+        client = get_openai_client()
+        if not client:
+            logger.error("Failed to initialize OpenAI client")
             return jsonify({
                 'success': False,
-                'error': 'Error initializing AI service. Please try again later.'
+                'error': 'AI service temporarily unavailable'
             })
 
         # Get user's financial context
         context = get_financial_context(current_user.id)
 
-        # Generate AI response with context and error handling
+        # Generate AI response with context
         try:
             response = generate_ai_response(client, message, context)
-            if not response:
-                return jsonify({
-                    'success': False,
-                    'error': 'Could not generate response. Please try again.'
-                })
         except Exception as e:
             logger.error(f"Error generating AI response: {str(e)}")
-            return jsonify({
-                'success': False,
-                'error': 'Error generating response. Please try again.'
-            })
+            response = "I apologize, but I'm having trouble analyzing your request right now. Please try again in a moment."
 
         return jsonify({
             'success': True,
@@ -199,7 +184,6 @@ def get_financial_context(user_id: int) -> Dict:
             'total_transactions': 0
         }
 
-@handle_rate_limit
 def generate_ai_response(client, message: str, context: Dict) -> str:
     """Generate AI response with financial context."""
     try:

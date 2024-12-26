@@ -140,11 +140,11 @@ def get_openai_client() -> OpenAI:
             raise ValueError("OpenAI API key not configured")
 
         # Initialize new client with proper configuration
-        _openai_client = OpenAI(api_key=api_key)  # Updated initialization
+        _openai_client = OpenAI()  # Uses API key from environment by default
 
         # Test the client with basic operation
         try:
-            _openai_client.models.list()
+            _openai_client.models.list(limit=1)
             logger.info("OpenAI client initialized and tested successfully")
             return _openai_client
         except Exception as e:
@@ -302,7 +302,7 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
                     if matching_accounts:
                         # Enhanced suggestion with additional validations
                         financial_insight = suggestion.get('financial_insight',
-                                                            suggestion.get('reasoning', 'No detailed insight available'))
+                                                        suggestion.get('reasoning', 'No detailed insight available'))
                         valid_suggestion = {
                             'account_name': suggestion['account_name'],
                             'confidence': min(max(float(suggestion['confidence']), 0.0), 1.0),  # Ensure valid confidence range
