@@ -1,3 +1,7 @@
+"""
+NLP utilities module for handling natural language processing tasks
+Enhanced with proper error handling and rate limiting
+"""
 import os
 import sys
 from openai import OpenAI, RateLimitError, APIError
@@ -56,7 +60,10 @@ def get_openai_client() -> Optional[OpenAI]:
             return None
 
         # Initialize new client with updated configuration
-        _openai_client = OpenAI(api_key=api_key)
+        _openai_client = OpenAI(
+            api_key=api_key,
+            timeout=30.0  # Set reasonable timeout
+        )
         _last_client_init = time.time()
 
         # Test the client with a simple request

@@ -125,7 +125,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
 
                 # Register chat blueprint with proper URL prefix
                 from chat import chat as chat_blueprint
-                app.register_blueprint(chat_blueprint, url_prefix='/chat')
+                app.register_blueprint(chat_blueprint)
                 logger.info("Chat blueprint registered")
 
                 # Register main blueprint
@@ -133,7 +133,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(main_blueprint)
                 logger.info("Main blueprint registered")
 
-                # Register report blueprint
+                # Register reports blueprint
                 from reports import reports as reports_blueprint
                 app.register_blueprint(reports_blueprint, url_prefix='/reports')
                 logger.info("Reports blueprint registered")
