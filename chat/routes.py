@@ -6,7 +6,7 @@ context management, and financial insights generation.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List
 from flask import Blueprint, jsonify, request, render_template
 from flask_login import login_required, current_user
 from sqlalchemy import desc, or_
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Create blueprint
 chat = Blueprint('chat', __name__)
 
-@chat.route('/chat')
+@chat.route('/')
 @login_required
 def chat_interface():
     """Render the chat interface."""
@@ -93,7 +93,6 @@ def send_message():
 def get_chat_history():
     """Retrieve chat history for the current user."""
     try:
-        # For now, return empty history as we haven't implemented persistence
         return jsonify({
             'success': True,
             'history': []
