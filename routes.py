@@ -27,16 +27,27 @@ class UploadForm(FlaskForm):
     submit = SubmitField('Upload')
 
     def __init__(self, *args, **kwargs):
+        """Initialize form with user's bank accounts"""
         super(UploadForm, self).__init__(*args, **kwargs)
         if current_user.is_authenticated:
             try:
-                # Get bank accounts that start with ca.810
+                # Get active bank accounts that start with ca.810
+                # Using case-insensitive comparison for better matching
                 accounts = Account.query.filter(
                     Account.user_id == current_user.id,
-                    Account.link.startswith('ca.810')
-                ).all()
+                    Account.link.ilike('ca.810%'),
+                    Account.is_active == True
+                ).order_by(Account.link).all()
+
+                # Log the number of accounts found
+                logger.info(f"Found {len(accounts)} active bank accounts for user {current_user.id}")
+
+                # Populate choices with account information
                 self.account.choices = [(str(acc.id), f"{acc.link} - {acc.name}") 
                                       for acc in accounts]
+
+                if not self.account.choices:
+                    logger.warning(f"No active bank accounts found for user {current_user.id}")
             except Exception as e:
                 logger.error(f"Error loading bank accounts: {str(e)}")
                 self.account.choices = []
@@ -817,7 +828,7 @@ def icountant_interface():
     try:
         # Get total transaction count
         total_count = Transaction.query.filter_by(user_id=current_user.id).count()
-        logger.info(f"Total transactions for user {current_user.id}: {total_count}")
+        logger.info(f"Total transactions for user{current_user.id}: {total_count}")
 
         # Get unprocessed transactions
         transactions = Transaction.query.filter_by(

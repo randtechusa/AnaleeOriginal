@@ -6,56 +6,52 @@
         <div class="card">
             <div class="card-body">
                 <h2 class="card-title">Upload New Bank Statement</h2>
-                <form method="POST" enctype="multipart/form-data">
-                    <!-- Add CSRF Token -->
+                <form method="POST" enctype="multipart/form-data" id="uploadForm">
                     {{ form.csrf_token }}
                     <div class="mb-3">
-                        <label for="bank_account" class="form-label">Select Bank Account</label>
-                        <select class="form-select" id="bank_account" name="bank_account" required>
-                            <option value="">Choose a bank account...</option>
-                            {% if bank_accounts %}
-                                {% for account in bank_accounts %}
-                                <option value="{{ account.id }}">{{ account.link }} - {{ account.name }}</option>
+                        {{ form.account.label(class="form-label") }}
+                        {{ form.account(class="form-select") }}
+                        {% if form.account.errors %}
+                            <div class="alert alert-danger">
+                                {% for error in form.account.errors %}
+                                    <small>{{ error }}</small>
                                 {% endfor %}
-                            {% else %}
-                                <option value="" disabled>No bank accounts found (ca.810.xxx)</option>
-                            {% endif %}
-                        </select>
+                            </div>
+                        {% endif %}
                         <div class="form-text">
                             Select the bank account this statement belongs to (Accounts starting with ca.810)
                         </div>
-                        {% if not bank_accounts %}
+                        {% if not form.account.choices %}
                         <div class="alert alert-warning mt-2">
                             <small>No bank accounts found. Please create a bank account (starting with ca.810) in the <a href="{{ url_for('main.settings') }}">settings</a> first.</small>
                         </div>
                         {% endif %}
                     </div>
                     <div class="mb-3">
-                        <label for="file" class="form-label">Bank Statement File</label>
-                        <input type="file" class="form-control" id="file" name="file" accept=".csv,.xlsx" required>
+                        {{ form.file.label(class="form-label") }}
+                        {{ form.file(class="form-control", accept=".csv,.xlsx") }}
+                        {% if form.file.errors %}
+                            <div class="alert alert-danger">
+                                {% for error in form.file.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
                         <div class="form-text">
                             Upload bank statement in CSV or Excel format
                         </div>
                     </div>
                     <div class="progress mb-3 d-none" id="upload-progress">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                             role="progressbar" 
-                             aria-valuenow="0" 
-                             aria-valuemin="0" 
-                             aria-valuemax="100">0%</div>
+                        <div class="progress-bar" role="progressbar" style="width: 0%" 
+                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                     </div>
                     <div id="upload-status" class="alert d-none mb-3">
                         <p class="mb-1"><strong>Status:</strong> <span id="status-text">Processing...</span></p>
-                        <p class="mb-1"><small>Processed: <span id="processed-rows">0</span> / <span id="total-rows">0</span> rows</small></p>
+                        <p class="mb-1"><small>Processed: <span id="processed-rows">0</span> rows</small></p>
                         <p class="mb-1"><small>Processing Rate: <span id="processing-rate">0</span> rows/second</small></p>
                         <p class="mb-0"><small>Time remaining: <span id="time-remaining">Calculating...</span></small></p>
-                        <div id="error-container" class="mt-2 d-none">
-                            <p class="mb-1 text-warning"><small>Recent Errors:</small></p>
-                            <ul id="error-list" class="list-unstyled mb-0">
-                            </ul>
-                        </div>
                     </div>
-                    <button type="submit" class="btn btn-primary" id="upload-button">Upload</button>
+                    {{ form.submit(class="btn btn-primary", id="upload-button") }}
                 </form>
             </div>
         </div>
@@ -100,53 +96,28 @@
             </div>
         </div>
     </div>
-    <div class="col-md-12 mt-4">
-        <div class="card">
-            <div class="card-body">
-                <h5>File Format Requirements:</h5>
-                <ul>
-                    <li>Required columns:
-                        <ul>
-                            <li>Date (supports multiple formats)</li>
-                            <li>Description (e.g., "Electricity Bill")</li>
-                            <li>Amount (numeric value)</li>
-                        </ul>
-                    </li>
-                    <li>Supported formats: CSV or Excel (.xlsx)</li>
-                    <li>The system will create:
-                        <ul>
-                            <li>Explanation field for your notes</li>
-                            <li>Analysis field for account selection</li>
-                        </ul>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.querySelector('form');
+    const form = document.getElementById('uploadForm');
     const progressBar = document.querySelector('.progress-bar');
     const progressDiv = document.getElementById('upload-progress');
     const statusDiv = document.getElementById('upload-status');
     const statusText = document.getElementById('status-text');
     const processedRows = document.getElementById('processed-rows');
-    const totalRows = document.getElementById('total-rows');
     const timeRemaining = document.getElementById('time-remaining');
     const processingRate = document.getElementById('processing-rate');
     const uploadButton = document.getElementById('upload-button');
+    const csrfToken = document.querySelector('input[name="csrf_token"]').value;
 
     form.onsubmit = async function(e) {
         e.preventDefault();
 
         const formData = new FormData(form);
-
-        // Get CSRF token from the form
-        const csrfToken = document.querySelector('input[name="csrf_token"]').value;
 
         progressDiv.classList.remove('d-none');
         statusDiv.classList.remove('d-none');
@@ -161,40 +132,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
 
-            if (!response.ok) throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
-
-            const reader = response.body.getReader();
-            let receivedLength = 0;
-
-            while(true) {
-                const {done, value} = await reader.read();
-                if (done) break;
-
-                try {
-                    const text = new TextDecoder().decode(value);
-                    const data = JSON.parse(text);
-
-                    // Update progress
-                    const progress = (data.processed_rows / data.total_rows * 100) || 0;
-                    progressBar.style.width = `${Math.min(progress, 100)}%`;
-                    progressBar.textContent = `${Math.round(progress)}%`;
-
-                    // Update status
-                    statusText.textContent = data.status;
-                    processedRows.textContent = data.processed_rows;
-                    totalRows.textContent = data.total_rows;
-                    processingRate.textContent = data.processing_rate || '0';
-
-                    // Calculate and update time remaining
-                    if (data.processing_rate > 0) {
-                        const remainingRows = data.total_rows - data.processed_rows;
-                        const remainingSecs = remainingRows / data.processing_rate;
-                        timeRemaining.textContent = `${Math.round(remainingSecs)}s`;
-                    }
-
-                } catch (parseError) {
-                    console.error('Error parsing progress data:', parseError);
-                }
+            if (!response.ok) {
+                throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
             }
 
             statusText.textContent = 'Upload Complete!';
