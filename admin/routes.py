@@ -11,7 +11,7 @@ import os
 
 from . import admin, admin_required
 from models import db, User, AdminChartOfAccounts, Account
-from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm
+from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm, CompanySettingsForm
 
 @admin.route('/charts-of-accounts', methods=['GET'])
 @login_required
@@ -20,7 +20,7 @@ def charts_of_accounts():
     """Manage system-wide Chart of Accounts"""
     form = AdminChartOfAccountsForm()
     upload_form = ChartOfAccountsUploadForm()
-    accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.code).all()
+    accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.account_code).all()
 
     # Get upload errors from session if they exist
     upload_errors = session.pop('upload_errors', None)
