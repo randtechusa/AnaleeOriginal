@@ -6,7 +6,10 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import text
 from werkzeug.utils import secure_filename
 
-from models import db, User, CompanySettings, Account, Transaction, UploadedFile
+from models import (
+    db, User, CompanySettings, Account, Transaction, 
+    UploadedFile, AdminChartOfAccounts  # Added AdminChartOfAccounts import
+)
 from forms.company import CompanySettingsForm
 
 # Configure logging
