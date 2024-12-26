@@ -37,8 +37,10 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
     try:
         logger.info("Starting application creation...")
 
-        # Initialize Flask application
-        app = Flask(__name__, template_folder='templates', static_folder='static')
+        # Initialize Flask application with explicit template and static folders
+        app = Flask(__name__, 
+                   template_folder='templates',
+                   static_folder='static')
 
         # Get database URL and verify it exists
         database_url = os.environ.get('DATABASE_URL')
@@ -111,7 +113,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(admin_blueprint, url_prefix='/admin')
                 logger.info("Admin blueprint registered")
 
-                # Register historical data blueprint
+                # Register historical data blueprint with proper template path
                 from historical_data import historical_data as historical_data_blueprint
                 app.register_blueprint(historical_data_blueprint)
                 logger.info("Historical data blueprint registered")

@@ -17,8 +17,8 @@ from models import db, Account, HistoricalData
 from . import historical_data
 from .upload_diagnostics import UploadDiagnostics
 
-# Configure logging with detailed format
-logging.basicConfig(level=logging.DEBUG)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class UploadForm(FlaskForm):
@@ -44,7 +44,6 @@ class UploadForm(FlaskForm):
                 logger.error(f"Error loading bank accounts: {str(e)}")
                 self.account.choices = []
 
-@historical_data.route('/')
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
@@ -147,15 +146,15 @@ def upload():
 
         # GET request - show upload form with recent entries
         historical_entries = (HistoricalData.query
-                            .filter_by(user_id=current_user.id)
-                            .order_by(HistoricalData.date.desc())
-                            .limit(10)
-                            .all())
+                          .filter_by(user_id=current_user.id)
+                          .order_by(HistoricalData.date.desc())
+                          .limit(10)
+                          .all())
 
         logger.info("Rendering historical data upload template")
-        return render_template('historical_data/upload.html', #Corrected the template name here
-                             form=form,
-                             entries=historical_entries)
+        return render_template('historical_data.html',
+                           form=form,
+                           entries=historical_entries)
 
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}", exc_info=True)

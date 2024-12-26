@@ -8,7 +8,8 @@ from flask_login import login_required
 
 # Create blueprint with proper URL prefix and import name
 historical_data = Blueprint('historical_data', __name__, 
-                          url_prefix='/historical-data')
+                          url_prefix='/historical-data',
+                          template_folder='../templates')
 
 # Protect all routes by default using login_required
 @historical_data.before_request
