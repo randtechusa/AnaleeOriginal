@@ -331,15 +331,20 @@ def pending_subscribers():
 @login_required
 @admin_required
 def approve_subscriber(user_id):
-    """Approve a pending subscriber"""
+    """Approve a pending subscriber and set up their Chart of Accounts"""
     try:
         user = User.query.get_or_404(user_id)
         if user.is_admin:
             abort(400)  # Bad Request
 
+        # First activate the subscription
         user.subscription_status = 'active'
+
+        # Then create default accounts for the user
+        User.create_default_accounts(user.id)
+
         db.session.commit()
-        flash(f'Subscription activated for user {user.username}', 'success')
+        flash(f'Subscription activated for user {user.username} and Chart of Accounts created', 'success')
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error activating subscription: {str(e)}")
