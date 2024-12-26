@@ -4,8 +4,10 @@ Keeps chat functionality separate from core features
 """
 from flask import Blueprint
 
-# Create blueprint with proper prefix
-chat = Blueprint('chat', __name__)
+# Create blueprint with proper URL prefix and template folder
+chat = Blueprint('chat', __name__, 
+                url_prefix='/chat',
+                template_folder='templates')
 
 # Import routes after blueprint creation to avoid circular imports
 from . import routes

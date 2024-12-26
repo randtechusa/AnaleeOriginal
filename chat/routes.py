@@ -19,10 +19,10 @@ from nlp_utils import get_openai_client
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create blueprint
-chat = Blueprint('chat', __name__)
+# Create blueprint with template folder
+chat = Blueprint('chat', __name__, url_prefix='/chat')
 
-@chat.route('/')
+@chat.route('/interface')
 @login_required
 def chat_interface():
     """Render the chat interface."""
