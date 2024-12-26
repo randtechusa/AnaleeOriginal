@@ -30,25 +30,43 @@ def index():
 @main.route('/dashboard')
 @login_required
 def dashboard():
-    """Main dashboard view"""
+    """Main dashboard view showing financial overview"""
     try:
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
         if not company_settings:
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
 
+        # Get recent transactions and calculate totals
         recent_transactions = Transaction.query.filter_by(user_id=current_user.id)\
             .order_by(Transaction.date.desc())\
             .limit(5)\
             .all()
 
+        # Calculate financial metrics
+        total_income = sum(t.amount for t in Transaction.query.filter_by(
+            user_id=current_user.id).filter(Transaction.amount > 0).all()) or 0
+
+        total_expenses = abs(sum(t.amount for t in Transaction.query.filter_by(
+            user_id=current_user.id).filter(Transaction.amount < 0).all())) or 0
+
+        net_position = total_income - total_expenses
+
         return render_template('dashboard.html',
-                            transactions=recent_transactions)
+                            transactions=recent_transactions,
+                            total_income=total_income,
+                            total_expenses=total_expenses,
+                            net_position=net_position)
 
     except Exception as e:
         logger.error(f"Error loading dashboard: {str(e)}")
         flash('Error loading dashboard data')
-        return render_template('dashboard.html', transactions=[])
+        # Return basic template with empty values to avoid breaking the page
+        return render_template('dashboard.html', 
+                             transactions=[],
+                             total_income=0,
+                             total_expenses=0,
+                             net_position=0)
 
 # Moving explanation API to a separate blueprint to avoid conflicts
 
