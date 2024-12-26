@@ -32,18 +32,19 @@ def index():
 def dashboard():
     """Main dashboard view showing financial overview"""
     try:
+        # Check company settings (existing logic)
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
         if not company_settings:
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
 
-        # Get recent transactions and calculate totals
+        # Get recent transactions and calculate totals (existing logic)
         recent_transactions = Transaction.query.filter_by(user_id=current_user.id)\
             .order_by(Transaction.date.desc())\
             .limit(5)\
             .all()
 
-        # Calculate financial metrics
+        # Calculate financial metrics (existing logic)
         total_income = sum(t.amount for t in Transaction.query.filter_by(
             user_id=current_user.id).filter(Transaction.amount > 0).all()) or 0
 
@@ -52,21 +53,59 @@ def dashboard():
 
         net_position = total_income - total_expenses
 
+        # Add monthly chart data
+        monthly_data = {}
+        all_transactions = Transaction.query.filter_by(user_id=current_user.id)\
+            .order_by(Transaction.date).all()
+
+        for transaction in all_transactions:
+            month_key = transaction.date.strftime('%Y-%m')
+            if month_key not in monthly_data:
+                monthly_data[month_key] = 0
+            monthly_data[month_key] += transaction.amount
+
+        # Sort months and prepare chart data
+        sorted_months = sorted(monthly_data.keys())
+        monthly_labels = [datetime.strptime(m, '%Y-%m').strftime('%b %Y') 
+                         for m in sorted_months]
+        monthly_amounts = [monthly_data[m] for m in sorted_months]
+
+        # Category chart data
+        category_data = {}
+        for transaction in all_transactions:
+            if transaction.account:
+                category = transaction.account.category or 'Uncategorized'
+                if category not in category_data:
+                    category_data[category] = 0
+                category_data[category] += transaction.amount
+
+        category_labels = list(category_data.keys())
+        category_amounts = [category_data[cat] for cat in category_labels]
+
+        # Return template with all required variables
         return render_template('dashboard.html',
-                            transactions=recent_transactions,
-                            total_income=total_income,
-                            total_expenses=total_expenses,
-                            net_position=net_position)
+                           transactions=recent_transactions,
+                           total_income=total_income,
+                           total_expenses=total_expenses,
+                           net_position=net_position,
+                           monthly_labels=monthly_labels,
+                           monthly_amounts=monthly_amounts,
+                           category_labels=category_labels,
+                           category_amounts=category_amounts)
 
     except Exception as e:
         logger.error(f"Error loading dashboard: {str(e)}")
         flash('Error loading dashboard data')
-        # Return basic template with empty values to avoid breaking the page
+        # Return basic template with empty values
         return render_template('dashboard.html', 
                              transactions=[],
                              total_income=0,
                              total_expenses=0,
-                             net_position=0)
+                             net_position=0,
+                             monthly_labels=[],
+                             monthly_amounts=[],
+                             category_labels=[],
+                             category_amounts=[])
 
 # Moving explanation API to a separate blueprint to avoid conflicts
 
@@ -179,7 +218,7 @@ def analyze_list():
     except Exception as e:
         logger.error(f"Error loading files for analysis: {str(e)}")
         flash('Error loading files', 'error')
-        return redirect(url_for('main.dashboard'))
+        return redirect(url_for('main.upload'))
 
 @main.route('/analyze/<int:file_id>')
 @login_required
