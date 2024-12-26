@@ -20,7 +20,9 @@ def charts_of_accounts():
     """Manage system-wide Chart of Accounts"""
     form = AdminChartOfAccountsForm()
     upload_form = ChartOfAccountsUploadForm()
-    accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.account_code).all()
+
+    # Changed from account_code to code to match the model definition
+    accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.code).all()
 
     # Get upload errors from session if they exist
     upload_errors = session.pop('upload_errors', None)
@@ -246,6 +248,7 @@ def delete_chart_of_accounts(account_id):
         current_app.logger.error(f"Error deleting admin COA: {str(e)}")
 
     return redirect(url_for('admin.charts_of_accounts'))
+
 
 
 @admin.route('/dashboard')
