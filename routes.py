@@ -5,10 +5,13 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user, logout_user
 from sqlalchemy import text
 from werkzeug.utils import secure_filename
+from flask_wtf import FlaskForm
+from wtforms import FileField, SelectField, SubmitField
+from wtforms.validators import DataRequired
 
 from models import (
     db, User, CompanySettings, Account, Transaction, 
-    UploadedFile, AdminChartOfAccounts  # Added AdminChartOfAccounts import
+    UploadedFile, AdminChartOfAccounts
 )
 from forms.company import CompanySettingsForm
 
@@ -16,7 +19,28 @@ from forms.company import CompanySettingsForm
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create blueprint
+class UploadForm(FlaskForm):
+    """Form for handling file uploads with CSRF protection"""
+    account = SelectField('Bank Account', validators=[DataRequired()],
+                         description='Select the bank account for this statement')
+    file = FileField('Statement File', validators=[DataRequired()])
+    submit = SubmitField('Upload')
+
+    def __init__(self, *args, **kwargs):
+        super(UploadForm, self).__init__(*args, **kwargs)
+        if current_user.is_authenticated:
+            try:
+                # Get bank accounts that start with ca.810
+                accounts = Account.query.filter(
+                    Account.user_id == current_user.id,
+                    Account.link.startswith('ca.810')
+                ).all()
+                self.account.choices = [(str(acc.id), f"{acc.link} - {acc.name}") 
+                                      for acc in accounts]
+            except Exception as e:
+                logger.error(f"Error loading bank accounts: {str(e)}")
+                self.account.choices = []
+
 main = Blueprint('main', __name__)
 
 @main.route('/')
@@ -385,66 +409,53 @@ def delete_account(account_id):
 def upload():
     """Handle file uploads with comprehensive error handling and validation"""
     try:
+        form = UploadForm()
+
         # Get uploaded files with detailed logging
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
         logger.info(f"Retrieved {len(files)} existing files for user {current_user.id}")
 
-        # Get bank accounts
-        bank_accounts = Account.query.filter(
-            Account.user_id == current_user.id,
-            Account.link.ilike('ca.810%'),
-            Account.is_active == True
-        ).order_by(Account.link).all()
-
         if request.method == 'POST':
             logger.info("Processing upload request")
 
-            # Verify database connection first
-            try:
-                db.session.execute(text('SELECT 1'))
-                logger.info("Database connection verified for upload")
-            except Exception as db_error:
-                logger.error(f"Database connection error during upload: {str(db_error)}")
+            # Form validation with CSRF protection
+            if not form.validate_on_submit():
+                logger.error(f"Form validation failed: {form.errors}")
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return jsonify({'success': False, 'error': 'Database connection failed'}), 400
-                flash('Unable to connect to database. Please try again.')
-                return redirect(url_for('main.upload'))
-
-            if 'file' not in request.files:
-                logger.warning("No file found in request")
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return jsonify({'success': False, 'error': 'No file uploaded'}), 400
-                flash('No file uploaded')
-                return redirect(url_for('main.upload'))
-
-            file = request.files['file']
-            if not file.filename:
-                logger.warning("Empty filename received")
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return jsonify({'success': False, 'error': 'No file selected'}), 400
-                flash('No file selected')
-                return redirect(url_for('main.upload'))
-
-            # Validate file format
-            if not file.filename.lower().endswith(('.csv', '.xlsx')):
-                logger.warning(f"Invalid file format: {file.filename}")
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return jsonify({'success': False, 'error': 'Invalid file format. Please upload a CSV or Excel file.'}), 400
-                flash('Invalid file format. Please upload a CSV or Excel file.')
+                    return jsonify({'success': False, 'error': 'Form validation failed'}), 400
+                flash('Please ensure all fields are filled correctly', 'error')
                 return redirect(url_for('main.upload'))
 
             try:
-                # Create uploaded file record
+                file = form.file.data
+                if not file or not file.filename:
+                    logger.warning("No file selected")
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return jsonify({'success': False, 'error': 'No file selected'}), 400
+                    flash('No file selected', 'error')
+                    return redirect(url_for('main.upload'))
+
+                # Secure the filename
+                filename = secure_filename(file.filename)
+
+                # Validate file format
+                if not filename.lower().endswith(('.csv', '.xlsx')):
+                    logger.warning(f"Invalid file format: {filename}")
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return jsonify({'success': False, 'error': 'Invalid file format'}), 400
+                    flash('Invalid file format. Please upload a CSV or Excel file.', 'error')
+                    return redirect(url_for('main.upload'))
+
+                # Create upload record
                 uploaded_file = UploadedFile(
-                    filename=secure_filename(file.filename),
+                    filename=filename,
                     user_id=current_user.id,
                     upload_date=datetime.utcnow()
                 )
                 db.session.add(uploaded_file)
                 db.session.commit()
-                logger.info(f"Created upload record for file: {uploaded_file.filename}")
+                logger.info(f"File upload record created: {filename}")
 
-                # Return success response for AJAX requests
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                     return jsonify({
                         'success': True,
@@ -453,18 +464,18 @@ def upload():
                     })
 
                 flash('File uploaded successfully')
-                return redirect(url_for('main.analyze', file_id=uploaded_file.id))
+                return redirect(url_for('main.upload'))
 
             except Exception as e:
                 logger.error(f"Error processing upload: {str(e)}")
                 db.session.rollback()
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                     return jsonify({'success': False, 'error': str(e)}), 500
-                flash('Error processing file')
+                flash(f'Error processing file: {str(e)}', 'error')
                 return redirect(url_for('main.upload'))
 
         # GET request - render upload form
-        return render_template('upload.html', files=files, bank_accounts=bank_accounts)
+        return render_template('upload.html', form=form, files=files)
 
     except Exception as e:
         logger.error(f"Unexpected error in upload route: {str(e)}")
