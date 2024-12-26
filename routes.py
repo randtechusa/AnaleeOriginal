@@ -64,8 +64,8 @@ def logout():
 @login_required
 def settings():
     """Protected Chart of Accounts management"""
-    if request.method == 'POST':
-        try:
+    try:
+        if request.method == 'POST':
             account = Account(
                 link=request.form['link'],
                 name=request.form['name'],
@@ -76,15 +76,28 @@ def settings():
             )
             db.session.add(account)
             db.session.commit()
-            flash('Account added successfully')
+            flash('Account added successfully', 'success')
             logger.info(f'New account added: {account.name}')
-        except Exception as e:
-            logger.error(f'Error adding account: {str(e)}')
-            db.session.rollback()
-            flash(f'Error adding account: {str(e)}')
 
-    accounts = Account.query.filter_by(user_id=current_user.id).all()
-    return render_template('settings.html', accounts=accounts)
+        # Get user's accounts
+        accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).all()
+
+        # Get system-wide Chart of Accounts for reference
+        system_accounts = AdminChartOfAccounts.query.all()
+
+        return render_template(
+            'settings.html',
+            accounts=accounts,
+            system_accounts=system_accounts
+        )
+    except Exception as e:
+        logger.error(f'Error in settings route: {str(e)}')
+        db.session.rollback()
+        flash('Error accessing Chart of Accounts', 'error')
+        return redirect(url_for('main.dashboard'))
 
 @main.route('/company-settings', methods=['GET', 'POST'])
 @login_required
@@ -253,26 +266,31 @@ def analyze(file_id):
 @main.route('/account/<int:account_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_account(account_id):
-    account = Account.query.get_or_404(account_id)
-    if account.user_id != current_user.id:
-        flash('Access denied')
-        return redirect(url_for('main.settings'))
-
-    if request.method == 'POST':
-        account.link = request.form['link']
-        account.name = request.form['name']
-        account.category = request.form['category']
-        account.sub_category = request.form.get('sub_category', '')
-        try:
-            db.session.commit()
-            flash('Account updated successfully')
+    try:
+        account = Account.query.get_or_404(account_id)
+        if account.user_id != current_user.id:
+            flash('Access denied', 'error')
             return redirect(url_for('main.settings'))
-        except Exception as e:
-            logger.error(f'Error updating account: {str(e)}')
-            flash(f'Error updating account: {str(e)}')
-            db.session.rollback()
 
-    return render_template('edit_account.html', account=account)
+        if request.method == 'POST':
+            account.link = request.form['link']
+            account.name = request.form['name']
+            account.category = request.form['category']
+            account.sub_category = request.form.get('sub_category', '')
+            try:
+                db.session.commit()
+                flash('Account updated successfully', 'success')
+                return redirect(url_for('main.settings'))
+            except Exception as e:
+                logger.error(f'Error updating account: {str(e)}')
+                flash(f'Error updating account: {str(e)}', 'error')
+                db.session.rollback()
+
+        return render_template('edit_account.html', account=account)
+    except Exception as e:
+        logger.error(f'Error in edit_account route: {str(e)}')
+        flash('Error accessing account', 'error')
+        return redirect(url_for('main.settings'))
 
 @main.route('/account/<int:account_id>/delete', methods=['POST'])
 @login_required
@@ -801,8 +819,7 @@ def icountant_interface():
             message = "No transactions pending for processing"
 
         # Get recently processed transactions        
-        recently_processed = Transaction.query.filter(            Transaction.user_id == current_user.id,
-            Transaction.account_id.isnot(None)
+        recently_processed = Transaction.query.filter(            Transaction.user_id == current_user.id,            Transaction.account_id.isnot(None)
         ).order_by(Transaction.date.desc()).limit(5).all()
         
         processed_count = Transaction.query.filter(
