@@ -2,6 +2,7 @@
 Routes for handling bank statement uploads
 Implements secure file handling and validation
 Separate from historical data processing
+Enhanced with user-friendly error notifications
 """
 import logging
 from flask import render_template, request, redirect, url_for, flash, jsonify, current_app
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 @bank_statements.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
-    """Handle bank statement upload with validation"""
+    """Handle bank statement upload with enhanced validation and error handling"""
     try:
         form = BankStatementUploadForm()
         logger.info("Processing bank statement upload request")
@@ -42,30 +43,36 @@ def upload():
                 return redirect(url_for('bank_statements.upload'))
 
             try:
-                # Get selected bank account
+                # Get selected bank account with enhanced validation
                 account_id = int(form.account.data)
                 account = Account.query.get(account_id)
                 if not account or account.user_id != current_user.id:
                     logger.error(f"Invalid account selected: {account_id}")
-                    flash('Invalid bank account selected', 'error')
+                    flash('Invalid bank account selected. Please choose a valid account.', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
-                # Process file upload
+                # Process file upload with enhanced validation
                 file = form.file.data
                 if not file or not file.filename:
                     logger.error("No file selected")
-                    flash('No file selected', 'error')
+                    flash('Please select a file to upload.', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
-                # Secure the filename and create upload directory if needed
+                # Validate file extension
                 filename = secure_filename(file.filename)
+                file_ext = os.path.splitext(filename)[1].lower()
+                if file_ext not in ['.csv', '.xlsx']:
+                    flash('Please upload only Excel (.xlsx) or CSV (.csv) files.', 'error')
+                    return redirect(url_for('bank_statements.upload'))
+
+                # Ensure upload directory exists
                 upload_folder = current_app.config.get('UPLOAD_FOLDER', 'uploads')
                 if not os.path.exists(upload_folder):
                     os.makedirs(upload_folder)
 
                 logger.info(f"Processing file: {filename}")
 
-                # Process upload using service
+                # Process upload using service with enhanced error handling
                 service = BankStatementService()
                 success, response = service.process_upload(
                     file=file,
@@ -74,37 +81,60 @@ def upload():
                 )
 
                 if success:
-                    flash('Bank statement processed successfully', 'success')
+                    flash('Bank statement processed successfully! ' + 
+                          response.get('message', ''), 'success')
+
+                    # Add processing notes if available
+                    if response.get('processing_notes'):
+                        for note in response['processing_notes']:
+                            flash(note, 'info')
                 else:
+                    # Display main error message
                     flash(response.get('error', 'Processing failed'), 'error')
+
+                    # Display detailed errors if available
+                    if response.get('details'):
+                        for detail in response['details']:
+                            flash(f"Detail: {detail}", 'warning')
 
                 return redirect(url_for('bank_statements.upload'))
 
             except Exception as e:
                 logger.error(f"Error in upload process: {str(e)}", exc_info=True)
-                flash('Error in upload process: ' + str(e), 'error')
+                flash('An error occurred during upload. Please try again or contact support if the issue persists.', 'error')
                 return redirect(url_for('bank_statements.upload'))
 
-        # GET request - show upload form
-        # Get user's bank accounts that start with ca.810
-        bank_accounts = Account.query.filter(
-            Account.user_id == current_user.id,
-            Account.number.startswith('ca.810')  # Updated to use number field
-        ).all()
-        logger.info(f"Found {len(bank_accounts)} bank accounts for user {current_user.id}")
+        # GET request - show upload form with enhanced bank account validation
+        try:
+            # Get user's bank accounts that start with ca.810
+            bank_accounts = Account.query.filter(
+                Account.user_id == current_user.id,
+                Account.number.startswith('ca.810')  # Updated to use number field
+            ).all()
 
-        recent_files = (BankStatementUpload.query
-                       .filter_by(user_id=current_user.id)
-                       .order_by(BankStatementUpload.upload_date.desc())
-                       .limit(10)
-                       .all())
+            if not bank_accounts:
+                flash('No valid bank accounts found. Please create a bank account (starting with ca.810) in the settings first.', 'warning')
 
-        return render_template('bank_statements/upload.html',
-                             form=form,
-                             bank_accounts=bank_accounts,
-                             recent_files=recent_files)
+            logger.info(f"Found {len(bank_accounts)} bank accounts for user {current_user.id}")
+
+            # Get recent uploads with status information
+            recent_files = (BankStatementUpload.query
+                          .filter_by(user_id=current_user.id)
+                          .order_by(BankStatementUpload.upload_date.desc())
+                          .limit(10)
+                          .all())
+
+            return render_template('bank_statements/upload.html',
+                                form=form,
+                                bank_accounts=bank_accounts,
+                                recent_files=recent_files)
+
+        except Exception as e:
+            logger.error(f"Error retrieving bank accounts: {str(e)}", exc_info=True)
+            flash('Error loading bank accounts. Please try again or contact support.', 'error')
+            return redirect(url_for('bank_statements.upload'))
 
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}", exc_info=True)
-        flash('An unexpected error occurred: ' + str(e), 'error')
+        flash('An unexpected error occurred. Please try again or contact support.', 'error')
         return redirect(url_for('bank_statements.upload'))
