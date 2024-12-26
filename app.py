@@ -131,6 +131,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(bank_statements_blueprint)
                 logger.info("Bank statements blueprint registered")
 
+                # Register historical data blueprint
+                from historical_data import historical_data as historical_data_blueprint
+                app.register_blueprint(historical_data_blueprint)
+                logger.info("Historical data blueprint registered")
+
                 # Ensure database tables exist
                 db.create_all()
                 logger.info("Database tables verified")
