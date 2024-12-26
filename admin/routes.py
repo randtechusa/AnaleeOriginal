@@ -21,7 +21,7 @@ def charts_of_accounts():
     form = AdminChartOfAccountsForm()
     upload_form = ChartOfAccountsUploadForm()
 
-    # Changed from account_code to code to match the model definition
+    # Changed to use the correct field name from the model
     accounts = AdminChartOfAccounts.query.order_by(AdminChartOfAccounts.code).all()
 
     # Get upload errors from session if they exist
@@ -176,7 +176,7 @@ def add_chart_of_accounts():
     if form.validate_on_submit():
         # Check if account code already exists
         existing_account = AdminChartOfAccounts.query.filter_by(
-            code=form.code.data
+            code=form.account_code.data
         ).first()
 
         if existing_account:
@@ -184,11 +184,12 @@ def add_chart_of_accounts():
             return redirect(url_for('admin.charts_of_accounts'))
 
         account = AdminChartOfAccounts(
-            code=form.code.data,
+            code=form.account_code.data,
             name=form.name.data,
             category=form.category.data,
             sub_category=form.sub_category.data,
-            description=form.description.data
+            description=form.description.data,
+            link=form.account_code.data if not form.link.data else form.link.data
         )
         try:
             db.session.add(account)
