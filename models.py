@@ -201,6 +201,34 @@ class User(UserMixin, db.Model):
         self.subscription_status = 'deactivated'
         logger.info(f"Subscription deactivated for user {self.username}")
 
+    def check_subscription_access(self):
+        """Check if user has access to core features based on subscription status"""
+        if self.is_admin:
+            return True
+        return self.subscription_status == 'active'
+
+    def get_subscription_details(self) -> Dict:
+        """Get detailed subscription information"""
+        return {
+            'status': self.subscription_status,
+            'is_active': self.subscription_status == 'active',
+            'created_at': self.created_at,
+            'last_updated': self.updated_at
+        }
+
+    def suspend_subscription(self):
+        """Temporarily suspend user subscription"""
+        if self.subscription_status == 'active':
+            self.subscription_status = 'suspended'
+            logger.info(f"Subscription suspended for user {self.username}")
+
+    def reactivate_subscription(self):
+        """Reactivate suspended subscription"""
+        if self.subscription_status == 'suspended':
+            self.subscription_status = 'active'
+            logger.info(f"Subscription reactivated for user {self.username}")
+
+
 
 class UploadedFile(db.Model):
     __tablename__ = 'uploaded_file'

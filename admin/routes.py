@@ -251,7 +251,6 @@ def delete_chart_of_accounts(account_id):
     return redirect(url_for('admin.charts_of_accounts'))
 
 
-
 @admin.route('/dashboard')
 @login_required
 @admin_required
@@ -375,3 +374,88 @@ def deactivate_subscriber(user_id):
         flash('Error deactivating subscription', 'error')
 
     return redirect(url_for('admin.active_subscribers'))
+
+@admin.route('/subscriber/<int:user_id>/suspend', methods=['POST'])
+@login_required
+@admin_required
+def suspend_subscriber(user_id):
+    """Temporarily suspend a subscriber's access"""
+    try:
+        user = User.query.get_or_404(user_id)
+        if user.is_admin:
+            abort(400)  # Bad Request
+
+        user.suspend_subscription()
+        db.session.commit()
+        flash(f'Subscription suspended for user {user.username}', 'success')
+        current_app.logger.info(f"Admin {current_user.username} suspended subscription for user {user.username}")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error suspending subscription: {str(e)}")
+        flash('Error suspending subscription', 'error')
+
+    return redirect(url_for('admin.active_subscribers'))
+
+@admin.route('/subscriber/<int:user_id>/reactivate', methods=['POST'])
+@login_required
+@admin_required
+def reactivate_subscriber(user_id):
+    """Reactivate a suspended subscriber"""
+    try:
+        user = User.query.get_or_404(user_id)
+        if user.is_admin:
+            abort(400)  # Bad Request
+
+        user.reactivate_subscription()
+        db.session.commit()
+        flash(f'Subscription reactivated for user {user.username}', 'success')
+        current_app.logger.info(f"Admin {current_user.username} reactivated subscription for user {user.username}")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error reactivating subscription: {str(e)}")
+        flash('Error reactivating subscription', 'error')
+
+    return redirect(url_for('admin.deactivated_subscribers'))
+
+@admin.route('/subscription-stats')
+@login_required
+@admin_required
+def subscription_stats():
+    """View detailed subscription statistics"""
+    try:
+        # Gather subscription statistics
+        total_users = User.query.filter(User.is_admin == False).count()
+        active_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'active'
+        ).count()
+        suspended_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'suspended'
+        ).count()
+        pending_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'pending'
+        ).count()
+        deactivated_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'deactivated'
+        ).count()
+
+        # Get recent subscription changes
+        recent_changes = User.query.filter(
+            User.is_admin == False,
+            User.updated_at >= (datetime.utcnow() - timedelta(days=7))
+        ).order_by(User.updated_at.desc()).limit(10).all()
+
+        return render_template('admin/subscription_stats.html',
+                           total_users=total_users,
+                           active_users=active_users,
+                           suspended_users=suspended_users,
+                           pending_users=pending_users,
+                           deactivated_users=deactivated_users,
+                           recent_changes=recent_changes)
+    except Exception as e:
+        current_app.logger.error(f"Error loading subscription stats: {str(e)}")
+        flash('Error loading subscription statistics', 'error')
+        return redirect(url_for('admin.dashboard'))
