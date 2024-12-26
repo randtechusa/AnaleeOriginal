@@ -55,12 +55,8 @@ def get_openai_client() -> Optional[OpenAI]:
             logger.error("OpenAI API key not found in environment variables")
             return None
 
-        # Initialize new client with correct configuration
-        # Removed 'proxies' parameter that was causing the error
-        _openai_client = OpenAI(
-            api_key=api_key,
-            timeout=60.0  # Add reasonable timeout
-        )
+        # Initialize new client with updated configuration
+        _openai_client = OpenAI(api_key=api_key)
         _last_client_init = time.time()
 
         # Test the client with a simple request
