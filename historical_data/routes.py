@@ -3,9 +3,10 @@ Routes for handling historical data uploads and processing
 Implements comprehensive validation and error reporting
 """
 import logging
+import os
 import pandas as pd
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from decimal import Decimal
@@ -13,7 +14,7 @@ from flask_wtf import FlaskForm
 from wtforms import FileField, SubmitField, SelectField
 from wtforms.validators import DataRequired
 
-from models import db, Account, HistoricalData
+from models import db, Account, HistoricalData, User
 from . import historical_data
 from .upload_diagnostics import UploadDiagnostics
 
