@@ -1,34 +1,73 @@
-from openai import OpenAI, APIError, RateLimitError
-import logging
-import json
-import os
-from typing import List, Dict, Optional, Any
-import time
-import sys
-from datetime import datetime
-import logging
-import json
-import os
-from typing import List, Dict, Optional, Any
-import time
-import sys
+"""
+AI utilities module with enhanced error handling and rate limiting
+"""
 
+import logging
+import os
+from typing import Optional
+from openai import OpenAI, APIError, RateLimitError
+from datetime import datetime
+import time
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with proper format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Global client instance with protection
+_openai_client = None
+_last_client_error = None
+_client_error_threshold = 3
 
+def get_openai_client() -> Optional[OpenAI]:
+    """
+    Get or create OpenAI client with improved error handling and caching
+    Returns None if client initialization fails after retries
+    """
+    global _openai_client, _last_client_error
+
+    try:
+        # Return existing client if available and valid
+        if _openai_client is not None:
+            return _openai_client
+
+        # Get API key from environment with enhanced validation
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            logger.error("OpenAI API key not found in environment variables")
+            return None
+
+        # Initialize new client with proper configuration
+        _openai_client = OpenAI(api_key=api_key)
+
+        # Validate client with a test call
+        try:
+            _openai_client.models.list(limit=1)
+            logger.info("OpenAI client initialized and tested successfully")
+            _last_client_error = None
+            return _openai_client
+        except Exception as e:
+            logger.error(f"Client validation failed: {str(e)}")
+            _openai_client = None
+            _last_client_error = str(e)
+            return None
+
+    except Exception as e:
+        logger.error(f"Unexpected error during client initialization: {str(e)}")
+        _last_client_error = str(e)
+        return None
+
+# Enhance the rate limit handler
 def handle_rate_limit(func, max_retries=3, base_delay=2):
     """
-    Enhanced decorator to handle rate limiting with adaptive retry strategy and proper error handling
+    Enhanced decorator to handle rate limiting with adaptive retry strategy
+    and comprehensive error handling
     """
     @retry(
-        retry=retry_if_exception_type((RateLimitError, APIError, Exception)),
+        retry=retry_if_exception_type((RateLimitError, APIError)),
         stop=stop_after_attempt(max_retries),
         wait=wait_exponential(multiplier=base_delay, min=4, max=30),
         reraise=True
@@ -38,26 +77,22 @@ def handle_rate_limit(func, max_retries=3, base_delay=2):
             return func(*args, **kwargs)
         except RateLimitError as e:
             logger.warning(f"Rate limit hit: {str(e)}")
-            # Get retry-after from headers if available
             retry_after = getattr(e, 'retry_after', None)
             if retry_after:
-                logger.warning(f"Waiting {retry_after} seconds as suggested by API")
+                logger.info(f"Waiting {retry_after} seconds as suggested by API")
                 time.sleep(retry_after)
             raise
-
         except APIError as e:
-            if e.status_code == 429:
+            if e.status_code == 429:  # Rate limit
                 logger.warning(f"Rate limit hit via APIError: {str(e)}")
                 raise RateLimitError("Rate limit exceeded")
             logger.error(f"API error: {str(e)}")
             raise
-
         except Exception as e:
             error_msg = str(e).lower()
             if "invalid api key" in error_msg:
                 logger.error("Invalid API key detected")
                 raise ValueError("Invalid OpenAI API key configuration")
-
             logger.error(f"Unexpected error in API call: {str(e)}")
             raise
     return wrapper
@@ -118,56 +153,6 @@ logger.setLevel(logging.DEBUG)
 
 # Initialize OpenAI client function to ensure fresh client on each request
 # Global client instance
-_openai_client = None
-_last_client_error = None
-_client_error_threshold = 3
-
-def get_openai_client() -> OpenAI:
-    """
-    Get or create OpenAI client with improved error handling and caching
-    """
-    global _openai_client, _last_client_error
-
-    try:
-        # Return existing client if available and valid
-        if _openai_client is not None:
-            return _openai_client
-
-        # Get API key from environment
-        api_key = os.environ.get('OPENAI_API_KEY')
-        if not api_key:
-            logger.error("OpenAI API key not found in environment variables")
-            raise ValueError("OpenAI API key not configured")
-
-        # Initialize new client with proper configuration
-        _openai_client = OpenAI()  # Uses API key from environment by default
-
-        # Test the client with basic operation
-        try:
-            _openai_client.models.list(limit=1)
-            logger.info("OpenAI client initialized and tested successfully")
-            return _openai_client
-        except Exception as e:
-            logger.error(f"Client test failed: {str(e)}")
-            _openai_client = None
-            raise
-
-    except RateLimitError as e:
-        _last_client_error = str(e)
-        logger.warning(f"Rate limit error during client initialization: {_last_client_error}")
-        raise
-
-    except APIError as e:
-        _last_client_error = str(e)
-        logger.error(f"OpenAI API error during client initialization: {_last_client_error}")
-        raise
-
-    except Exception as e:
-        _last_client_error = str(e)
-        logger.error(f"Unexpected error during client initialization: {_last_client_error}")
-        raise
-
-    return None
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
@@ -195,7 +180,6 @@ def predict_account(description: str, explanation: str, available_accounts: List
             logger.error("Failed to initialize OpenAI client after retries")
             return rule_based_account_matching(description, available_accounts)
 
-        # Format available accounts
         # Format available accounts
         account_info = "\n".join([
             f"- {acc['name']}\n  Category: {acc['category']}\n  Code: {acc['link']}\n  Purpose: Standard {acc['category']} account for {acc['name'].lower()} transactions"
@@ -302,7 +286,7 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
                     if matching_accounts:
                         # Enhanced suggestion with additional validations
                         financial_insight = suggestion.get('financial_insight',
-                                                        suggestion.get('reasoning', 'No detailed insight available'))
+                                                            suggestion.get('reasoning', 'No detailed insight available'))
                         valid_suggestion = {
                             'account_name': suggestion['account_name'],
                             'confidence': min(max(float(suggestion['confidence']), 0.0), 1.0),  # Ensure valid confidence range
