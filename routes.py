@@ -53,22 +53,29 @@ def dashboard():
 
         net_position = total_income - total_expenses
 
-        # Add monthly chart data
-        monthly_data = {}
+        # Add monthly chart data with separate income and expenses
+        monthly_income = {}
+        monthly_expenses = {}
         all_transactions = Transaction.query.filter_by(user_id=current_user.id)\
             .order_by(Transaction.date).all()
 
         for transaction in all_transactions:
             month_key = transaction.date.strftime('%Y-%m')
-            if month_key not in monthly_data:
-                monthly_data[month_key] = 0
-            monthly_data[month_key] += transaction.amount
+            if month_key not in monthly_income:
+                monthly_income[month_key] = 0
+                monthly_expenses[month_key] = 0
+
+            if transaction.amount > 0:
+                monthly_income[month_key] += transaction.amount
+            else:
+                monthly_expenses[month_key] += abs(transaction.amount)
 
         # Sort months and prepare chart data
-        sorted_months = sorted(monthly_data.keys())
+        sorted_months = sorted(set(monthly_income.keys()) | set(monthly_expenses.keys()))
         monthly_labels = [datetime.strptime(m, '%Y-%m').strftime('%b %Y') 
                          for m in sorted_months]
-        monthly_amounts = [monthly_data[m] for m in sorted_months]
+        monthly_income_data = [monthly_income.get(m, 0) for m in sorted_months]
+        monthly_expenses_data = [monthly_expenses.get(m, 0) for m in sorted_months]
 
         # Category chart data
         category_data = {}
@@ -77,7 +84,7 @@ def dashboard():
                 category = transaction.account.category or 'Uncategorized'
                 if category not in category_data:
                     category_data[category] = 0
-                category_data[category] += transaction.amount
+                category_data[category] += abs(transaction.amount)
 
         category_labels = list(category_data.keys())
         category_amounts = [category_data[cat] for cat in category_labels]
@@ -89,7 +96,8 @@ def dashboard():
                            total_expenses=total_expenses,
                            net_position=net_position,
                            monthly_labels=monthly_labels,
-                           monthly_amounts=monthly_amounts,
+                           monthly_income=monthly_income_data,
+                           monthly_expenses=monthly_expenses_data,
                            category_labels=category_labels,
                            category_amounts=category_amounts)
 
@@ -103,7 +111,8 @@ def dashboard():
                              total_expenses=0,
                              net_position=0,
                              monthly_labels=[],
-                             monthly_amounts=[],
+                             monthly_income=[],
+                             monthly_expenses=[],
                              category_labels=[],
                              category_amounts=[])
 
