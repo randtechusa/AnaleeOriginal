@@ -12,6 +12,7 @@ from models import (
 )
 from forms.company import CompanySettingsForm
 from ai_insights import FinancialInsightsGenerator  # Added missing import
+from forms.account import AccountForm  # Update import statement
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -135,13 +136,15 @@ def logout():
 def settings():
     """Protected Chart of Accounts management"""
     try:
-        if request.method == 'POST':
+        # Initialize the form
+        form = AccountForm()
+
+        if request.method == 'POST' and form.validate_on_submit():
             account = Account(
-                link=request.form['link'],
-                name=request.form['name'],
-                category=request.form['category'],
-                sub_category=request.form.get('sub_category', ''),
-                account_code=request.form.get('account_code', ''),
+                link=form.link.data,
+                name=form.name.data,
+                category=form.category.data,
+                sub_category=form.sub_category.data,
                 user_id=current_user.id
             )
             db.session.add(account)
@@ -161,7 +164,8 @@ def settings():
         return render_template(
             'settings.html',
             accounts=accounts,
-            system_accounts=system_accounts
+            system_accounts=system_accounts,
+            form=form  # Pass the form to the template
         )
     except Exception as e:
         logger.error(f'Error in settings route: {str(e)}')
@@ -218,7 +222,6 @@ def company_settings():
         settings=settings,
         months=months
     )
-
 
 
 @main.route('/analyze')
@@ -801,209 +804,122 @@ def upload_progress():
 @main.route('/icountant', methods=['GET', 'POST'])
 @login_required
 def icountant_interface():
-    """Handle the iCountant interface with proper transaction processing and AI suggestions"""
-    logger.info(f"Starting iCountant interface for user {current_user.id}")
-
+    """Handle iCountant AI interface"""
     try:
-        # Get total transaction count
-        total_count = Transaction.query.filter_by(user_id=current_user.id).count()
-        logger.info(f"Total transactions for user {current_user.id}: {total_count}")
-
-        # Get unprocessed transactions
-        transactions = Transaction.query.filter_by(
-            user_id=current_user.id,
-            account_id=None
-        ).order_by(Transaction.date).all()
-
-        # Get active accounts for processing
-        accounts = Account.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).order_by(Account.category, Account.name).all()
-        logger.info(f"Found {len(accounts)} active accounts for user {current_user.id}")
-
         if request.method == 'POST':
             transaction_id = request.form.get('transaction_id', type=int)
             selected_account = request.form.get('selected_account', type=int)
 
-            if transaction_id and selected_account is not None:
-                transaction = Transaction.query.get(transaction_id)
-                if transaction and transaction.userid == current_user.id:
-                    if 0 <= selected_account < len(accounts):
-                        # Store the AI suggestion before updating
-                        if transaction.ai_category:
-                            transaction.account_id = accounts[selected_account].id
-                            transaction.ai_confidence = float(transaction.ai_confidence or 0.0)
-                            db.session.commit()
-                            flash('Transaction processed successfully')
-                            return redirect(url_for('main.icountant_interface'))
+            if not transaction_id or not selected_account:
+                flash('Invalid request parameters')
+                return redirect(url_for('main.dashboard'))
 
-        # Get current transaction and process it
-        current_transaction = next((t for t in transactions), None)
-        if current_transaction:
-            logger.info(f"Processing transaction {current_transaction.id}: {current_transaction.description}")
+            transaction = Transaction.query.get_or_404(transaction_id)
+            if transaction.user_id != current_user.id:
+                flash('Unauthorized access')
+                return redirect(url_for('main.dashboard'))
 
-            # Initialize insights generator
-            insights_generator = FinancialInsightsGenerator()
+            account = Account.query.get_or_404(selected_account)
+            if account.user_id != current_user.id:
+                flash('Unauthorized access')
+                return redirect(url_for('main.dashboard'))
 
-            # Generate insights with AI categorization
-            insights = insights_generator.generate_transaction_insights([{
-                'date': current_transaction.date.isoformat(),
-                'description': current_transaction.description,
-                'amount': float(current_transaction.amount),
-                'category': current_transaction.account.category if current_transaction.account else None
-            }])
-
-            # Store AI suggestions in the transaction
-            current_transaction.ai_category = insights['category_suggestion']['category']
-            current_transaction.ai_confidence = insights['category_suggestion']['confidence']
-            current_transaction.ai_explanation = insights['category_suggestion']['explanation']
+            transaction.account_id = account.id
             db.session.commit()
+            flash('Account assigned successfully')
 
-            # Format suggestions for display
-            suggested_accounts = []
-            if insights['category_suggestion']['category']:
-                matching_accounts = [acc for acc in accounts 
-                                  if acc.category.lower() == insights['category_suggestion']['category'].lower()]
-                suggested_accounts = [{
-                    'account': acc,
-                    'confidence': insights['category_suggestion']['confidence'],
-                    'reason': insights['category_suggestion']['explanation']
-                } for acc in matching_accounts[:3]]  # Top 3 matching accounts
+        # Get unprocessed transaction
+        current_transaction = Transaction.query.filter_by(
+            user_id=current_user.id,
+            account_id=None
+        ).order_by(Transaction.date.desc()).first()
 
+        if current_transaction:
             transaction_info = {
-                'insights': {
-                    'amount_formatted': f"${abs(current_transaction.amount):,.2f}",
-                    'transaction_type': 'credit' if current_transaction.amount < 0 else 'debit',
-                    'ai_insights': insights['insights'],
-                    'suggested_accounts': suggested_accounts or [{
-                        'account': account,
-                        'reason': 'Alternative suggestion based on category'
-                    } for account in accounts[:3]]  # Fallback to first 3 accounts if no AI matches
-                }
+                'date': current_transaction.date,
+                'description': current_transaction.description,
+                'amount': current_transaction.amount
             }
-            message = None
         else:
-            current_transaction = None
             transaction_info = None
-            message = "No transactions pending for processing"
 
-        # Get recently processed transactions        
-        recently_processed = Transaction.query.filter(            Transaction.user_id == current_user.id,            Transaction.account_id.isnot(None)
+        # Get active accounts for selection
+        accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).order_by(Account.category, Account.name).all()
+
+        # Get recently processed transactions
+        recently_processed = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.account_id.isnot(None)
         ).order_by(Transaction.date.desc()).limit(5).all()
-        
+
+        # Get processing counts
+        total_count = Transaction.query.filter_by(user_id=current_user.id).count()
         processed_count = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.account_id.isnot(None)
         ).count()
-        
+
         return render_template(
             'icountant.html',
             transaction=current_transaction,
             transaction_info=transaction_info,
             accounts=accounts,
-            message=message,
             recently_processed=recently_processed,
             processed_count=processed_count,
             total_count=total_count
         )
-        
 
     except Exception as e:
         logger.error(f"Error in iCountant interface: {str(e)}")
         db.session.rollback()
         flash('Error processing transaction')
         return redirect(url_for('main.dashboard'))
-        
-class ICountant:
-    def __init__(self, accounts):
-        self.accounts = accounts
-        
-    def process_transaction(self, transaction_data):
-        # Placeholder for actual iCountant logic
-        message = "iCountant is processing this transaction. Please select an account."
-        transaction_info = {}
-        return message, transaction_info
-        
-    def complete_transaction(self, selected_account_index):
-        # Placeholder for actual iCountant logic
-        if 0 <= selected_account_index < len(self.accounts):
-            message = "Transaction completed successfully!"
-            success = True
-            completed = True
-        else:
-            message = "Invalid account selection."
-            success = False
-            completed = False
-        return success, message, completed
-        
-def suggest_explanation(description, similar_transactions):
-    #Implementation for suggestion would go here. Placeholder for now.
-    return "Explanation suggestion will be available in the next update"
-    
-def process_uploaded_file(file, status):
-    """Process the uploaded file and return dataframe and total rows."""
-    import pandas as pd
+
+def find_similar_transactions(description):
+    """Find similar transactions based on description"""
     try:
-        if file.filename.endswith('.xlsx'):
-            df = pd.read_excel(file)
-        elif file.filename.endswith('.csv'):
-            df = pd.read_csv(file)
-        else:
-            raise ValueError('Invalid file format')
-            
-        total_rows = len(df)
-        return df, total_rows
+        similar_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.description.ilike(f"%{description}%")
+        ).all()
+
+        return [{
+            'id': t.id,
+            'description': t.description,
+            'explanation': t.explanation
+        } for t in similar_transactions]
     except Exception as e:
-        logger.error(f"Error processing file: {str(e)}")
-        raise
-        
-def init_upload_status(filename):
-    """Initialize the upload status dictionary."""
-    return {
-        'status': 'processing',
-        'filename': filename,
-        'total_rows': 0,
-        'processed_rows': 0,
-        'current_chunk': 0,
-        'progress': 0,
-        'last_update': datetime.utcnow().isoformat(),
-        'errors': []
-    }
-    
-def process_transaction_rows(df, uploaded_file, user):
-    """Process transaction rows from dataframe."""
-    processed_rows = 0
-    error_rows = []
-    
+        logger.error(f"Error finding similar transactions: {str(e)}")
+        return []
+
+@main.route('/suggest-explanation', methods=['POST'])
+@login_required
+def suggest_explanation_api():
+    """API endpoint for ESF (Explanation Suggestion Feature)"""
     try:
-        for index, row in df.iterrows():
-            try:
-                transaction = Transaction(
-                    date=pd.to_datetime(row['Date']).date(),
-                    description=str(row['Description']),
-                    amount=float(row['Amount']),
-                    file_id=uploaded_file.id,
-                    user_id=user.id
-                )
-                db.session.add(transaction)
-                processed_rows += 1
-            except Exception as e:
-                error_rows.append({
-                    'row': index + 2,  # +2 for Excel row number (header + 1-based index)
-                    'error': str(e)
-                })
-                
-        db.session.commit()
-        return processed_rows, error_rows
-        
+        data = request.get_json()
+        description = data.get('description', '').strip()
+
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+
+        similar_transactions = find_similar_transactions(description)
+        suggestion = suggest_explanation(description, similar_transactions)
+
+        return jsonify({
+            'success': True,
+            'suggestion': suggestion
+        })
+
     except Exception as e:
-        logger.error(f"Error processing transactions: {str(e)}")
-        db.session.rollback()
-        raise
-        
+        logger.error(f"Error in ESF: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 from predictive_utils import find_similar_transactions, TEXT_THRESHOLD, SEMANTIC_THRESHOLD
-        
+
 @main.route('/api/generate-insights', methods=['POST'])
 @login_required
 def generate_insights_api():
@@ -1012,13 +928,13 @@ def generate_insights_api():
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
         if not company_settings:
             return jsonify({'error': 'Please configure company settings first.'}), 400
-            
+
         fy_dates = company_settings.get_financial_year()
         transactions = Transaction.query.filter(
             Transaction.user_id == current_user.id,
             Transaction.date.between(fy_dates['start_date'], fy_dates['end_date'])
         ).order_by(Transaction.date.desc()).all()
-        
+
         # Format transactions for response
         transaction_data = [{
             'id': t.id,
@@ -1027,20 +943,20 @@ def generate_insights_api():
             'amount': float(t.amount),
             'category': t.account.category if t.account else 'Uncategorized'
         } for t in transactions]
-        
+
         # Generate insights using AI
         insights_generator = FinancialInsightsGenerator()
         insights = insights_generator.generate_insights(transaction_data)
-        
+
         return jsonify({
             'transactions': transaction_data,
             'insights': insights
         })
-        
+
     except Exception as e:
         logger.error(f"Error generating AI insights: {str(e)}")
         return jsonify({'error': str(e)}), 500
-        
+
 @main.route('/system-maintenance')
 @login_required
 def system_maintenance():
@@ -1051,22 +967,22 @@ def system_maintenance():
     try:
         # Initialize maintenance monitor
         monitor = MaintenanceMonitor()
-        
+
         # Get health metrics for current user
         health_metrics = monitor.check_module_health(current_user.id)
-        
+
         # Get maintenance predictions
         maintenance_needs = monitor.predict_maintenance_needs()
-        
+
         return render_template('system_maintenance.html',
                              health_metrics=health_metrics,
                              maintenance_needs=maintenance_needs)
-        
+
     except Exception as e:
         logger.error(f"Error in system maintenance: {str(e)}")
         flash('Error checking system health')
         return redirect(url_for('main.dashboard'))
-        
+
 @main.route('/alerts')
 @login_required
 def alert_dashboard():
@@ -1077,20 +993,20 @@ def alert_dashboard():
             AlertHistory.user_id == current_user.id,
             AlertHistory.status != 'resolved'
         ).order_by(AlertHistory.created_at.desc()).all()
-        
+
         configurations = AlertConfiguration.query.filter_by(
             user_id=current_user.id
         ).order_by(AlertConfiguration.created_at.desc()).all()
-        
+
         return render_template('alerts/alert_dashboard.html',
                              active_alerts=active_alerts,
                              configurations=configurations)
-        
+
     except Exception as e:
         logger.error(f"Error loading alert dashboard: {str(e)}")
         flash('Error loading alert dashboard')
         return redirect(url_for('main.dashboard'))
-        
+
 @main.route('/alerts/create', methods=['POST'])
 @login_required
 def create_alert_config():
@@ -1108,7 +1024,7 @@ def create_alert_config():
         db.session.commit()
         flash('Alert configuration created successfully')
         return redirect(url_for('main.alert_dashboard'))
-        
+
     except ValueError as ve:
         logger.error(f"Invalid alert configuration values: {str(ve)}")
         flash('Invalid configuration values')
@@ -1118,7 +1034,7 @@ def create_alert_config():
         db.session.rollback()
         flash('Error creating alert configuration')
         return redirect(url_for('main.alert_dashboard'))
-        
+
 @main.route('/alerts/acknowledge/<int:alert_id>', methods=['POST'])
 @login_required
 def acknowledge_alert(alert_id):
@@ -1126,15 +1042,15 @@ def acknowledge_alert(alert_id):
     try:
         alert_system = AlertSystem()
         success = alert_system.acknowledge_alert(alert_id, current_user.id)
-        
+
         if success:
             return jsonify({'success': True})
         return jsonify({'error': 'Alert not found or unauthorized'}), 404
-        
+
     except Exception as e:
         logger.error(f"Error acknowledging alert: {str(e)}")
         return jsonify({'error': str(e)}), 500
-        
+
 @main.route('/alerts/check')
 @login_required
 def check_alerts():
@@ -1142,7 +1058,7 @@ def check_alerts():
     try:
         alert_system = AlertSystem()
         anomalies = alert_system.check_anomalies(current_user.id)
-        
+
         created_alerts = []
         for anomaly in anomalies:
             alert = alert_system.create_alert(
@@ -1152,16 +1068,16 @@ def check_alerts():
             )
             if alert:
                 created_alerts.append(alert)
-                
+
         return jsonify({
             'success': True,
             'alerts_created': len(created_alerts)
         })
-        
+
     except Exception as e:
         logger.error(f"Error checking alerts: {str(e)}")
         return jsonify({'error': str(e)}), 500
-        
+
 @main.route('/goals')
 @login_required
 def goals_dashboard():
@@ -1170,12 +1086,12 @@ def goals_dashboard():
         goals = FinancialGoal.query.filter_by(
             user_id=current_user.id
         ).order_by(FinancialGoal.created_at.desc()).all()
-        
+
         # Calculate overall progress statistics
         total_goals = len(goals)
         completed_goals = sum(1 for g in goals if g.status == 'completed')
         active_goals = sum(1 for g in goals if g.status == 'active')
-        
+
         # Group goals by category
         goals_by_category = {}
         for goal in goals:
@@ -1183,19 +1099,19 @@ def goals_dashboard():
             if category not in goals_by_category:
                 goals_by_category[category] = []
             goals_by_category[category].append(goal)
-            
+
         return render_template('goals_dashboard.html',
                             goals=goals,
                             total_goals=total_goals,
                             completed_goals=completed_goals,
                             active_goals=active_goals,
                             goals_by_category=goals_by_category)
-        
+
     except Exception as e:
         logger.error(f"Error loading goals dashboard: {str(e)}")
         flash('Error loading goals dashboard')
         return redirect(url_for('main.dashboard'))
-        
+
 @main.route('/goals/create', methods=['GET', 'POST'])
 @login_required
 def create_goal():
@@ -1217,15 +1133,15 @@ def create_goal():
             db.session.commit()
             flash('Financial goal created successfully')
             return redirect(url_for('main.goals_dashboard'))
-            
+
         except Exception as e:
             logger.error(f"Error creating financial goal: {str(e)}")
             db.session.rollback()
             flash('Error creating financial goal')
             return redirect(url_for('main.goals_dashboard'))
-            
+
     return render_template('create_goal.html')
-    
+
 @main.route('/goals/<int:goal_id>/update', methods=['POST'])
 @login_required
 def update_goal(goal_id):
@@ -1235,26 +1151,26 @@ def update_goal(goal_id):
             id=goal_id,
             user_id=current_user.id
         ).first_or_404()
-        
+
         # Update goal progress
         goal.current_amount = float(request.form['current_amount'])
-        
+
         # Update status if goal is completed
         if goal.calculate_progress() >= 100:
             goal.status = 'completed'
-            
+
         db.session.commit()
         return jsonify({
             'success': True,
             'progress': goal.calculate_progress(),
             'status': goal.status
         })
-        
+
     except Exception as e:
         logger.error(f"Error updating goal: {str(e)}")
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-        
+
 def find_similar_transactions(description):
     """Find similar transactions based on description"""
     try:
@@ -1262,7 +1178,7 @@ def find_similar_transactions(description):
             Transaction.user_id == current_user.id,
             Transaction.description.ilike(f"%{description}%")
         ).all()
-        
+
         return [{
             'id': t.id,
             'description': t.description,
@@ -1271,7 +1187,7 @@ def find_similar_transactions(description):
     except Exception as e:
         logger.error(f"Error finding similar transactions: {str(e)}")
         return []
-        
+
 @main.route('/suggest-explanation', methods=['POST'])
 @login_required
 def suggest_explanation_api():
@@ -1279,24 +1195,24 @@ def suggest_explanation_api():
     try:
         data = request.get_json()
         description = data.get('description', '').strip()
-        
+
         if not description:
             return jsonify({'error': 'Description is required'}), 400
-            
+
         similar_transactions = find_similar_transactions(description)
         suggestion = suggest_explanation(description, similar_transactions)
-        
+
         return jsonify({
             'success': True,
             'suggestion': suggestion
         })
-        
+
     except Exception as e:
         logger.error(f"Error in ESF: {str(e)}")
         return jsonify({'error': str(e)}), 500
-        
+
 from werkzeug.utils import secure_filename
-        
+
 def find_similar_transactions(description):
     """Find similar transactions based on description"""
     try:
@@ -1304,7 +1220,7 @@ def find_similar_transactions(description):
             Transaction.user_id == current_user.id,
             Transaction.description.ilike(f"%{description}%")
         ).all()
-        
+
         return [{
             'id': t.id,
             'description': t.description,
@@ -1313,3 +1229,68 @@ def find_similar_transactions(description):
     except Exception as e:
         logger.error(f"Error finding similar transactions: {str(e)}")
         return []
+        
+def suggest_explanation(description, similar_transactions):
+    #Implementation for suggestion would go here. Placeholder for now.
+    return "Explanation suggestion will be available in the next update"
+
+def process_uploaded_file(file, status):
+    """Process the uploaded file and return dataframe and total rows."""
+    import pandas as pd
+    try:
+        if file.filename.endswith('.xlsx'):
+            df = pd.read_excel(file)
+        elif file.filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            raise ValueError('Invalid file format')
+
+        total_rows = len(df)
+        return df, total_rows
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
+        raise
+
+def init_upload_status(filename):
+    """Initialize the upload status dictionary."""
+    return {
+        'status': 'processing',
+        'filename': filename,
+        'total_rows': 0,
+        'processed_rows': 0,
+        'current_chunk': 0,
+        'progress': 0,
+        'last_update': datetime.utcnow().isoformat(),
+        'errors': []
+    }
+
+def process_transaction_rows(df, uploaded_file, user):
+    """Process transaction rows from dataframe."""
+    processed_rows = 0
+    error_rows = []
+
+    try:
+        for index, row in df.iterrows():
+            try:
+                transaction = Transaction(
+                    date=pd.to_datetime(row['Date']).date(),
+                    description=str(row['Description']),
+                    amount=float(row['Amount']),
+                    file_id=uploaded_file.id,
+                    user_id=user.id
+                )
+                db.session.add(transaction)
+                processed_rows += 1
+            except Exception as e:
+                error_rows.append({
+                    'row': index + 2,  # +2 for Excel row number (header + 1-based index)
+                    'error': str(e)
+                })
+
+        db.session.commit()
+        return processed_rows, error_rows
+
+    except Exception as e:
+        logger.error(f"Error processing transactions: {str(e)}")
+        db.session.rollback()
+        raise
