@@ -37,12 +37,12 @@ def chat_interface():
         ).count()
 
         logger.info(f"Found {unanalyzed_count} unanalyzed transactions for user {current_user.id}")
-        return render_template('financial_chat.html', unanalyzed_count=unanalyzed_count)
+        return render_template('chat/chat_interface.html', unanalyzed_count=unanalyzed_count)
     except Exception as e:
         logger.error(f"Error loading chat interface: {str(e)}")
-        return render_template('financial_chat.html', error="Error loading transaction data")
+        return render_template('chat/chat_interface.html', error="Error loading transaction data")
 
-@chat.route('/chat/send', methods=['POST'])
+@chat.route('/send', methods=['POST'])
 @login_required
 def send_message():
     """Process incoming chat messages and generate responses with financial context."""
@@ -88,7 +88,7 @@ def send_message():
             'error': 'Internal server error'
         })
 
-@chat.route('/chat/history')
+@chat.route('/history')
 @login_required
 def get_chat_history():
     """Retrieve chat history for the current user."""
@@ -105,22 +105,12 @@ def get_chat_history():
             'error': 'Error retrieving chat history'
         })
 
-@chat.route('/chat/context')
+@chat.route('/context')
 @login_required
 def get_context():
     """Get current financial context for the chat."""
     try:
         context = get_financial_context(current_user.id)
-        unanalyzed_count = Transaction.query.filter(
-            Transaction.user_id == current_user.id,
-            or_(
-                Transaction.account_id.is_(None),
-                Transaction.explanation.is_(None)
-            )
-        ).count()
-
-        context['unanalyzed_count'] = unanalyzed_count
-
         return jsonify({
             'success': True,
             'context': context
@@ -194,7 +184,6 @@ Monthly Summary:
 - Income: ${context['income']:,.2f}
 - Expenses: ${context['expenses']:,.2f}
 - Balance: ${context['balance']:,.2f}
-- Unanalyzed Transactions: {context.get('unanalyzed_count', 0)}
 
 Recent Transactions:
 {format_transactions_for_prompt(context['recent_transactions'])}
@@ -222,12 +211,6 @@ Provide a helpful, concise response focusing on their financial situation."""
 def format_transactions_for_prompt(transactions: List[Dict]) -> str:
     """Format recent transactions for the AI prompt."""
     return "\n".join([
-        f"- {tx['date']}: {tx['description']} (${tx['amount']:,.2f}) {'[Unanalyzed]' if not tx.get('analyzed') else ''}"
+        f"- {tx['date']}: {tx['description']} (${tx['amount']:,.2f})"
         for tx in transactions
     ])
-
-def update_context_if_needed(message: str, response: str) -> Optional[Dict]:
-    """Update financial context if the conversation requires it."""
-    # For now, always return None as we're not implementing
-    # context updates in this version
-    return None

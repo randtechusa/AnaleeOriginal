@@ -123,9 +123,9 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(suggestions_blueprint)
                 logger.info("Suggestions blueprint registered")
 
-                # Register chat blueprint
+                # Register chat blueprint with proper URL prefix
                 from chat import chat as chat_blueprint
-                app.register_blueprint(chat_blueprint)
+                app.register_blueprint(chat_blueprint, url_prefix='/chat')
                 logger.info("Chat blueprint registered")
 
                 # Register main blueprint
