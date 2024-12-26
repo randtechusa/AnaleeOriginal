@@ -38,7 +38,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         logger.info("Starting application creation...")
 
         # Initialize Flask application
-        app = Flask(__name__)
+        app = Flask(__name__, template_folder='templates', static_folder='static')
 
         # Get database URL and verify it exists
         database_url = os.environ.get('DATABASE_URL')
@@ -111,6 +111,11 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(admin_blueprint, url_prefix='/admin')
                 logger.info("Admin blueprint registered")
 
+                # Register historical data blueprint
+                from historical_data import historical_data as historical_data_blueprint
+                app.register_blueprint(historical_data_blueprint)
+                logger.info("Historical data blueprint registered")
+
                 # Register suggestions blueprint
                 from suggestions import suggestions as suggestions_blueprint
                 app.register_blueprint(suggestions_blueprint)
@@ -130,11 +135,6 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 from bank_statements import bank_statements as bank_statements_blueprint
                 app.register_blueprint(bank_statements_blueprint)
                 logger.info("Bank statements blueprint registered")
-
-                # Register historical data blueprint
-                from historical_data import historical_data as historical_data_blueprint
-                app.register_blueprint(historical_data_blueprint)
-                logger.info("Historical data blueprint registered")
 
                 # Ensure database tables exist
                 db.create_all()

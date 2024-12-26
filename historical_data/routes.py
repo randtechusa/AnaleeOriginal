@@ -20,11 +20,6 @@ from .upload_diagnostics import UploadDiagnostics
 # Configure logging with detailed format
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler('upload_debug.log')
-file_handler.setFormatter(logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-))
-logger.addHandler(file_handler)
 
 class UploadForm(FlaskForm):
     """Form for file upload with CSRF protection"""
@@ -49,7 +44,7 @@ class UploadForm(FlaskForm):
                 logger.error(f"Error loading bank accounts: {str(e)}")
                 self.account.choices = []
 
-@historical_data.route('/', methods=['GET'])
+@historical_data.route('/')
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
@@ -158,7 +153,7 @@ def upload():
                             .all())
 
         logger.info("Rendering historical data upload template")
-        return render_template('upload.html',
+        return render_template('historical_data/upload.html', #Corrected the template name here
                              form=form,
                              entries=historical_entries)
 
