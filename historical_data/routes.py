@@ -44,6 +44,26 @@ class UploadForm(FlaskForm):
                 logger.error(f"Error loading bank accounts: {str(e)}")
                 self.account.choices = []
 
+@historical_data.route('/')
+@login_required
+def index():
+    """Main historical data page"""
+    try:
+        # Get recent historical entries
+        historical_entries = (HistoricalData.query
+                          .filter_by(user_id=current_user.id)
+                          .order_by(HistoricalData.date.desc())
+                          .limit(10)
+                          .all())
+
+        logger.info(f"Retrieved {len(historical_entries)} historical entries for user {current_user.id}")
+        return render_template('historical_data/index.html',
+                           entries=historical_entries)
+    except Exception as e:
+        logger.error(f"Error in historical data index: {str(e)}", exc_info=True)
+        flash('An unexpected error occurred', 'error')
+        return redirect(url_for('main.dashboard'))
+
 @historical_data.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
@@ -131,7 +151,7 @@ def upload():
                     if error_count > 0:
                         flash(f'{error_count} entries had errors. Check the error log for details.', 'warning')
 
-                    return redirect(url_for('historical_data.upload'))
+                    return redirect(url_for('historical_data.index'))
 
                 except Exception as e:
                     logger.error(f"Error processing file: {str(e)}")
@@ -152,7 +172,7 @@ def upload():
                           .all())
 
         logger.info("Rendering historical data upload template")
-        return render_template('historical_data.html',
+        return render_template('historical_data/upload.html',
                            form=form,
                            entries=historical_entries)
 

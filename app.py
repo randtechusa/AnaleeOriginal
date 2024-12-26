@@ -123,7 +123,7 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 app.register_blueprint(suggestions_blueprint)
                 logger.info("Suggestions blueprint registered")
 
-                # Register other blueprints
+                # Register main blueprint
                 from routes import main as main_blueprint
                 app.register_blueprint(main_blueprint)
                 logger.info("Main blueprint registered")

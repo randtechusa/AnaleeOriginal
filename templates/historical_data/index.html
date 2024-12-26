@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Historical Data{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Historical Data</h1>
+    
+    <!-- Upload Button -->
+    <div class="mb-4">
+        <a href="{{ url_for('historical_data.upload') }}" class="btn btn-primary">
+            Upload New Data
+        </a>
+    </div>
+
+    <!-- Recent Entries -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="card-title mb-0">Recent Historical Entries</h5>
+        </div>
+        <div class="card-body">
+            {% if entries %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Amount</th>
+                            <th>Account</th>
+                            <th>Explanation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in entries %}
+                        <tr>
+                            <td>{{ entry.date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ entry.description }}</td>
+                            <td class="text-{{ 'success' if entry.amount > 0 else 'danger' }}">
+                                {{ "%.2f"|format(entry.amount) }}
+                            </td>
+                            <td>{{ entry.account.name if entry.account else 'N/A' }}</td>
+                            <td>{{ entry.explanation }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-center">No historical data entries found.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
