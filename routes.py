@@ -11,6 +11,7 @@ from models import (
     UploadedFile, AdminChartOfAccounts  # Added AdminChartOfAccounts import
 )
 from forms.company import CompanySettingsForm
+from ai_insights import FinancialInsightsGenerator  # Added missing import
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -827,7 +828,7 @@ def icountant_interface():
 
             if transaction_id and selected_account is not None:
                 transaction = Transaction.query.get(transaction_id)
-                if transaction and transaction.user_id == current_user.id:
+                if transaction and transaction.userid == current_user.id:
                     if 0 <= selected_account < len(accounts):
                         # Store the AI suggestion before updating
                         if transaction.ai_category:
