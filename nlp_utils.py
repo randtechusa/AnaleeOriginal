@@ -60,6 +60,7 @@ def get_openai_client() -> Optional[OpenAI]:
             return None
 
         # Initialize new client with updated configuration
+        # Removed proxies argument as it's no longer supported
         _openai_client = OpenAI(
             api_key=api_key,
             timeout=30.0  # Set reasonable timeout
@@ -70,6 +71,8 @@ def get_openai_client() -> Optional[OpenAI]:
         try:
             _openai_client.models.list(limit=1)
             logger.info("OpenAI client initialized and tested successfully")
+            _last_client_error = None
+            _client_error_count = 0
             return _openai_client
         except Exception as e:
             logger.error(f"Client test failed: {str(e)}")
