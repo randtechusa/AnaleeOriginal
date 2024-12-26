@@ -156,22 +156,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Update transactions
         let transactionsHtml = '<h6>Recent Transactions</h6>';
-        context.recent_transactions.forEach(tx => {
-            transactionsHtml += `
-                <div class="transaction-item small mb-2">
-                    <div class="d-flex justify-content-between">
-                        <span>${tx.description}</span>
-                        <span class="${tx.amount >= 0 ? 'text-success' : 'text-danger'}">
-                            $${Math.abs(tx.amount).toLocaleString()}
-                        </span>
+        if (context.recent_transactions && context.recent_transactions.length > 0) {
+            context.recent_transactions.forEach(tx => {
+                transactionsHtml += `
+                    <div class="transaction-item small mb-2">
+                        <div class="d-flex justify-content-between">
+                            <span>${tx.description}</span>
+                            <span class="${tx.amount >= 0 ? 'text-success' : 'text-danger'}">
+                                $${Math.abs(tx.amount).toLocaleString()}
+                            </span>
+                        </div>
+                        <div class="text-muted smaller">
+                            ${tx.date} - ${tx.category}
+                            ${!tx.analyzed ? '<span class="badge bg-warning">Unanalyzed</span>' : ''}
+                        </div>
                     </div>
-                    <div class="text-muted smaller">
-                        ${tx.date} - ${tx.category}
-                        ${!tx.analyzed ? '<span class="badge bg-warning">Unanalyzed</span>' : ''}
-                    </div>
-                </div>
-            `;
-        });
+                `;
+            });
+        } else {
+            transactionsHtml += '<p class="text-muted">No recent transactions</p>';
+        }
         transactionsDiv.innerHTML = transactionsHtml;
     }
 });
