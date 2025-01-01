@@ -50,7 +50,7 @@ def get_openai_client() -> Optional[OpenAI]:
             logger.error("OpenAI API key not found")
             return None
 
-        # Simple initialization
+        # Initialize client without proxies argument
         _openai_client = OpenAI(api_key=api_key)
         _last_client_init = time.time()
         logger.info("OpenAI client initialized")
