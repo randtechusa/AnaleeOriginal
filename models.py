@@ -1,12 +1,11 @@
 """User and related models for the application"""
+from typing import Dict, List, Optional
 import logging
 import os
 import base64
 import pyotp
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-
-from flask_login import UserMixin
+from flask_login import UserMixin, LoginManager
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, Text, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import relationship
@@ -20,8 +19,31 @@ logger = logging.getLogger(__name__)
 db = SQLAlchemy()
 
 # Initialize login manager
-from flask_login import LoginManager
 login_manager = LoginManager()
+
+class FinancialGoal(db.Model):
+    """Model for financial goals"""
+    __tablename__ = 'financial_goal'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    target_amount = Column(Float, nullable=False)
+    current_amount = Column(Float, default=0.0)
+    start_date = Column(DateTime, default=datetime.utcnow)
+    deadline = Column(DateTime)
+    category = Column(String(50))
+    status = Column(String(20), default='active')
+    is_recurring = Column(Boolean, default=False)
+    recurrence_period = Column(String(20))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship('User', back_populates='financial_goals')
+
+    def __repr__(self):
+        return f'<FinancialGoal {self.name}>'
 
 class Transaction(db.Model):
     """Model for financial transactions"""
@@ -65,7 +87,7 @@ class Account(db.Model):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Define relationships with cascade delete
-    transactions = relationship('Transaction', backref='transaction_account', 
+    transactions = relationship('Transaction', backref='transaction_account',
                               cascade='all, delete-orphan',
                               foreign_keys=[Transaction.account_id])
 
@@ -134,7 +156,8 @@ class User(UserMixin, db.Model):
     reset_token = Column(String(100), unique=True)
     reset_token_expires = Column(DateTime)
 
-    # Define relationships with explicit naming to avoid conflicts
+    # Relationships
+    financial_goals = relationship('FinancialGoal', back_populates='user', cascade='all, delete-orphan')
     transactions = relationship('Transaction', lazy='dynamic', backref='transaction_user')
     accounts = relationship('Account', lazy='dynamic', backref='account_user')
     bank_statement_uploads = relationship('BankStatementUpload', lazy='dynamic', backref='upload_user')
@@ -143,7 +166,6 @@ class User(UserMixin, db.Model):
     historical_data = relationship('HistoricalData', lazy='dynamic', backref='historical_data_user')
     risk_assessments = relationship('RiskAssessment', lazy='dynamic', backref='risk_assessment_user')
     financial_recommendations = relationship('FinancialRecommendation', lazy='dynamic', backref='recommendation_user')
-    financial_goals = relationship('FinancialGoal', lazy='dynamic', backref='goal_user')
     company_settings = relationship('CompanySettings', uselist=False, backref='company_settings_user')
 
     def set_password(self, password):
@@ -166,33 +188,50 @@ class User(UserMixin, db.Model):
         try:
             # Start a transaction to ensure all operations complete together
             db.session.begin_nested()
+            logger.info(f"Starting soft delete process for user {self.id}")
 
-            # First delete historical data
-            HistoricalData.query.filter_by(user_id=self.id).delete()
+            # Delete relationships in correct order to avoid foreign key violations
+            try:
+                # First delete financial goals
+                FinancialGoal.query.filter_by(user_id=self.id).delete()
+                logger.info(f"Deleted financial goals for user {self.id}")
 
-            # Delete bank statement uploads
-            BankStatementUpload.query.filter_by(user_id=self.id).delete()
+                # Delete historical data
+                HistoricalData.query.filter_by(user_id=self.id).delete()
+                logger.info(f"Deleted historical data for user {self.id}")
 
-            # Delete transactions
-            Transaction.query.filter_by(user_id=self.id).delete()
+                # Delete bank statement uploads
+                BankStatementUpload.query.filter_by(user_id=self.id).delete()
+                logger.info(f"Deleted bank statement uploads for user {self.id}")
 
-            # Delete accounts
-            Account.query.filter_by(user_id=self.id).delete()
+                # Delete transactions
+                Transaction.query.filter_by(user_id=self.id).delete()
+                logger.info(f"Deleted transactions for user {self.id}")
 
-            # Mark user as deleted
-            self.is_deleted = True
-            self.subscription_status = 'deactivated'
-            self.mfa_secret = None
-            self.reset_token = None
-            self.reset_token_expires = None
+                # Delete accounts
+                Account.query.filter_by(user_id=self.id).delete()
+                logger.info(f"Deleted accounts for user {self.id}")
 
-            # Commit the transaction
-            db.session.commit()
-            logger.info(f"User {self.username} marked as deleted with all related data cleaned up")
+                # Mark user as deleted
+                self.is_deleted = True
+                self.subscription_status = 'deactivated'
+                self.mfa_secret = None
+                self.reset_token = None
+                self.reset_token_expires = None
+
+                # Commit the transaction
+                db.session.commit()
+                logger.info(f"Successfully completed soft delete for user {self.id}")
+                return True
+
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"Error during soft delete operations for user {self.id}: {str(e)}")
+                raise
 
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Error in soft_delete for user {self.username}: {str(e)}")
+            logger.error(f"Failed to soft delete user {self.id}: {str(e)}")
             raise
 
     @property
@@ -383,47 +422,6 @@ class RecommendationMetrics(db.Model):
 
     def __repr__(self):
         return f'<RecommendationMetrics {self.metric_name}: {self.current_value}>'
-
-class FinancialGoal(db.Model):
-    __tablename__ = 'financial_goal'
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    target_amount = Column(Float, nullable=False)
-    current_amount = Column(Float, default=0.0)
-    start_date = Column(DateTime, default=datetime.utcnow)
-    deadline = Column(DateTime)
-    category = Column(String(50))  # savings, investment, debt_reduction, etc.
-    status = Column(String(20), default='active')  # active, completed, cancelled
-    is_recurring = Column(Boolean, default=False)
-    recurrence_period = Column(String(20))  # monthly, quarterly, yearly
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def calculate_progress(self):
-        """Calculate current progress as percentage"""
-        if self.target_amount == 0:
-            return 0
-        return min(100, (self.current_amount / self.target_amount) * 100)
-
-    def get_status_details(self):
-        """Get detailed status information"""
-        progress = self.calculate_progress()
-        days_remaining = None
-        if self.deadline:
-            days_remaining = (self.deadline - datetime.utcnow()).days
-
-        return {
-            'progress': progress,
-            'days_remaining': days_remaining,
-            'is_overdue': days_remaining < 0 if days_remaining is not None else False,
-            'status': self.status
-        }
-
-    def __repr__(self):
-        return f'<FinancialGoal {self.name}: {self.current_amount}/{self.target_amount}>'
 
 class AdminChartOfAccounts(db.Model):
     __tablename__ = 'admin_chart_of_accounts'
