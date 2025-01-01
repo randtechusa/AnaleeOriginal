@@ -1,3 +1,4 @@
+"""User and related models for the application"""
 import logging
 import os
 import base64
@@ -21,8 +22,6 @@ db = SQLAlchemy()
 # Initialize login manager
 from flask_login import LoginManager
 login_manager = LoginManager()
-
-logger = logging.getLogger(__name__)
 
 class Transaction(db.Model):
     """Model for financial transactions"""
@@ -135,19 +134,17 @@ class User(UserMixin, db.Model):
     reset_token = Column(String(100), unique=True)
     reset_token_expires = Column(DateTime)
 
-    # Define one-to-many relationships
-    transactions = relationship('Transaction', backref='user', cascade='all, delete-orphan')
-    accounts = relationship('Account', backref='user', cascade='all, delete-orphan')
-    bank_statement_uploads = relationship('BankStatementUpload', backref='user', cascade='all, delete-orphan')
-    alert_configurations = relationship('AlertConfiguration', backref='user', cascade='all, delete-orphan')
-    alert_history = relationship('AlertHistory', backref='user', cascade='all, delete-orphan')
-    historical_data = relationship('HistoricalData', backref='user', cascade='all, delete-orphan')
-    risk_assessments = relationship('RiskAssessment', backref='user', cascade='all, delete-orphan')
-    financial_recommendations = relationship('FinancialRecommendation', backref='user', cascade='all, delete-orphan')
-    financial_goals = relationship('FinancialGoal', backref='user', cascade='all, delete-orphan')
-
-    # One-to-one relationship
-    company_settings = relationship('CompanySettings', backref='user', uselist=False, cascade='all, delete-orphan')
+    # Define one-to-many relationships without circular references
+    transactions = relationship('Transaction', backref='user', lazy='dynamic')
+    accounts = relationship('Account', backref='user', lazy='dynamic')
+    bank_statement_uploads = relationship('BankStatementUpload', backref='user', lazy='dynamic')
+    alert_configurations = relationship('AlertConfiguration', backref='user', lazy='dynamic')
+    alert_history = relationship('AlertHistory', backref='user', lazy='dynamic')
+    historical_data = relationship('HistoricalData', backref='user', lazy='dynamic')
+    risk_assessments = relationship('RiskAssessment', backref='user', lazy='dynamic')
+    financial_recommendations = relationship('FinancialRecommendation', backref='user', lazy='dynamic')
+    financial_goals = relationship('FinancialGoal', backref='user', lazy='dynamic')
+    company_settings = relationship('CompanySettings', backref='user', uselist=False)
 
     def set_password(self, password):
         """Set hashed password"""
@@ -167,15 +164,11 @@ class User(UserMixin, db.Model):
     def soft_delete(self):
         """Soft delete user by marking as deleted and cleaning up data"""
         try:
-            # Mark user as deleted
             self.is_deleted = True
             self.subscription_status = 'deactivated'
-
-            # Clear sensitive data
             self.mfa_secret = None
             self.reset_token = None
             self.reset_token_expires = None
-
             logger.info(f"User {self.username} marked as deleted")
         except Exception as e:
             logger.error(f"Error in soft_delete for user {self.username}: {str(e)}")
@@ -200,6 +193,7 @@ def load_user(user_id):
             return None
         return user
     except Exception as e:
+        logger.error(f"Error loading user {user_id}: {str(e)}")
         return None
 
 class CompanySettings(db.Model):
