@@ -6,7 +6,7 @@ from flask_wtf.file import FileField, FileRequired, FileAllowed
 from wtforms import SelectField, SubmitField
 from wtforms.validators import DataRequired
 from flask_login import current_user
-from models import Account, BankStatementUpload
+from models import Account
 
 class BankStatementUploadForm(FlaskForm):
     """Form for bank statement upload with proper validation"""
@@ -21,7 +21,8 @@ class BankStatementUploadForm(FlaskForm):
         validators=[
             FileRequired(message="Please select a file to upload"),
             FileAllowed(['csv', 'xlsx'], 'Only CSV and Excel files are allowed')
-        ]
+        ],
+        description='Upload bank statement in CSV or Excel format'
     )
 
     submit = SubmitField('Upload Statement')
@@ -29,7 +30,7 @@ class BankStatementUploadForm(FlaskForm):
     def __init__(self, *args, **kwargs):
         """Initialize form and populate account choices"""
         super(BankStatementUploadForm, self).__init__(*args, **kwargs)
-        if current_user.is_authenticated:
+        if current_user and current_user.is_authenticated:
             try:
                 # Get bank accounts (starting with ca.810)
                 bank_accounts = Account.query.filter(
@@ -43,9 +44,5 @@ class BankStatementUploadForm(FlaskForm):
                 ]
             except Exception as e:
                 self.account.choices = []
-                raise ValueError(f"Error loading bank accounts: {str(e)}")
-
-    def validate_file(self, field):
-        """Additional file validation if needed"""
-        if not field.data:
-            raise ValueError("No file selected")
+                # Log the error but don't raise it to allow form rendering
+                print(f"Error loading bank accounts: {str(e)}")
