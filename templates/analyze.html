@@ -60,6 +60,14 @@
         background-color: #ffffff;
         color: #333333;
     }
+
+    /* Style for similar transactions */
+    .similar-transactions {
+        margin-top: 1rem;
+    }
+    .similar-transactions .list-group-item {
+        cursor: pointer;
+    }
 </style>
 <div class="card mb-4">
     <div class="card-body">
@@ -164,7 +172,15 @@
                                         name="explanation_{{ transaction.id }}" 
                                         rows="2"
                                         placeholder="Enter explanation..."
+                                        data-transaction-id="{{ transaction.id }}"
+                                        data-description="{{ transaction.description }}"
                                     >{{ transaction.explanation or '' }}</textarea>
+                                    <div class="similar-transactions mt-2" id="similar-transactions-{{ transaction.id }}" style="display: none;">
+                                        <h6 class="text-muted">Similar Transactions</h6>
+                                        <div class="list-group">
+                                            <!-- Similar transactions will be populated here -->
+                                        </div>
+                                    </div>
                                 </div>
                             </td>
                             <td>
@@ -209,7 +225,7 @@
             No transactions found in this file.
         </div>
         {% endif %}
-
+        
         {% if transactions %}
         <form method="POST" id="analyzeForm">
             <div class="table-responsive">
@@ -341,7 +357,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Handle input events
         textarea.addEventListener('input', function() {
-                        const transactionId = this.name.split('_')[1];
+                        const transactionId = this.dataset.transactionId;
                         autoResize(this);
                         updateCharCount(this.value);
                         if (this.value.trim()) {
@@ -367,12 +383,15 @@ document.addEventListener('DOMContentLoaded', function() {
                                     })
                                 });
                                 
+
                                 if (!response.ok) {
                                     throw new Error('Failed to save explanation');
                                 }
+                                
 
                                 const result = await response.json();
                                 
+
                                 // Handle similar transactions
                                 if (result.similar_transactions && result.similar_transactions.length > 0) {
                                     const similarCount = result.similar_transactions.length;
@@ -403,10 +422,12 @@ document.addEventListener('DOMContentLoaded', function() {
                                     }
                                 }
                                 
+
                                 if (!response.ok) {
                                     throw new Error('Failed to save explanation');
                                 }
                                 
+
                                 // Update any similar transactions if user confirms
                                 const description = this.closest('tr').querySelector('[data-description]').dataset.description;
                                 if (checkSimilarDescriptions(description)) {
@@ -539,22 +560,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
+
                 const suggestions = await response.json();
                 
+
                 if (suggestions.error) {
                     throw new Error(suggestions.error);
                 }
                 
+
                 // Clear previous suggestions
                 suggestionsDiv.innerHTML = '';
                 
+
                 if (suggestions && suggestions.length > 0) {
                     const suggestionsList = document.createElement('div');
                     suggestionsList.className = 'list-group suggestions';
                     
                     suggestions.forEach(suggestion => {
                         const confidenceLevel = suggestion.confidence >= 0.8 ? 'success' : 
-                                             suggestion.confidence >= 0.6 ? 'info' : 'warning';
+                                                 suggestion.confidence >= 0.6 ? 'info' : 'warning';
                         
                         const item = document.createElement('button');
                         item.type = 'button';
@@ -597,6 +622,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     `;
                 }
                 
+
             } catch (error) {
                 console.error('Error:', error);
                 suggestionsDiv.innerHTML = `
@@ -618,5 +644,117 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 });
+
+// ERF JavaScript functions
+document.addEventListener('DOMContentLoaded', function() {
+    const explanationInputs = document.querySelectorAll('.explanation-input');
+
+    explanationInputs.forEach(textarea => {
+        textarea.addEventListener('input', debounce(async function() {
+            const transactionId = this.dataset.transactionId;
+            const description = this.dataset.description;
+            const explanation = this.value.trim();
+            const similarTransactionsDiv = document.getElementById(`similar-transactions-${transactionId}`);
+
+            if (explanation) {
+                try {
+                    const response = await fetch('/analyze/similar-transactions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            description: description,
+                            explanation: explanation
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success && data.similar_transactions.length > 0) {
+                        const similarList = data.similar_transactions.map(t => `
+                            <button class="list-group-item list-group-item-action" 
+                                    onclick="replicateExplanation(${transactionId}, ${t.id})">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <p class="mb-1">${t.description}</p>
+                                        <small class="text-muted">${t.explanation}</small>
+                                    </div>
+                                    <div>
+                                        <span class="badge bg-primary">
+                                            ${Math.round(t.text_similarity * 100)}% text
+                                        </span>
+                                        <span class="badge bg-info">
+                                            ${Math.round(t.semantic_similarity * 100)}% semantic
+                                        </span>
+                                    </div>
+                                </div>
+                            </button>
+                        `).join('');
+
+                        similarTransactionsDiv.querySelector('.list-group').innerHTML = similarList;
+                        similarTransactionsDiv.style.display = 'block';
+                    } else {
+                        similarTransactionsDiv.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error finding similar transactions:', error);
+                }
+            } else {
+                similarTransactionsDiv.style.display = 'none';
+            }
+        }, 500));
+    });
+});
+
+async function replicateExplanation(transactionId, similarTransactionId) {
+    try {
+        const response = await fetch('/analyze/replicate-explanation', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                transaction_id: transactionId,
+                similar_transaction_id: similarTransactionId
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Update the explanation textarea with the replicated content
+            const textarea = document.querySelector(`textarea[data-transaction-id="${transactionId}"]`);
+            const similarTransaction = document.querySelector(`button[onclick="replicateExplanation(${transactionId}, ${similarTransactionId})"]`);
+
+            if (textarea && similarTransaction) {
+                const explanation = similarTransaction.querySelector('small').textContent;
+                textarea.value = explanation;
+                textarea.classList.add('has-content');
+
+                // Hide the similar transactions div
+                document.getElementById(`similar-transactions-${transactionId}`).style.display = 'none';
+            }
+        } else {
+            alert('Failed to replicate explanation: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Error replicating explanation:', error);
+        alert('Error replicating explanation');
+    }
+}
+
+// Utility function for debouncing
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func.apply(this, args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
 </script>
 {% endblock %}
