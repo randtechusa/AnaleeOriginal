@@ -40,8 +40,28 @@ class FinancialGoal(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    def calculate_progress(self):
+        """Calculate current progress as percentage"""
+        if self.target_amount == 0:
+            return 0
+        return min(100, (self.current_amount / self.target_amount) * 100)
+
+    def get_status_details(self):
+        """Get detailed status information"""
+        progress = self.calculate_progress()
+        days_remaining = None
+        if self.deadline:
+            days_remaining = (self.deadline - datetime.utcnow()).days
+
+        return {
+            'progress': progress,
+            'days_remaining': days_remaining,
+            'is_overdue': days_remaining < 0 if days_remaining is not None else False,
+            'status': self.status
+        }
+
     def __repr__(self):
-        return f'<FinancialGoal {self.name}>'
+        return f'<FinancialGoal {self.name}: {self.current_amount}/{self.target_amount}>'
 
 class Transaction(db.Model):
     """Model for financial transactions"""
@@ -154,17 +174,38 @@ class User(UserMixin, db.Model):
     reset_token = Column(String(100), unique=True)
     reset_token_expires = Column(DateTime)
 
-    # Relationships
-    financial_goals = relationship('FinancialGoal', back_populates='user', cascade='all, delete-orphan')
-    transactions = relationship('Transaction', lazy='dynamic', backref='transaction_user')
-    accounts = relationship('Account', lazy='dynamic', backref='account_user')
-    bank_statement_uploads = relationship('BankStatementUpload', lazy='dynamic', backref='upload_user')
-    alert_configurations = relationship('AlertConfiguration', lazy='dynamic', backref='alert_config_user')
-    alert_history = relationship('AlertHistory', lazy='dynamic', backref='alert_history_user')
-    historical_data = relationship('HistoricalData', lazy='dynamic', backref='historical_data_user')
-    risk_assessments = relationship('RiskAssessment', lazy='dynamic', backref='risk_assessment_user')
-    financial_recommendations = relationship('FinancialRecommendation', lazy='dynamic', backref='recommendation_user')
-    company_settings = relationship('CompanySettings', uselist=False, backref='company_settings_user')
+    # Relationships - explicitly define backref names to avoid conflicts
+    financial_goals = relationship('FinancialGoal', 
+                                 backref='user_goals',
+                                 cascade='all, delete-orphan',
+                                 lazy='dynamic')
+    transactions = relationship('Transaction',
+                              backref='transaction_user',
+                              lazy='dynamic')
+    accounts = relationship('Account',
+                          backref='account_user',
+                          lazy='dynamic')
+    bank_statement_uploads = relationship('BankStatementUpload',
+                                        backref='upload_user',
+                                        lazy='dynamic')
+    alert_configurations = relationship('AlertConfiguration',
+                                      backref='alert_config_user',
+                                      lazy='dynamic')
+    alert_history = relationship('AlertHistory',
+                               backref='alert_history_user',
+                               lazy='dynamic')
+    historical_data = relationship('HistoricalData',
+                                 backref='historical_data_user',
+                                 lazy='dynamic')
+    risk_assessments = relationship('RiskAssessment',
+                                  backref='risk_assessment_user',
+                                  lazy='dynamic')
+    financial_recommendations = relationship('FinancialRecommendation',
+                                          backref='recommendation_user',
+                                          lazy='dynamic')
+    company_settings = relationship('CompanySettings',
+                                  backref='company_settings_user',
+                                  uselist=False)
 
     def set_password(self, password):
         """Set hashed password"""
@@ -173,13 +214,18 @@ class User(UserMixin, db.Model):
         try:
             self.password_hash = generate_password_hash(password)
         except Exception as e:
+            logger.error(f"Error setting password: {str(e)}")
             raise ValueError(f"Error setting password: {str(e)}")
 
     def check_password(self, password):
         """Check if provided password matches hash"""
         if not password or not self.password_hash:
             return False
-        return check_password_hash(self.password_hash, password)
+        try:
+            return check_password_hash(self.password_hash, password)
+        except Exception as e:
+            logger.error(f"Error checking password: {str(e)}")
+            return False
 
     def soft_delete(self):
         """Soft delete user by marking as deleted and cleaning up data"""
@@ -188,26 +234,26 @@ class User(UserMixin, db.Model):
             db.session.begin_nested()
             logger.info(f"Starting soft delete process for user {self.id}")
 
-            # Delete relationships in correct order to avoid foreign key violations
             try:
-                # First delete financial goals
-                FinancialGoal.query.filter_by(user_id=self.id).delete()
+                # Delete relationships in correct order to avoid foreign key violations
+                for goal in self.financial_goals.all():
+                    db.session.delete(goal)
                 logger.info(f"Deleted financial goals for user {self.id}")
 
-                # Delete historical data
-                HistoricalData.query.filter_by(user_id=self.id).delete()
+                for data in self.historical_data.all():
+                    db.session.delete(data)
                 logger.info(f"Deleted historical data for user {self.id}")
 
-                # Delete bank statement uploads
-                BankStatementUpload.query.filter_by(user_id=self.id).delete()
+                for upload in self.bank_statement_uploads.all():
+                    db.session.delete(upload)
                 logger.info(f"Deleted bank statement uploads for user {self.id}")
 
-                # Delete transactions
-                Transaction.query.filter_by(user_id=self.id).delete()
+                for transaction in self.transactions.all():
+                    db.session.delete(transaction)
                 logger.info(f"Deleted transactions for user {self.id}")
 
-                # Delete accounts
-                Account.query.filter_by(user_id=self.id).delete()
+                for account in self.accounts.all():
+                    db.session.delete(account)
                 logger.info(f"Deleted accounts for user {self.id}")
 
                 # Mark user as deleted
@@ -245,10 +291,18 @@ def load_user(user_id):
     """Load user by ID with enhanced error handling"""
     try:
         if not user_id:
+            logger.warning("Attempted to load user with empty ID")
             return None
+
         user = User.query.get(int(user_id))
-        if not user or user.is_deleted:
+        if not user:
+            logger.warning(f"No user found with ID {user_id}")
             return None
+
+        if user.is_deleted:
+            logger.info(f"Attempted to load deleted user {user_id}")
+            return None
+
         return user
     except Exception as e:
         logger.error(f"Error loading user {user_id}: {str(e)}")
