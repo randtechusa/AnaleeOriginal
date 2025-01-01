@@ -19,8 +19,8 @@ from nlp_utils import get_openai_client
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create blueprint instead of importing
-chat = Blueprint('chat', __name__, url_prefix='/chat')
+# Import the blueprint from __init__.py
+from . import chat
 
 @chat.route('/interface')
 @login_required

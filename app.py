@@ -94,7 +94,7 @@ def create_app(env=None):
                 from admin import admin
                 from historical_data import historical_data
                 from suggestions import suggestions
-                from chat import chat
+                from chat import chat  # Import chat blueprint
                 from routes import main
                 from reports import reports
                 from bank_statements import bank_statements
@@ -105,7 +105,7 @@ def create_app(env=None):
                     (admin, '/admin'),
                     (historical_data, ''),
                     (suggestions, ''),
-                    (chat, '/chat'),  # Updated to match blueprint's url_prefix
+                    (chat, '/chat'),  # Register chat blueprint with /chat prefix
                     (main, ''),
                     (reports, '/reports'),
                     (bank_statements, '')
