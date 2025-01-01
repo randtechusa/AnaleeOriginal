@@ -454,11 +454,16 @@ def subscription_stats():
 @login_required
 @admin_required
 def delete_subscriber(user_id):
-    """Delete a deactivated subscriber"""
+    """Delete a deactivated subscriber with additional safety checks"""
     try:
+        # Verify system is not in maintenance mode
+        if current_app.config.get('MAINTENANCE_MODE', False):
+            flash('System is in maintenance mode. Deletions are temporarily disabled.', 'warning')
+            return redirect(url_for('admin.deactivated_subscribers'))
+
         user = User.query.get_or_404(user_id)
 
-        # Safety checks
+        # Enhanced safety checks
         if user.is_admin:
             abort(400)  # Bad Request - Cannot delete admin users
 
@@ -466,10 +471,21 @@ def delete_subscriber(user_id):
             flash('Only deactivated users can be deleted', 'error')
             return redirect(url_for('admin.deactivated_subscribers'))
 
-        # Log the deletion
+        # Additional verification for active data
+        has_active_data = any([
+            Transaction.query.filter_by(user_id=user.id).first() is not None,
+            Account.query.filter_by(user_id=user.id).first() is not None,
+            CompanySettings.query.filter_by(user_id=user.id).first() is not None,
+            UploadedFile.query.filter_by(user_id=user.id).first() is not None
+        ])
+
+        if has_active_data:
+            current_app.logger.warning(f"Attempting to delete user {user.username} with active data")
+
+        # Log the deletion attempt
         current_app.logger.info(f"Admin {current_user.username} deleting user {user.username}")
 
-        # Delete user's data
+        # Delete user's data in specific order to handle dependencies
         Transaction.query.filter_by(user_id=user.id).delete()
         Account.query.filter_by(user_id=user.id).delete()
         CompanySettings.query.filter_by(user_id=user.id).delete()
