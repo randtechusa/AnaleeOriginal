@@ -25,6 +25,11 @@
                                     Reactivate
                                 </button>
                             </form>
+                            <form method="POST" action="{{ url_for('admin.delete_subscriber', user_id=user.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to permanently delete this user? This action cannot be undone.');">
+                                <button type="submit" class="btn btn-danger btn-sm">
+                                    Delete
+                                </button>
+                            </form>
                         </td>
                     </tr>
                     {% endfor %}

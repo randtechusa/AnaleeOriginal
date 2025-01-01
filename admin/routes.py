@@ -10,7 +10,7 @@ import pandas as pd
 import os
 
 from . import admin, admin_required
-from models import db, User, AdminChartOfAccounts, Account
+from models import db, User, AdminChartOfAccounts, Account, Transaction, CompanySettings, UploadedFile # Added imports
 from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm, CompanySettingsForm
 
 @admin.route('/charts-of-accounts', methods=['GET'])
@@ -339,20 +339,16 @@ def approve_subscriber(user_id):
         user = User.query.get_or_404(user_id)
         if user.is_admin:
             abort(400)  # Bad Request
-
         # First activate the subscription
         user.subscription_status = 'active'
-
         # Then create default accounts for the user
         User.create_default_accounts(user.id)
-
         db.session.commit()
         flash(f'Subscription activated for user {user.username} and Chart of Accounts created', 'success')
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error activating subscription: {str(e)}")
         flash('Error activating subscription', 'error')
-
     return redirect(url_for('admin.pending_subscribers'))
 
 @admin.route('/subscriber/<int:user_id>/deactivate', methods=['POST'])
@@ -364,7 +360,6 @@ def deactivate_subscriber(user_id):
         user = User.query.get_or_404(user_id)
         if user.is_admin:
             abort(400)  # Bad Request
-
         user.subscription_status = 'deactivated'
         db.session.commit()
         flash(f'Subscription deactivated for user {user.username}', 'success')
@@ -372,7 +367,6 @@ def deactivate_subscriber(user_id):
         db.session.rollback()
         current_app.logger.error(f"Error deactivating subscription: {str(e)}")
         flash('Error deactivating subscription', 'error')
-
     return redirect(url_for('admin.active_subscribers'))
 
 @admin.route('/subscriber/<int:user_id>/suspend', methods=['POST'])
@@ -384,7 +378,6 @@ def suspend_subscriber(user_id):
         user = User.query.get_or_404(user_id)
         if user.is_admin:
             abort(400)  # Bad Request
-
         user.suspend_subscription()
         db.session.commit()
         flash(f'Subscription suspended for user {user.username}', 'success')
@@ -393,7 +386,6 @@ def suspend_subscriber(user_id):
         db.session.rollback()
         current_app.logger.error(f"Error suspending subscription: {str(e)}")
         flash('Error suspending subscription', 'error')
-
     return redirect(url_for('admin.active_subscribers'))
 
 @admin.route('/subscriber/<int:user_id>/reactivate', methods=['POST'])
@@ -405,7 +397,6 @@ def reactivate_subscriber(user_id):
         user = User.query.get_or_404(user_id)
         if user.is_admin:
             abort(400)  # Bad Request
-
         user.reactivate_subscription()
         db.session.commit()
         flash(f'Subscription reactivated for user {user.username}', 'success')
@@ -414,7 +405,6 @@ def reactivate_subscriber(user_id):
         db.session.rollback()
         current_app.logger.error(f"Error reactivating subscription: {str(e)}")
         flash('Error reactivating subscription', 'error')
-
     return redirect(url_for('admin.deactivated_subscribers'))
 
 @admin.route('/subscription-stats')
@@ -459,3 +449,42 @@ def subscription_stats():
         current_app.logger.error(f"Error loading subscription stats: {str(e)}")
         flash('Error loading subscription statistics', 'error')
         return redirect(url_for('admin.dashboard'))
+
+@admin.route('/subscriber/<int:user_id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def delete_subscriber(user_id):
+    """Delete a deactivated subscriber"""
+    try:
+        user = User.query.get_or_404(user_id)
+
+        # Safety checks
+        if user.is_admin:
+            abort(400)  # Bad Request - Cannot delete admin users
+
+        if user.subscription_status != 'deactivated':
+            flash('Only deactivated users can be deleted', 'error')
+            return redirect(url_for('admin.deactivated_subscribers'))
+
+        # Log the deletion
+        current_app.logger.info(f"Admin {current_user.username} deleting user {user.username}")
+
+        # Delete user's data
+        Transaction.query.filter_by(user_id=user.id).delete()
+        Account.query.filter_by(user_id=user.id).delete()
+        CompanySettings.query.filter_by(user_id=user.id).delete()
+        UploadedFile.query.filter_by(user_id=user.id).delete()
+
+        # Finally delete the user
+        db.session.delete(user)
+        db.session.commit()
+
+        flash(f'User {user.username} has been permanently deleted', 'success')
+        current_app.logger.info(f"User {user.username} deleted successfully by admin {current_user.username}")
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error deleting user: {str(e)}")
+        flash('Error deleting user', 'error')
+
+    return redirect(url_for('admin.deactivated_subscribers'))
