@@ -4,7 +4,16 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Upload Bank Statement</h2>
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2>Upload Bank Statement</h2>
+                <button id="reconcileButton" class="btn btn-primary">
+                    <i class="fas fa-sync-alt"></i> Reconcile Data
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Upload Form -->
     <div class="card mb-4">
@@ -64,12 +73,34 @@
             </form>
         </div>
     </div>
+
+    <!-- Reconciliation Results Modal -->
+    <div class="modal fade" id="reconciliationModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reconciliation Results</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="reconciliationStats" class="mb-4"></div>
+                    <div id="reconciliationDetails"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Existing upload form handling code...
+
     const form = document.getElementById('uploadForm');
     const progressBar = document.querySelector('.progress-bar');
     const progressDiv = document.getElementById('uploadProgress');
@@ -181,6 +212,84 @@ document.addEventListener('DOMContentLoaded', function() {
             uploadButton.disabled = false;
         }
     };
+
+    // Add reconciliation button handler
+    const reconcileButton = document.getElementById('reconcileButton');
+    const reconciliationModal = new bootstrap.Modal(document.getElementById('reconciliationModal'));
+
+    reconcileButton.addEventListener('click', async function() {
+        try {
+            reconcileButton.disabled = true;
+            reconcileButton.innerHTML = '<i class="fas fa-spin fa-spinner"></i> Reconciling...';
+
+            const response = await fetch('{{ url_for("bank_statements.reconcile") }}', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': '{{ csrf_token() }}'
+                }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Update modal content with results
+                const stats = result.stats;
+                document.getElementById('reconciliationStats').innerHTML = `
+                    <div class="alert alert-success">
+                        <h6>Reconciliation Summary:</h6>
+                        <ul class="mb-0">
+                            <li>Total Transactions Processed: ${stats.total_processed}</li>
+                            <li>Duplicates Removed: ${stats.duplicates_removed}</li>
+                            <li>Invalid Dates Fixed: ${stats.invalid_dates_fixed}</li>
+                        </ul>
+                    </div>
+                `;
+
+                // Show detailed report
+                const report = result.reconciliation_report;
+                let detailsHtml = '';
+
+                if (report.matched.length > 0) {
+                    detailsHtml += `<h6>Matched Transactions (${report.matched.length})</h6>`;
+                    detailsHtml += '<ul class="list-unstyled">';
+                    report.matched.slice(0, 5).forEach(t => {
+                        detailsHtml += `<li class="text-success">✓ ${t.date}: ${t.description} (${t.amount})</li>`;
+                    });
+                    if (report.matched.length > 5) {
+                        detailsHtml += '<li>... and more</li>';
+                    }
+                    detailsHtml += '</ul>';
+                }
+
+                if (report.unmatched.length > 0) {
+                    detailsHtml += `<h6>Unmatched Transactions (${report.unmatched.length})</h6>`;
+                    detailsHtml += '<ul class="list-unstyled">';
+                    report.unmatched.slice(0, 5).forEach(t => {
+                        detailsHtml += `<li class="text-warning">⚠ ${t.date}: ${t.description} (${t.amount})</li>`;
+                    });
+                    if (report.unmatched.length > 5) {
+                        detailsHtml += '<li>... and more</li>';
+                    }
+                    detailsHtml += '</ul>';
+                }
+
+                document.getElementById('reconciliationDetails').innerHTML = detailsHtml;
+
+                // Show the modal
+                reconciliationModal.show();
+            } else {
+                throw new Error(result.error || 'Reconciliation failed');
+            }
+
+        } catch (error) {
+            console.error('Reconciliation error:', error);
+            alert('Error during reconciliation: ' + error.message);
+        } finally {
+            reconcileButton.disabled = false;
+            reconcileButton.innerHTML = '<i class="fas fa-sync-alt"></i> Reconcile Data';
+        }
+    });
 });
 </script>
 {% endblock %}

@@ -11,10 +11,64 @@ from flask_login import login_required, current_user
 from . import bank_statements
 from .forms import BankStatementUploadForm
 from .services import BankStatementService
+from .reconciliation import ReconciliationService
 from models import Account, BankStatementUpload, db
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+@bank_statements.route('/reconcile', methods=['POST'])
+@login_required
+def reconcile():
+    """Handle one-click reconciliation request"""
+    try:
+        # Initialize reconciliation service
+        service = ReconciliationService(current_user.id)
+        success, result = service.perform_cleanup()
+
+        if success:
+            stats = result['cleanup_stats']
+            flash(
+                f"Reconciliation completed successfully! "
+                f"Processed {stats['total_processed']} transactions, "
+                f"removed {stats['duplicates_removed']} duplicates, "
+                f"fixed {stats['invalid_dates_fixed']} invalid dates.",
+                'success'
+            )
+
+            # If it's an AJAX request, return JSON response
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({
+                    'success': True,
+                    'stats': stats,
+                    'reconciliation_report': result['reconciliation_report']
+                })
+
+        else:
+            error_msg = result.get('error', 'Reconciliation failed')
+            flash(f'Error during reconciliation: {error_msg}', 'error')
+
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({
+                    'success': False,
+                    'error': error_msg
+                }), 400
+
+        return redirect(url_for('bank_statements.upload'))
+
+    except Exception as e:
+        logger.error(f"Error in reconciliation route: {str(e)}", exc_info=True)
+        error_msg = 'An unexpected error occurred during reconciliation'
+        flash(error_msg, 'error')
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': False,
+                'error': error_msg,
+                'details': [str(e)]
+            }), 500
+
+        return redirect(url_for('bank_statements.upload'))
 
 @bank_statements.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -129,9 +183,9 @@ def upload():
         ).order_by(BankStatementUpload.upload_date.desc()).limit(10).all()
 
         return render_template('bank_statements/upload.html',
-                           form=form,
-                           bank_accounts=bank_accounts,
-                           recent_files=recent_files)
+                               form=form,
+                               bank_accounts=bank_accounts,
+                               recent_files=recent_files)
 
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}", exc_info=True)
