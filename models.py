@@ -164,13 +164,34 @@ class User(UserMixin, db.Model):
     def soft_delete(self):
         """Soft delete user by marking as deleted and cleaning up data"""
         try:
+            # Start a transaction to ensure all operations complete together
+            db.session.begin_nested()
+
+            # First delete historical data
+            HistoricalData.query.filter_by(user_id=self.id).delete()
+
+            # Delete bank statement uploads
+            BankStatementUpload.query.filter_by(user_id=self.id).delete()
+
+            # Delete transactions
+            Transaction.query.filter_by(user_id=self.id).delete()
+
+            # Delete accounts
+            Account.query.filter_by(user_id=self.id).delete()
+
+            # Mark user as deleted
             self.is_deleted = True
             self.subscription_status = 'deactivated'
             self.mfa_secret = None
             self.reset_token = None
             self.reset_token_expires = None
-            logger.info(f"User {self.username} marked as deleted")
+
+            # Commit the transaction
+            db.session.commit()
+            logger.info(f"User {self.username} marked as deleted with all related data cleaned up")
+
         except Exception as e:
+            db.session.rollback()
             logger.error(f"Error in soft_delete for user {self.username}: {str(e)}")
             raise
 
