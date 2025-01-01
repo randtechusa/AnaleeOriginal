@@ -22,49 +22,60 @@ def upload():
     """Handle bank statement upload with enhanced validation and error handling"""
     try:
         form = BankStatementUploadForm()
-        logger.info("Processing bank statement upload request")
+        logger.info(f"Processing bank statement upload request for user {current_user.id}")
 
         if request.method == 'POST':
             # Check if it's an AJAX request
             is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
+            # Log form data for debugging
+            logger.debug(f"Form data: {request.form}")
+            logger.debug(f"Files: {request.files}")
+
             if not form.validate_on_submit():
-                logger.error(f"Form validation failed: {form.errors}")
                 error_messages = []
                 for field, errors in form.errors.items():
                     error_messages.extend(errors)
+                    logger.error(f"Form validation error in {field}: {errors}")
+
                 if is_ajax:
                     return jsonify({
                         'success': False,
-                        'error': 'Validation failed',
+                        'error': 'Form validation failed',
                         'details': error_messages
                     }), 400
-                flash('Please ensure all fields are filled correctly: ' + '; '.join(error_messages), 'error')
+
+                for error in error_messages:
+                    flash(error, 'error')
                 return redirect(url_for('bank_statements.upload'))
 
             try:
-                # Get selected bank account with enhanced validation
+                # Get selected bank account with validation
                 account_id = int(form.account.data)
-                account = Account.query.get(account_id)
-                if not account or account.user_id != current_user.id:
-                    logger.error(f"Invalid account selected: {account_id}")
+                account = Account.query.filter_by(id=account_id, user_id=current_user.id).first()
+
+                if not account:
+                    error_msg = 'Invalid bank account selected'
+                    logger.error(f"Invalid account access attempt: {account_id} by user {current_user.id}")
                     if is_ajax:
                         return jsonify({
                             'success': False,
-                            'error': 'Invalid bank account selected'
+                            'error': error_msg
                         }), 400
-                    flash('Invalid bank account selected. Please choose a valid account.', 'error')
+                    flash(error_msg, 'error')
                     return redirect(url_for('bank_statements.upload'))
 
-                # Process file upload
+                # Validate file
                 file = form.file.data
-                if not file:
+                if not file or not file.filename:
+                    error_msg = 'Please select a file to upload'
+                    logger.error("No file selected for upload")
                     if is_ajax:
                         return jsonify({
                             'success': False,
-                            'error': 'Please select a file to upload'
+                            'error': error_msg
                         }), 400
-                    flash('Please select a file to upload.', 'error')
+                    flash(error_msg, 'error')
                     return redirect(url_for('bank_statements.upload'))
 
                 # Process upload using service
@@ -76,18 +87,24 @@ def upload():
                 )
 
                 if success:
+                    logger.info(f"Successfully processed upload for user {current_user.id}")
                     if is_ajax:
                         return jsonify(response)
-                    flash('Bank statement processed successfully!', 'success')
+                    flash('Bank statement uploaded and processed successfully!', 'success')
                 else:
+                    logger.error(f"Upload processing failed: {response.get('error')}")
                     if is_ajax:
                         return jsonify(response), 400
-                    flash(response.get('error', 'Processing failed'), 'error')
+                    flash(response.get('error', 'Upload processing failed'), 'error')
+                    if response.get('details'):
+                        for detail in response['details']:
+                            flash(detail, 'warning')
 
                 return redirect(url_for('bank_statements.upload'))
 
             except Exception as e:
-                logger.error(f"Error processing upload: {str(e)}", exc_info=True)
+                error_msg = f"Error processing upload: {str(e)}"
+                logger.error(error_msg, exc_info=True)
                 if is_ajax:
                     return jsonify({
                         'success': False,
@@ -101,12 +118,12 @@ def upload():
         bank_accounts = Account.query.filter(
             Account.user_id == current_user.id,
             Account.link.like('ca.810%')
-        ).all()
+        ).order_by(Account.name).all()
 
         if not bank_accounts:
-            flash('No bank accounts found. Please create a bank account first.', 'warning')
+            flash('No bank accounts found. Please add a bank account (starting with ca.810) in settings first.', 'warning')
 
-        # Get recent uploads
+        # Get recent uploads with status
         recent_files = BankStatementUpload.query.filter_by(
             user_id=current_user.id
         ).order_by(BankStatementUpload.upload_date.desc()).limit(10).all()
