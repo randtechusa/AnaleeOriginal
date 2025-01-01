@@ -68,7 +68,110 @@
     .similar-transactions .list-group-item {
         cursor: pointer;
     }
+    /* Tutorial styles */
+    .tutorial-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 1050;
+        display: none;
+    }
+
+    .tutorial-modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        max-width: 600px;
+        width: 90%;
+        z-index: 1051;
+    }
+
+    .tutorial-step {
+        display: none;
+    }
+
+    .tutorial-step.active {
+        display: block;
+    }
+
+    .feature-highlight {
+        border: 2px solid var(--bs-primary);
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 4px;
+    }
 </style>
+
+<!-- Tutorial Overlay -->
+<div id="tutorialOverlay" class="tutorial-overlay">
+    <div class="tutorial-modal">
+        <div class="tutorial-step active" data-step="1">
+            <h4>Welcome to Smart Analysis Features! 👋</h4>
+            <p>Let's walk through our intelligent features that make transaction analysis easier.</p>
+            <div class="text-end">
+                <button class="btn btn-secondary" onclick="dismissTutorial()">Skip Tutorial</button>
+                <button class="btn btn-primary" onclick="nextStep(2)">Next</button>
+            </div>
+        </div>
+
+        <div class="tutorial-step" data-step="2">
+            <h4>Explanation Recognition (ERF) ✨</h4>
+            <div class="feature-highlight">
+                <p>When you enter an explanation for a transaction:</p>
+                <ul>
+                    <li>Similar transactions are automatically detected (70% text similarity)</li>
+                    <li>The system suggests applying the same explanation to matching transactions</li>
+                    <li>Save time by explaining similar transactions at once!</li>
+                </ul>
+            </div>
+            <div class="text-end">
+                <button class="btn btn-secondary" onclick="prevStep(1)">Back</button>
+                <button class="btn btn-primary" onclick="nextStep(3)">Next</button>
+            </div>
+        </div>
+
+        <div class="tutorial-step" data-step="3">
+            <h4>Account Suggestions (ASF) 🎯</h4>
+            <div class="feature-highlight">
+                <p>Get smart account suggestions based on:</p>
+                <ul>
+                    <li>Transaction descriptions</li>
+                    <li>Your explanations</li>
+                    <li>Historical data patterns</li>
+                </ul>
+                <p>Each suggestion comes with a confidence score and reasoning!</p>
+            </div>
+            <div class="text-end">
+                <button class="btn btn-secondary" onclick="prevStep(2)">Back</button>
+                <button class="btn btn-primary" onclick="nextStep(4)">Next</button>
+            </div>
+        </div>
+
+        <div class="tutorial-step" data-step="4">
+            <h4>Explanation Suggestions (ESF) 💡</h4>
+            <div class="feature-highlight">
+                <p>Get intelligent explanation suggestions:</p>
+                <ul>
+                    <li>Based on transaction descriptions</li>
+                    <li>Learns from your previous explanations</li>
+                    <li>Improves over time as you use it</li>
+                </ul>
+            </div>
+            <div class="text-end">
+                <button class="btn btn-secondary" onclick="prevStep(3)">Back</button>
+                <button class="btn btn-primary" onclick="finishTutorial()">Got it!</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="card mb-4">
     <div class="card-body">
         {% if anomalies and not anomalies.error %}
@@ -757,6 +860,51 @@ function debounce(func, wait) {
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
     };
+}
+
+// Tutorial functionality
+document.addEventListener('DOMContentLoaded', function() {
+    // Show tutorial only for first-time visitors
+    if (!localStorage.getItem('analyzeTutorialSeen')) {
+        showTutorial();
+    }
+
+    // Initialize tooltips for feature explanations
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(function(tooltipTriggerEl) {
+        new bootstrap.Tooltip(tooltipTriggerEl, {
+            template: '<div class="tooltip" role="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner bg-primary"></div></div>'
+        });
+    });
+});
+
+function showTutorial() {
+    document.getElementById('tutorialOverlay').style.display = 'block';
+}
+
+function dismissTutorial() {
+    document.getElementById('tutorialOverlay').style.display = 'none';
+    localStorage.setItem('analyzeTutorialSeen', 'true');
+}
+
+function nextStep(step) {
+    document.querySelector('.tutorial-step.active').classList.remove('active');
+    document.querySelector(`.tutorial-step[data-step="${step}"]`).classList.add('active');
+}
+
+function prevStep(step) {
+    document.querySelector('.tutorial-step.active').classList.remove('active');
+    document.querySelector(`.tutorial-step[data-step="${step}"]`).classList.add('active');
+}
+
+function finishTutorial() {
+    dismissTutorial();
+    // Add helpful tooltips to the main interface
+    document.querySelectorAll('.explanation-input').forEach(input => {
+        input.setAttribute('data-bs-toggle', 'tooltip');
+        input.setAttribute('data-bs-placement', 'top');
+        input.setAttribute('title', 'Type your explanation here. Similar transactions will be automatically detected!');
+    });
 }
 </script>
 {% endblock %}
