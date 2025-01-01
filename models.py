@@ -142,15 +142,14 @@ class User(UserMixin, db.Model):
     accounts = relationship('Account', backref='user', cascade='all, delete-orphan')
     company_settings = relationship('CompanySettings', backref='user', uselist=False, 
                                   cascade='all, delete-orphan')
-    bank_statement_uploads = relationship('BankStatementUpload', 
+    bank_statement_uploads = relationship('BankStatementUpload', backref='user',
                                         cascade='all, delete-orphan')
     financial_goals = relationship('FinancialGoal', backref='user', cascade='all, delete-orphan')
-    alert_configurations = relationship('AlertConfiguration', backref='user', cascade='all, delete-orphan')
-    alert_history = relationship('AlertHistory', backref='user', cascade='all, delete-orphan')
-    historical_data = relationship('HistoricalData', backref='user', cascade='all, delete-orphan')
-    risk_assessments = relationship('RiskAssessment', backref='user', cascade='all, delete-orphan')
-    financial_recommendations = relationship('FinancialRecommendation', backref='user', cascade='all, delete-orphan')
-
+    alert_configurations = relationship('AlertConfiguration', cascade='all, delete-orphan')
+    alert_history = relationship('AlertHistory', cascade='all, delete-orphan')
+    historical_data = relationship('HistoricalData', cascade='all, delete-orphan')
+    risk_assessments = relationship('RiskAssessment', cascade='all, delete-orphan')
+    financial_recommendations = relationship('FinancialRecommendation', cascade='all, delete-orphan')
 
     def set_password(self, password):
         """Set hashed password"""
@@ -218,6 +217,11 @@ def load_user(user_id):
         user = User.query.get(int(user_id))
         if not user:
             logger.warning(f"No user found with id {user_id}")
+            return None
+
+        # Check if user is deleted or deactivated
+        if user.is_deleted:
+            logger.warning(f"Attempted login by deleted user {user_id}")
             return None
 
         return user
