@@ -19,8 +19,8 @@ from nlp_utils import get_openai_client
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import the blueprint from __init__.py instead of creating a new one
-from . import chat
+# Create blueprint instead of importing
+chat = Blueprint('chat', __name__, url_prefix='/chat')
 
 @chat.route('/interface')
 @login_required
@@ -67,6 +67,7 @@ def send_message():
 
         # Get user's financial context
         context = get_financial_context(current_user.id)
+        logger.info(f"Processing chat message for user {current_user.id}")
 
         # Generate AI response with context
         try:
@@ -85,31 +86,35 @@ def send_message():
         logger.error(f"Error processing chat message: {str(e)}")
         return jsonify({
             'success': False,
-            'error': 'Internal server error'
+            'error': str(e)
         })
 
-@chat.route('/history')
+@chat.route('/history', methods=['GET'])
 @login_required
 def get_chat_history():
     """Retrieve chat history for the current user."""
     try:
+        # For now, return empty history since we haven't implemented chat history storage yet
+        # This prevents the 404 error while maintaining a valid response
+        logger.info(f"Retrieving chat history for user {current_user.id}")
         return jsonify({
             'success': True,
-            'history': []
+            'history': []  # Will be implemented with chat history storage
         })
     except Exception as e:
         logger.error(f"Error retrieving chat history: {str(e)}")
         return jsonify({
             'success': False,
-            'error': 'Error retrieving chat history'
+            'error': str(e)
         })
 
-@chat.route('/context')
+@chat.route('/context', methods=['GET'])
 @login_required
 def get_context():
     """Get current financial context for the chat."""
     try:
         context = get_financial_context(current_user.id)
+        logger.info(f"Retrieved financial context for user {current_user.id}")
         return jsonify({
             'success': True,
             'context': context
@@ -118,7 +123,7 @@ def get_context():
         logger.error(f"Error retrieving financial context: {str(e)}")
         return jsonify({
             'success': False,
-            'error': 'Error retrieving financial context'
+            'error': str(e)
         })
 
 def get_financial_context(user_id: int) -> Dict:
@@ -155,7 +160,7 @@ def get_financial_context(user_id: int) -> Dict:
             'analyzed': bool(tx.account_id and tx.explanation)
         } for tx in recent]
 
-        return {
+        context = {
             'income': float(income),
             'expenses': float(expenses),
             'balance': float(balance),
@@ -163,14 +168,19 @@ def get_financial_context(user_id: int) -> Dict:
             'total_transactions': len(transactions)
         }
 
+        logger.info(f"Financial context generated for user {user_id}")
+        return context
+
     except Exception as e:
         logger.error(f"Error getting financial context: {str(e)}")
+        # Return a safe fallback context
         return {
             'income': 0,
             'expenses': 0,
             'balance': 0,
             'recent_transactions': [],
-            'total_transactions': 0
+            'total_transactions': 0,
+            'error': str(e)
         }
 
 def generate_ai_response(client, message: str, context: Dict) -> str:
