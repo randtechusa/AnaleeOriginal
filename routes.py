@@ -16,6 +16,8 @@ from models import (
 from forms.company import CompanySettingsForm
 from ai_insights import FinancialInsightsGenerator  # Add import for iCountant interface
 from predictive_features import PredictiveFeatures # Add after the existing imports
+from anomaly_detection import AnomalyDetectionService # Add import for anomaly detection
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -847,7 +849,7 @@ def _analyze_cash_flow(transaction_data):
 @main.route('/expense-forecast')
 @login_required
 def expense_forecast():
-    """Handle expense forecast view with proper error handling and data structure"""
+    """Handle expense forecastview with proper error handling and data structure"""
     try:
         # Initialize the forecast structure with required attributes
         forecast = {
@@ -1447,3 +1449,49 @@ def find_similar_transactions(description):
     except Exception as e:
         logger.error(f"Error finding similar transactions: {str(e)}")
         return []
+
+@main.route('/analyze/anomalies')
+@login_required
+def analyze_anomalies():
+    """Analyze transactions for anomalies"""
+    try:
+        days_back = request.args.get('days', default=90, type=int)
+
+        # Initialize anomaly detection service
+        detector = AnomalyDetectionService(current_user.id)
+        result = detector.detect_anomalies(days_back=days_back)
+
+        if result['status'] == 'success':
+            return render_template(
+                'anomaly_analysis.html',
+                anomalies=result['anomalies'],
+                summary=result['summary'],
+                analysis_period=result['analysis_period']
+            )
+        else:
+            flash(result['message'], 'error')
+            return redirect(url_for('main.dashboard'))
+
+    except Exception as e:
+        logger.error(f"Error in anomaly analysis route: {str(e)}")
+        flash('Error analyzing anomalies', 'error')
+        return redirect(url_for('main.dashboard'))
+
+@main.route('/api/anomalies')
+@login_required
+def get_anomalies():
+    """API endpoint for anomaly detection results"""
+    try:
+        days_back = request.args.get('days', default=90, type=int)
+
+        detector = AnomalyDetectionService(current_user.id)
+        result = detector.detect_anomalies(days_back=days_back)
+
+        if result['status'] == 'success':
+            return jsonify(result)
+        else:
+            return jsonify({'error': result['message']}), 400
+
+    except Exception as e:
+        logger.error(f"Error in anomaly API route: {str(e)}")
+        return jsonify({'error': str(e)}), 500
