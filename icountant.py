@@ -1,12 +1,13 @@
 """
 AI-powered accounting assistant for processing financial transactions
-Enhanced with proper type checking and validation
+Enhanced with proper type checking, validation, and comprehensive features
 """
 import logging
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from ai_insights import FinancialInsightsGenerator
+from nlp_utils import categorize_transaction
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ICountant:
     """
     AI-powered accounting assistant for guided double-entry transaction processing
-    with real-time insights and pattern recognition
+    with real-time insights, pattern recognition, and advanced suggestion features
     """
     def __init__(self, available_accounts: List[Dict]):
         self.available_accounts = available_accounts
@@ -24,7 +25,7 @@ class ICountant:
         self.insights_generator = FinancialInsightsGenerator()
 
     def get_transaction_insights(self, transaction: Dict) -> Dict:
-        """Generate AI-powered insights for the current transaction"""
+        """Generate AI-powered insights with enhanced suggestion features"""
         try:
             # Validate transaction amount before processing
             amount = self._validate_and_convert_amount(transaction.get('amount'))
@@ -32,26 +33,78 @@ class ICountant:
                 logger.error("Invalid transaction amount for insights generation")
                 return {}
 
-            # Get similar transactions from history
-            similar_transactions = [t for t in self.processed_transactions 
-                                if abs(t['entries'][0]['debit'] - abs(amount)) < 100]
-
-            # Generate insights using AI
-            insights = self.insights_generator.generate_transaction_insights([transaction])
-
-            # Suggest accounts based on description and amount
+            # Account Suggestion Feature
             suggested_accounts = self._suggest_accounts(transaction)
+
+            # Explanation Suggestion Feature
+            suggested_explanation = self._generate_explanation(transaction)
+
+            # Explanation Recognition Feature
+            similar_explanations = self._find_similar_explanations(transaction)
+
+            # Get similar transactions from history with enhanced pattern matching
+            similar_transactions = [t for t in self.processed_transactions 
+                                if abs(t['entries'][0]['debit'] - abs(amount)) < 100 and
+                                self._description_similarity(t['description'], transaction.get('description', ''))]
+
+            # Generate comprehensive insights using AI
+            insights = self.insights_generator.generate_transaction_insights([transaction])
 
             return {
                 'similar_transactions': similar_transactions[:3],
                 'ai_insights': insights.get('insights', ''),
                 'suggested_accounts': suggested_accounts,
+                'suggested_explanation': suggested_explanation,
+                'similar_explanations': similar_explanations,
                 'transaction_type': 'credit' if amount < 0 else 'debit',
-                'amount_formatted': self.format_amount(amount)
+                'amount_formatted': self.format_amount(amount),
+                'confidence_score': self._calculate_confidence_score(transaction)
             }
         except Exception as e:
             logger.error(f"Error generating transaction insights: {str(e)}")
             return {}
+
+    def _description_similarity(self, desc1: str, desc2: str) -> bool:
+        """Check if descriptions are similar using pattern matching"""
+        from difflib import SequenceMatcher
+        return SequenceMatcher(None, desc1.lower(), desc2.lower()).ratio() > 0.6
+
+    def _generate_explanation(self, transaction: Dict) -> str:
+        """Generate AI-powered explanation for the transaction"""
+        try:
+            description = transaction.get('description', '')
+            amount = self._validate_and_convert_amount(transaction.get('amount'))
+
+            # Use categorization to enhance explanation
+            category, confidence, base_explanation = categorize_transaction(description)
+
+            # Build comprehensive explanation
+            explanation = f"{base_explanation} - "
+            if amount and amount > 0:
+                explanation += f"Revenue recognized from {description}"
+            else:
+                explanation += f"Expense recorded for {description}"
+
+            return explanation
+        except Exception as e:
+            logger.error(f"Error generating explanation: {str(e)}")
+            return "Transaction recorded - details in description"
+
+    def _find_similar_explanations(self, transaction: Dict) -> List[str]:
+        """Find similar explanations from historical transactions"""
+        try:
+            similar_explanations = []
+            current_desc = transaction.get('description', '').lower()
+
+            for past_transaction in self.processed_transactions:
+                if 'explanation' in past_transaction:
+                    if self._description_similarity(current_desc, past_transaction['description'].lower()):
+                        similar_explanations.append(past_transaction['explanation'])
+
+            return list(set(similar_explanations))[:3]  # Return unique top 3
+        except Exception as e:
+            logger.error(f"Error finding similar explanations: {str(e)}")
+            return []
 
     def _validate_and_convert_amount(self, amount) -> Optional[Decimal]:
         """Validate and convert amount to Decimal"""
@@ -240,3 +293,8 @@ class ICountant:
         except Exception as e:
             logger.error(f"Error completing transaction: {str(e)}")
             return False, f"Error processing transaction: {str(e)}", None
+
+    def _calculate_confidence_score(self, transaction: Dict) -> float:
+        """Calculate a confidence score for the transaction processing"""
+        #  A placeholder for a more sophisticated confidence score calculation
+        return 0.9  # Default confidence

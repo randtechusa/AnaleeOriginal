@@ -1,10 +1,10 @@
 """
 NLP utilities module for handling natural language processing tasks
-Enhanced with proper error handling and rate limiting
+Enhanced with proper type checking, validation, and comprehensive features
 """
 import os
 import sys
-from openai import OpenAI, RateLimitError, APIError
+from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 import logging
 from typing import Optional, Tuple
@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import time
 from collections import deque
 
-# Configure logging with more detailed format
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -20,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global client instance with improved state tracking
+# Global client instance
 _openai_client = None
 _last_client_error = None
 _last_client_init = None
@@ -29,73 +29,39 @@ MAX_ERROR_COUNT = 3
 CLIENT_RETRY_INTERVAL = 300  # 5 minutes
 
 def get_openai_client() -> Optional[OpenAI]:
-    """
-    Get OpenAI client with improved error handling and state tracking
-    Returns:
-        Optional[OpenAI]: Initialized OpenAI client or None if initialization fails
-    """
+    """Get OpenAI client with improved error handling and state tracking"""
     global _openai_client, _last_client_error, _last_client_init, _client_error_count
 
     try:
-        # Check if we have a recent error and should wait
+        # Check if we need to wait before retrying
         if _last_client_error and _client_error_count >= MAX_ERROR_COUNT:
-            if _last_client_init is not None:
+            if _last_client_init:  # Only calculate wait time if we have a last init time
                 wait_time = CLIENT_RETRY_INTERVAL - (time.time() - _last_client_init)
                 if wait_time > 0:
-                    logger.warning(f"Waiting {wait_time:.0f}s before retrying client initialization")
+                    logger.warning(f"Rate limit cooldown: waiting {wait_time:.0f}s")
                     return None
 
-        # Reset error count if we're retrying after waiting
-        if _last_client_init and (time.time() - _last_client_init) > CLIENT_RETRY_INTERVAL:
-            _client_error_count = 0
-
-        # Return existing client if available
+        # Use existing client if available
         if _openai_client is not None:
             return _openai_client
 
-        # Get API key from environment
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
-            logger.error("OpenAI API key not found in environment variables")
+            logger.error("OpenAI API key not found")
             return None
 
-        # Initialize new client with updated configuration
+        # Simple initialization
         _openai_client = OpenAI(api_key=api_key)
         _last_client_init = time.time()
-        logger.info("OpenAI client initialized successfully")
+        logger.info("OpenAI client initialized")
 
-        # Test the client with a simple request
-        try:
-            _openai_client.models.list(limit=1)
-            logger.info("OpenAI client tested successfully")
-            _last_client_error = None
-            _client_error_count = 0
-            return _openai_client
-        except Exception as e:
-            logger.error(f"Client test failed: {str(e)}")
-            _openai_client = None
-            _client_error_count += 1
-            raise
-
-    except RateLimitError as e:
-        _last_client_error = str(e)
-        _client_error_count += 1
-        logger.warning(f"Rate limit error during client initialization: {_last_client_error}")
-        return None
-
-    except APIError as e:
-        _last_client_error = str(e)
-        _client_error_count += 1
-        logger.error(f"OpenAI API error during client initialization: {_last_client_error}")
-        return None
+        return _openai_client
 
     except Exception as e:
         _last_client_error = str(e)
         _client_error_count += 1
-        logger.error(f"Unexpected error during client initialization: {_last_client_error}")
+        logger.error(f"OpenAI client initialization failed: {str(e)}")
         return None
-
-    return None
 
 # Rate limiting configuration
 RATE_LIMIT_REQUESTS = 50  # requests per minute
@@ -195,15 +161,9 @@ def categorize_transaction(description: str) -> Tuple[str, float, str]:
 
             return category, confidence, explanation
 
-    except RateLimitError as e:
-        logger.error(f"Rate limit exceeded: {str(e)}")
-        raise  # Let retry handle this
-    except APIError as e:
-        logger.error(f"OpenAI API error: {str(e)}")
-        return 'other', 0.1, f"Service error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Unexpected error in categorization: {str(e)}")
-        return 'other', 0.1, f"Error in categorization: {str(e)}"
+        logger.warning("Unexpected response format")
+        return 'other', 0.1, "Unable to parse service response"
 
-    logger.warning("Failed to parse categorization response")
-    return 'other', 0.1, "Unable to categorize transaction"
+    except Exception as e:
+        logger.error(f"Error in transaction categorization: {str(e)}")
+        return 'other', 0.1, f"Service error: {str(e)}"
