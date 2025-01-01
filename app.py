@@ -4,16 +4,16 @@ import logging
 import sys
 from datetime import datetime
 from flask import Flask, current_app
-from flask_migrate import Migrate 
+from flask_migrate import Migrate
 from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from flask_wtf.csrf import CSRFProtect
 from models import db, login_manager, User
 
-# Configure logging
+# Configure logging with detailed format
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -22,7 +22,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 # Load environment variables
 load_dotenv()
@@ -32,32 +31,32 @@ migrate = Migrate()
 scheduler = APScheduler()
 csrf = CSRFProtect()
 
-def create_app(env=os.environ.get('FLASK_ENV', 'production')):
+def create_app(env=None):
     """Create and configure the Flask application"""
     try:
         logger.info("Starting application creation...")
 
-        # Initialize Flask application with explicit template and static folders
-        app = Flask(__name__, 
+        # Initialize Flask application
+        app = Flask(__name__,
                    template_folder='templates',
                    static_folder='static')
 
-        # Get database URL and verify it exists
+        # Get database URL
         database_url = os.environ.get('DATABASE_URL')
         if not database_url:
             logger.error("DATABASE_URL environment variable not set")
-            return None
+            raise ValueError("DATABASE_URL not configured")
 
-        logger.info("Database URL found, configuring application...")
+        logger.info("Configuring application...")
 
-        # Configure Flask app with enhanced security
-        config = {
-            'SECRET_KEY': os.environ.get("FLASK_SECRET_KEY", os.urandom(32)),
+        # Configure Flask app
+        app.config.update({
+            'SECRET_KEY': os.environ.get('FLASK_SECRET_KEY', os.urandom(32)),
             'SQLALCHEMY_DATABASE_URI': database_url,
             'SQLALCHEMY_TRACK_MODIFICATIONS': False,
             'TEMPLATES_AUTO_RELOAD': True,
             'WTF_CSRF_ENABLED': True,
-            'WTF_CSRF_TIME_LIMIT': 3600,  # 1 hour CSRF token validity
+            'WTF_CSRF_TIME_LIMIT': 3600,
             'SESSION_COOKIE_SECURE': True,
             'SESSION_COOKIE_HTTPONLY': True,
             'REMEMBER_COOKIE_SECURE': True,
@@ -68,25 +67,16 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
                 'pool_timeout': 30,
                 'pool_recycle': 300,
                 'max_overflow': 2
-            }
-        }
+            },
+            'DEBUG': True  # Enable debug mode for development
+        })
 
-        app.config.update(config)
-        logger.info("Application configuration completed")
-
-        # Initialize Flask extensions
-        logger.info("Initializing database...")
+        # Initialize extensions
         db.init_app(app)
-
-        logger.info("Initializing migrations...")
         migrate.init_app(app, db)
-
-        # Initialize CSRF protection
-        logger.info("Initializing CSRF protection...")
         csrf.init_app(app)
 
-        # Configure login manager with enhanced security
-        logger.info("Configuring login manager...")
+        # Configure login manager
         login_manager.init_app(app)
         login_manager.login_view = 'auth.login'
         login_manager.login_message = 'Please log in to access this page.'
@@ -96,52 +86,38 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
         with app.app_context():
             try:
                 # Verify database connection
-                logger.info("Verifying database connection...")
-                db.session.execute(text("SELECT 1"))
-                logger.info("Database connection verified successfully")
+                db.session.execute(text('SELECT 1'))
+                logger.info("Database connection verified")
 
-                # Register blueprints in specific order
-                logger.info("Registering blueprints...")
+                # Import blueprints here to avoid circular imports
+                from auth import auth
+                from admin import admin
+                from historical_data import historical_data
+                from suggestions import suggestions
+                from chat import chat
+                from routes import main
+                from reports import reports
+                from bank_statements import bank_statements
 
-                # Register auth blueprint first for login functionality
-                from auth import auth as auth_blueprint
-                app.register_blueprint(auth_blueprint)
-                logger.info("Auth blueprint registered")
+                # Register blueprints with proper URL prefixes
+                blueprints = [
+                    (auth, ''),
+                    (admin, '/admin'),
+                    (historical_data, ''),
+                    (suggestions, ''),
+                    (chat, ''),
+                    (main, ''),
+                    (reports, '/reports'),
+                    (bank_statements, '')
+                ]
 
-                # Register admin blueprint with proper prefix
-                from admin import admin as admin_blueprint
-                app.register_blueprint(admin_blueprint, url_prefix='/admin')
-                logger.info("Admin blueprint registered")
-
-                # Register historical data blueprint with proper template path
-                from historical_data import historical_data as historical_data_blueprint
-                app.register_blueprint(historical_data_blueprint)
-                logger.info("Historical data blueprint registered")
-
-                # Register suggestions blueprint
-                from suggestions import suggestions as suggestions_blueprint
-                app.register_blueprint(suggestions_blueprint)
-                logger.info("Suggestions blueprint registered")
-
-                # Register chat blueprint with proper URL prefix
-                from chat import chat as chat_blueprint
-                app.register_blueprint(chat_blueprint)
-                logger.info("Chat blueprint registered")
-
-                # Register main blueprint
-                from routes import main as main_blueprint
-                app.register_blueprint(main_blueprint)
-                logger.info("Main blueprint registered")
-
-                # Register reports blueprint
-                from reports import reports as reports_blueprint
-                app.register_blueprint(reports_blueprint, url_prefix='/reports')
-                logger.info("Reports blueprint registered")
-
-                # Register bank statements blueprint
-                from bank_statements import bank_statements as bank_statements_blueprint
-                app.register_blueprint(bank_statements_blueprint)
-                logger.info("Bank statements blueprint registered")
+                for blueprint, url_prefix in blueprints:
+                    try:
+                        app.register_blueprint(blueprint, url_prefix=url_prefix)
+                        logger.info(f"Registered blueprint: {blueprint.name}")
+                    except Exception as e:
+                        logger.error(f"Error registering blueprint {blueprint.name}: {str(e)}")
+                        raise
 
                 # Ensure database tables exist
                 db.create_all()
@@ -151,19 +127,25 @@ def create_app(env=os.environ.get('FLASK_ENV', 'production')):
 
             except Exception as e:
                 logger.error(f"Error during application setup: {str(e)}")
-                logger.exception("Full stack trace:")
-                return None
+                raise
 
     except Exception as e:
         logger.error(f"Critical error in application creation: {str(e)}")
-        logger.exception("Full stack trace:")
         return None
 
-if __name__ == '__main__':
-    app = create_app()
-    if app:
-        port = int(os.environ.get('PORT', 5000))
-        app.run(host='0.0.0.0', port=port)
-    else:
-        logger.error("Application creation failed")
+def main():
+    """Main entry point for the application"""
+    try:
+        app = create_app()
+        if app:
+            port = int(os.environ.get('PORT', 5000))
+            app.run(host='0.0.0.0', port=port, debug=True)
+        else:
+            logger.error("Application creation failed")
+            sys.exit(1)
+    except Exception as e:
+        logger.error(f"Failed to start application: {str(e)}")
         sys.exit(1)
+
+if __name__ == '__main__':
+    main()

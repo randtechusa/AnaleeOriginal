@@ -1,3 +1,7 @@
+"""
+AI-powered accounting assistant for processing financial transactions
+Enhanced with proper type checking and validation
+"""
 import logging
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
@@ -22,9 +26,15 @@ class ICountant:
     def get_transaction_insights(self, transaction: Dict) -> Dict:
         """Generate AI-powered insights for the current transaction"""
         try:
+            # Validate transaction amount before processing
+            amount = self._validate_and_convert_amount(transaction.get('amount'))
+            if amount is None:
+                logger.error("Invalid transaction amount for insights generation")
+                return {}
+
             # Get similar transactions from history
             similar_transactions = [t for t in self.processed_transactions 
-                                 if abs(t['entries'][0]['debit'] - abs(transaction['amount'])) < 100]
+                                if abs(t['entries'][0]['debit'] - abs(amount)) < 100]
 
             # Generate insights using AI
             insights = self.insights_generator.generate_transaction_insights([transaction])
@@ -36,21 +46,36 @@ class ICountant:
                 'similar_transactions': similar_transactions[:3],
                 'ai_insights': insights.get('insights', ''),
                 'suggested_accounts': suggested_accounts,
-                'transaction_type': 'credit' if transaction['amount'] < 0 else 'debit',
-                'amount_formatted': self.format_amount(Decimal(str(transaction['amount'])))
+                'transaction_type': 'credit' if amount < 0 else 'debit',
+                'amount_formatted': self.format_amount(amount)
             }
         except Exception as e:
             logger.error(f"Error generating transaction insights: {str(e)}")
             return {}
 
+    def _validate_and_convert_amount(self, amount) -> Optional[Decimal]:
+        """Validate and convert amount to Decimal"""
+        try:
+            if amount is None:
+                return None
+            decimal_amount = Decimal(str(amount))
+            if decimal_amount == 0:
+                return None
+            return decimal_amount
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+
     def _suggest_accounts(self, transaction: Dict) -> List[Dict]:
         """Suggest relevant accounts based on transaction details"""
         try:
-            amount = Decimal(str(transaction['amount']))
-            is_income = amount > 0
+            amount = self._validate_and_convert_amount(transaction.get('amount'))
+            if amount is None:
+                logger.error("Invalid amount for account suggestion")
+                return []
 
-            # Filter accounts based on transaction type
+            is_income = amount > 0
             suggested = []
+
             for account in self.available_accounts:
                 # For positive amounts (income), suggest revenue accounts
                 if is_income and account['category'].lower() in ['revenue', 'income', 'sales']:
@@ -76,14 +101,11 @@ class ICountant:
     def validate_amount(self, amount) -> Tuple[bool, Optional[Decimal], str]:
         """Validate transaction amount"""
         try:
-            if amount is None:
-                return False, None, "Amount cannot be None"
-
-            decimal_amount = Decimal(str(amount))
-            if decimal_amount == 0:
-                return False, None, "Transaction amount cannot be zero"
+            decimal_amount = self._validate_and_convert_amount(amount)
+            if decimal_amount is None:
+                return False, None, "Invalid amount or amount cannot be zero"
             return True, decimal_amount, "Amount validated successfully"
-        except (InvalidOperation, TypeError, ValueError) as e:
+        except Exception as e:
             logger.error(f"Amount validation error: {str(e)}")
             return False, None, f"Invalid amount format: {str(e)}"
 
@@ -119,9 +141,9 @@ class ICountant:
                 return "Transaction description is required", None
 
             # Validate and convert amount
-            is_valid, amount, message = self.validate_amount(transaction.get('amount'))
-            if not is_valid:
-                return message, None
+            amount = self._validate_and_convert_amount(transaction.get('amount'))
+            if amount is None:
+                return "Invalid transaction amount", None
 
             self.current_transaction = transaction
 
@@ -137,40 +159,24 @@ class ICountant:
             }
 
             # Build guidance message with insights
-            if amount > 0:  # Money received (bank debit)
-                message = (
-                    f"Transaction Analysis:\n"
-                    f"Description: {transaction.get('description', 'No description')}\n"
-                    f"Amount: {self.format_amount(amount)}\n"
-                    f"Type: Income/Revenue Transaction\n\n"
-                    f"AI Insights:\n{transaction_insights.get('ai_insights', 'No insights available')}\n\n"
-                    f"Suggested Accounts:\n"
-                )
-                for suggestion in transaction_insights.get('suggested_accounts', []):
-                    message += f"- {suggestion['account']['name']} ({suggestion['reason']})\n"
+            message = (
+                f"Transaction Analysis:\n"
+                f"Description: {transaction.get('description', 'No description')}\n"
+                f"Amount: {self.format_amount(amount)}\n"
+                f"Type: {'Income/Revenue' if amount > 0 else 'Expense/Payment'} Transaction\n\n"
+                f"AI Insights:\n{transaction_insights.get('ai_insights', 'No insights available')}\n\n"
+                f"Suggested Accounts:\n"
+            )
 
-                message += f"\nAvailable Accounts:\n{self.get_account_options()}\n"
-                message += f"Please select the account number for the credit entry."
-                entry_type = 'credit'
-            else:  # Money paid out (bank credit)
-                message = (
-                    f"Transaction Analysis:\n"
-                    f"Description: {transaction.get('description', 'No description')}\n"
-                    f"Amount: {self.format_amount(amount)}\n"
-                    f"Type: Expense/Payment Transaction\n\n"
-                    f"AI Insights:\n{transaction_insights.get('ai_insights', 'No insights available')}\n\n"
-                    f"Suggested Accounts:\n"
-                )
-                for suggestion in transaction_insights.get('suggested_accounts', []):
-                    message += f"- {suggestion['account']['name']} ({suggestion['reason']})\n"
+            for suggestion in transaction_insights.get('suggested_accounts', []):
+                message += f"- {suggestion['account']['name']} ({suggestion['reason']})\n"
 
-                message += f"\nAvailable Accounts:\n{self.get_account_options()}\n"
-                message += f"Please select the account number for the debit entry."
-                entry_type = 'debit'
+            message += f"\nAvailable Accounts:\n{self.get_account_options()}\n"
+            message += f"Please select the account number for the {'credit' if amount > 0 else 'debit'} entry."
 
             return message, {
                 'bank_entry': bank_entry,
-                'entry_type_needed': entry_type,
+                'entry_type_needed': 'credit' if amount > 0 else 'debit',
                 'original_transaction': transaction,
                 'insights': transaction_insights
             }
@@ -189,7 +195,10 @@ class ICountant:
                 return False, "Invalid account selection", None
 
             selected_account = self.available_accounts[selected_account_index]
-            amount = Decimal(str(self.current_transaction['amount']))
+            amount = self._validate_and_convert_amount(self.current_transaction.get('amount'))
+
+            if amount is None:
+                return False, "Invalid transaction amount", None
 
             # Create the double entry
             transaction = {
