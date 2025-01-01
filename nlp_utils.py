@@ -60,11 +60,7 @@ def get_openai_client() -> Optional[OpenAI]:
             return None
 
         # Initialize new client with updated configuration
-        _openai_client = OpenAI(
-            api_key=api_key,
-            timeout=30.0,  # Set reasonable timeout
-            max_retries=3  # Add retries for transient failures
-        )
+        _openai_client = OpenAI(api_key=api_key)
         _last_client_init = time.time()
         logger.info("OpenAI client initialized successfully")
 
