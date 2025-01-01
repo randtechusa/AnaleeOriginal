@@ -62,14 +62,16 @@ def get_openai_client() -> Optional[OpenAI]:
         # Initialize new client with updated configuration
         _openai_client = OpenAI(
             api_key=api_key,
-            timeout=30.0  # Set reasonable timeout
+            timeout=30.0,  # Set reasonable timeout
+            max_retries=3  # Add retries for transient failures
         )
         _last_client_init = time.time()
+        logger.info("OpenAI client initialized successfully")
 
         # Test the client with a simple request
         try:
             _openai_client.models.list(limit=1)
-            logger.info("OpenAI client initialized and tested successfully")
+            logger.info("OpenAI client tested successfully")
             _last_client_error = None
             _client_error_count = 0
             return _openai_client
@@ -118,7 +120,6 @@ def wait_for_rate_limit():
                 time.sleep(sleep_time)
             break
     request_times.append(now)
-
 
 CATEGORIES = [
     'income', 'groceries', 'utilities', 'transportation', 'entertainment',
