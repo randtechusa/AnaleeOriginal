@@ -5,6 +5,7 @@ Separate from historical data processing
 Enhanced with user-friendly error notifications
 """
 import logging
+import os
 from flask import render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
@@ -28,17 +29,27 @@ def upload():
         logger.info("Processing bank statement upload request")
 
         if request.method == 'POST':
+            # Check if it's an AJAX request
+            is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
             # Log debugging information
             logger.debug(f"Form validation result: {form.validate()}")
             logger.debug(f"Form errors: {form.errors}")
             logger.debug(f"Request files: {request.files}")
             logger.debug(f"Form data: {request.form}")
+            logger.debug(f"Is AJAX request: {is_ajax}")
 
             if not form.validate_on_submit():
                 logger.error(f"Form validation failed: {form.errors}")
                 error_messages = []
                 for field, errors in form.errors.items():
                     error_messages.extend(errors)
+                if is_ajax:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Validation failed',
+                        'details': error_messages
+                    }), 400
                 flash('Please ensure all fields are filled correctly: ' + '; '.join(error_messages), 'error')
                 return redirect(url_for('bank_statements.upload'))
 
@@ -48,6 +59,11 @@ def upload():
                 account = Account.query.get(account_id)
                 if not account or account.user_id != current_user.id:
                     logger.error(f"Invalid account selected: {account_id}")
+                    if is_ajax:
+                        return jsonify({
+                            'success': False,
+                            'error': 'Invalid bank account selected'
+                        }), 400
                     flash('Invalid bank account selected. Please choose a valid account.', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
@@ -55,6 +71,11 @@ def upload():
                 file = form.file.data
                 if not file or not file.filename:
                     logger.error("No file selected")
+                    if is_ajax:
+                        return jsonify({
+                            'success': False,
+                            'error': 'Please select a file to upload'
+                        }), 400
                     flash('Please select a file to upload.', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
@@ -62,6 +83,11 @@ def upload():
                 filename = secure_filename(file.filename)
                 file_ext = os.path.splitext(filename)[1].lower()
                 if file_ext not in ['.csv', '.xlsx']:
+                    if is_ajax:
+                        return jsonify({
+                            'success': False,
+                            'error': 'Please upload only Excel (.xlsx) or CSV (.csv) files.'
+                        }), 400
                     flash('Please upload only Excel (.xlsx) or CSV (.csv) files.', 'error')
                     return redirect(url_for('bank_statements.upload'))
 
@@ -81,6 +107,13 @@ def upload():
                 )
 
                 if success:
+                    if is_ajax:
+                        return jsonify({
+                            'success': True,
+                            'message': 'Bank statement processed successfully!',
+                            'rows_processed': response.get('rows_processed', 0),
+                            'processing_notes': response.get('processing_notes', [])
+                        })
                     flash('Bank statement processed successfully! ' + 
                           response.get('message', ''), 'success')
 
@@ -90,6 +123,12 @@ def upload():
                             flash(note, 'info')
                 else:
                     # Display main error message
+                    if is_ajax:
+                        return jsonify({
+                            'success': False,
+                            'error': response.get('error', 'Processing failed'),
+                            'details': response.get('details', [])
+                        }), 400
                     flash(response.get('error', 'Processing failed'), 'error')
 
                     # Display detailed errors if available
@@ -101,6 +140,12 @@ def upload():
 
             except Exception as e:
                 logger.error(f"Error in upload process: {str(e)}", exc_info=True)
+                if is_ajax:
+                    return jsonify({
+                        'success': False,
+                        'error': 'An error occurred during upload',
+                        'details': [str(e)]
+                    }), 500
                 flash('An error occurred during upload. Please try again or contact support if the issue persists.', 'error')
                 return redirect(url_for('bank_statements.upload'))
 
@@ -136,5 +181,11 @@ def upload():
 
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}", exc_info=True)
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': False,
+                'error': 'An unexpected error occurred',
+                'details': [str(e)]
+            }), 500
         flash('An unexpected error occurred. Please try again or contact support.', 'error')
         return redirect(url_for('bank_statements.upload'))

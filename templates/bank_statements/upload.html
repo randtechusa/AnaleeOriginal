@@ -57,6 +57,7 @@
 
                 <div id="errorContainer" class="alert alert-danger d-none">
                     <p class="mb-0" id="errorText"></p>
+                    <div id="errorDetails" class="mt-2 small"></div>
                 </div>
 
                 {{ form.submit(class="btn btn-primary", id="uploadButton") }}
@@ -115,19 +116,49 @@ document.addEventListener('DOMContentLoaded', function() {
     const processedRows = document.getElementById('processedRows');
     const errorContainer = document.getElementById('errorContainer');
     const errorText = document.getElementById('errorText');
+    const errorDetails = document.getElementById('errorDetails');
     const uploadButton = document.getElementById('uploadButton');
     const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+
+    function showError(message, details = []) {
+        errorContainer.classList.remove('d-none');
+        errorText.textContent = message;
+
+        // Clear previous details
+        errorDetails.innerHTML = '';
+
+        // Add details if provided
+        if (details && details.length > 0) {
+            const detailsList = document.createElement('ul');
+            detailsList.className = 'mb-0 pl-3';
+            details.forEach(detail => {
+                const li = document.createElement('li');
+                li.textContent = detail;
+                detailsList.appendChild(li);
+            });
+            errorDetails.appendChild(detailsList);
+        }
+    }
+
+    function resetUI() {
+        progressDiv.classList.add('d-none');
+        statusDiv.classList.add('d-none');
+        errorContainer.classList.add('d-none');
+        progressBar.style.width = '0%';
+        progressBar.textContent = '0%';
+        progressBar.classList.remove('bg-danger');
+        statusText.textContent = 'Processing...';
+        processedRows.textContent = '0';
+        uploadButton.disabled = false;
+    }
 
     form.onsubmit = async function(e) {
         e.preventDefault();
 
         // Reset UI state
+        resetUI();
         progressDiv.classList.remove('d-none');
         statusDiv.classList.remove('d-none');
-        errorContainer.classList.add('d-none');
-        progressBar.style.width = '0%';
-        progressBar.textContent = '0%';
-        statusText.textContent = 'Uploading...';
         uploadButton.disabled = true;
 
         try {
@@ -161,6 +192,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (result.rows_processed) {
                     processedRows.textContent = result.rows_processed;
                 }
+
+                // Show any processing notes
+                if (result.processing_notes && result.processing_notes.length > 0) {
+                    showError('Processing Notes:', result.processing_notes);
+                    errorContainer.classList.remove('alert-danger');
+                    errorContainer.classList.add('alert-info');
+                }
+
                 setTimeout(() => window.location.reload(), 2000);
             } else {
                 throw new Error(result.error || 'Upload failed');
@@ -170,9 +209,13 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Upload error:', error);
             statusText.textContent = 'Upload failed';
             statusDiv.className = 'alert alert-danger';
-            errorContainer.classList.remove('d-none');
-            errorText.textContent = error.message;
             progressBar.classList.add('bg-danger');
+
+            if (error.details) {
+                showError(error.message, error.details);
+            } else {
+                showError(error.message || 'An unexpected error occurred');
+            }
         } finally {
             uploadButton.disabled = false;
         }

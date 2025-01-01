@@ -144,6 +144,13 @@ class User(UserMixin, db.Model):
                                   cascade='all, delete-orphan')
     bank_statement_uploads = relationship('BankStatementUpload', 
                                         cascade='all, delete-orphan')
+    financial_goals = relationship('FinancialGoal', backref='user', cascade='all, delete-orphan')
+    alert_configurations = relationship('AlertConfiguration', backref='user', cascade='all, delete-orphan')
+    alert_history = relationship('AlertHistory', backref='user', cascade='all, delete-orphan')
+    historical_data = relationship('HistoricalData', backref='user', cascade='all, delete-orphan')
+    risk_assessments = relationship('RiskAssessment', backref='user', cascade='all, delete-orphan')
+    financial_recommendations = relationship('FinancialRecommendation', backref='user', cascade='all, delete-orphan')
+
 
     def set_password(self, password):
         """Set hashed password"""
@@ -176,10 +183,21 @@ class User(UserMixin, db.Model):
             return False
 
     def soft_delete(self):
-        """Soft delete user by marking as deleted"""
-        self.is_deleted = True
-        self.subscription_status = 'deactivated'
-        logger.info(f"User {self.username} marked as deleted")
+        """Soft delete user by marking as deleted and cleaning up data"""
+        try:
+            # Mark user as deleted
+            self.is_deleted = True
+            self.subscription_status = 'deactivated'
+
+            # Clear sensitive data
+            self.mfa_secret = None
+            self.reset_token = None
+            self.reset_token_expires = None
+
+            logger.info(f"User {self.username} marked as deleted")
+        except Exception as e:
+            logger.error(f"Error in soft_delete for user {self.username}: {str(e)}")
+            raise
 
     @property
     def is_active(self):
