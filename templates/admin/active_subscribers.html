@@ -21,7 +21,7 @@
                         <td>{{ user.created_at.strftime('%Y-%m-%d') }}</td>
                         <td>
                             <form method="POST" action="{{ url_for('admin.deactivate_subscriber', user_id=user.id) }}" style="display: inline;">
-                                {{ csrf_token() }}
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to deactivate this user?')">
                                     Deactivate
                                 </button>
