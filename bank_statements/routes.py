@@ -7,18 +7,69 @@ Enhanced with user-friendly error notifications
 import logging
 import os
 from flask import render_template, request, redirect, url_for, flash, jsonify, current_app
-from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
-import os
+from flask_login import login_required, current_user
 
 from . import bank_statements
 from .forms import BankStatementUploadForm
 from .services import BankStatementService
-from .models import BankStatementUpload
-from models import Account
+from models import Account, BankStatementUpload, db
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+@bank_statements.route('/test-upload', methods=['GET', 'POST'])
+def test_upload():
+    """Temporary test route for verifying bank statement upload functionality"""
+    try:
+        form = BankStatementUploadForm()
+        logger.info("Processing bank statement upload request")
+
+        if request.method == 'POST':
+            # Test account for verification
+            test_account = Account.query.filter(Account.link.like('ca.810%')).first()
+            if not test_account:
+                test_account = Account(
+                    link='ca.810.test',
+                    category='Bank',
+                    name='Test Bank Account',
+                    user_id=1  # Test user ID
+                )
+                db.session.add(test_account)
+                db.session.commit()
+
+            # Process file upload
+            file = request.files.get('file')
+            if not file:
+                return jsonify({
+                    'success': False,
+                    'error': 'No file provided'
+                }), 400
+
+            service = BankStatementService()
+            success, response = service.process_upload(
+                file=file,
+                account_id=test_account.id,
+                user_id=1  # Test user ID
+            )
+
+            if success:
+                return jsonify({
+                    'success': True,
+                    'message': 'Test upload successful',
+                    'details': response
+                })
+            else:
+                return jsonify(response), 400
+
+        return render_template('bank_statements/upload.html', form=form)
+
+    except Exception as e:
+        logger.error(f"Error in test upload route: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @bank_statements.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -170,9 +221,9 @@ def upload():
                           .all())
 
             return render_template('bank_statements/upload.html',
-                                form=form,
-                                bank_accounts=bank_accounts,
-                                recent_files=recent_files)
+                                   form=form,
+                                   bank_accounts=bank_accounts,
+                                   recent_files=recent_files)
 
         except Exception as e:
             logger.error(f"Error retrieving bank accounts: {str(e)}", exc_info=True)
