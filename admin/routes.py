@@ -485,22 +485,38 @@ def delete_subscriber(user_id):
         # Log the deletion attempt
         current_app.logger.info(f"Admin {current_user.username} deleting user {user.username}")
 
-        # Delete user's data in specific order to handle dependencies
-        Transaction.query.filter_by(user_id=user.id).delete()
-        Account.query.filter_by(user_id=user.id).delete()
-        CompanySettings.query.filter_by(user_id=user.id).delete()
-        UploadedFile.query.filter_by(user_id=user.id).delete()
+        try:
+            # Delete user's data in specific order to handle dependencies
+            Transaction.query.filter_by(user_id=user.id).delete()
+            db.session.flush()  # Ensure transactions are deleted before proceeding
 
-        # Finally delete the user
-        db.session.delete(user)
-        db.session.commit()
+            Account.query.filter_by(user_id=user.id).delete()
+            db.session.flush()
 
-        flash(f'User {user.username} has been permanently deleted', 'success')
-        current_app.logger.info(f"User {user.username} deleted successfully by admin {current_user.username}")
+            CompanySettings.query.filter_by(user_id=user.id).delete()
+            db.session.flush()
+
+            UploadedFile.query.filter_by(user_id=user.id).delete()
+            db.session.flush()
+
+            # Finally delete the user
+            db.session.delete(user)
+            db.session.commit()
+
+            flash(f'User {user.username} has been permanently deleted', 'success')
+            current_app.logger.info(f"User {user.username} deleted successfully by admin {current_user.username}")
+
+        except Exception as db_error:
+            db.session.rollback()
+            error_msg = str(db_error)
+            current_app.logger.error(f"Database error while deleting user {user.username}: {error_msg}")
+            flash(f'Database error while deleting user: {error_msg}', 'error')
+            return redirect(url_for('admin.deactivated_subscribers'))
 
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error deleting user: {str(e)}")
-        flash('Error deleting user', 'error')
+        error_msg = str(e)
+        current_app.logger.error(f"Error deleting user: {error_msg}")
+        flash(f'Error deleting user: {error_msg}', 'error')
 
     return redirect(url_for('admin.deactivated_subscribers'))
