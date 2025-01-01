@@ -34,7 +34,8 @@ class BankStatementService:
             'empty_file': "The uploaded file appears to be empty. Please check the file contents.",
             'processing_error': "We encountered an issue while processing your file. Please try again.",
             'db_error': "There was a problem saving your data. Please try again.",
-            'unknown': "An unexpected error occurred. Please try again or contact support."
+            'unknown': "An unexpected error occurred. Please try again or contact support.",
+            'file_save_error': "Failed to save the uploaded file. Please try again."
         }
         base_message = error_messages.get(error_type, error_messages['unknown'])
         if details:
@@ -75,44 +76,48 @@ class BankStatementService:
                     'error_type': 'file_type'
                 }
 
-            # Save file temporarily
-            temp_path = os.path.join('/tmp', secure_filename(file.filename))
-            file.save(temp_path)
-            logger.info(f"Saved temporary file to: {temp_path}")
+            # Save file temporarily with proper error handling
+            try:
+                temp_path = os.path.join('/tmp', secure_filename(file.filename))
+                file.save(temp_path)
+                logger.info(f"Saved temporary file to: {temp_path}")
+            except Exception as e:
+                error_msg = self.get_friendly_error_message('file_save_error', f"Failed to save file: {str(e)}")
+                upload.set_error(error_msg)
+                db.session.commit()
+                return False, {
+                    'success': False,
+                    'error': error_msg,
+                    'error_type': 'file_save_error'
+                }
 
             try:
                 # Read and validate Excel file
                 df = self.excel_reader.read_excel(temp_path)
-                if df is None:
-                    error_msg = self.get_friendly_error_message(
-                        'processing_error',
-                        '; '.join(self.excel_reader.get_errors())
-                    )
-                    logger.error(f"Excel reading failed: {error_msg}")
+                if df is None or df.empty:
+                    error_msg = self.get_friendly_error_message('empty_file')
                     upload.set_error(error_msg)
                     db.session.commit()
                     return False, {
                         'success': False,
                         'error': error_msg,
-                        'error_type': 'processing_error',
-                        'details': self.excel_reader.get_errors()
+                        'error_type': 'empty_file'
                     }
 
-                # Validate data with improved error feedback
-                if not self.excel_reader.validate_data(df):
-                    error_type = 'missing_columns' if any('missing' in err.lower() for err in self.excel_reader.get_errors()) else 'processing_error'
+                # Validate required columns
+                required_columns = ['Date', 'Description', 'Amount']
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                if missing_columns:
                     error_msg = self.get_friendly_error_message(
-                        error_type,
-                        '; '.join(self.excel_reader.get_errors())
+                        'missing_columns',
+                        f"Missing columns: {', '.join(missing_columns)}"
                     )
-                    logger.error(f"Data validation failed: {error_msg}")
                     upload.set_error(error_msg)
                     db.session.commit()
                     return False, {
                         'success': False,
                         'error': error_msg,
-                        'error_type': error_type,
-                        'details': self.excel_reader.get_errors()
+                        'error_type': 'missing_columns'
                     }
 
                 # Process transactions with enhanced progress tracking
@@ -132,7 +137,7 @@ class BankStatementService:
                             amount=float(row['Amount']),  # Convert to float
                             account_id=account_id,
                             user_id=user_id,
-                            status='pending',  # Mark as pending for iCountant processing
+                            status='pending',  # Mark as pending for processing
                             source='bank_statement'
                         )
                         db.session.add(transaction)
