@@ -40,8 +40,6 @@ class FinancialGoal(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user = relationship('User', back_populates='financial_goals')
-
     def __repr__(self):
         return f'<FinancialGoal {self.name}>'
 
