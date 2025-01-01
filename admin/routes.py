@@ -10,7 +10,7 @@ import pandas as pd
 import os
 
 from . import admin, admin_required
-from models import db, User, AdminChartOfAccounts, Account, Transaction, CompanySettings, UploadedFile # Added imports
+from models import db, User, AdminChartOfAccounts, Account, Transaction, CompanySettings, UploadedFile, BankStatementUpload
 from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm, CompanySettingsForm
 
 @admin.route('/charts-of-accounts', methods=['GET'])
@@ -476,7 +476,8 @@ def delete_subscriber(user_id):
             Transaction.query.filter_by(user_id=user.id).first() is not None,
             Account.query.filter_by(user_id=user.id).first() is not None,
             CompanySettings.query.filter_by(user_id=user.id).first() is not None,
-            UploadedFile.query.filter_by(user_id=user.id).first() is not None
+            UploadedFile.query.filter_by(user_id=user.id).first() is not None,
+            BankStatementUpload.query.filter_by(user_id=user.id).first() is not None
         ])
 
         if has_active_data:
@@ -487,12 +488,22 @@ def delete_subscriber(user_id):
 
         try:
             # Delete user's data in specific order to handle dependencies
+
+            # First, delete bank statement uploads that reference accounts
+            bank_statements = BankStatementUpload.query.filter_by(user_id=user.id).all()
+            for statement in bank_statements:
+                db.session.delete(statement)
+            db.session.flush()  # Ensure bank statements are deleted before proceeding
+
+            # Then delete transactions
             Transaction.query.filter_by(user_id=user.id).delete()
             db.session.flush()  # Ensure transactions are deleted before proceeding
 
+            # Now it's safe to delete accounts
             Account.query.filter_by(user_id=user.id).delete()
             db.session.flush()
 
+            # Delete other user-related data
             CompanySettings.query.filter_by(user_id=user.id).delete()
             db.session.flush()
 

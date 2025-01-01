@@ -6,8 +6,7 @@ from flask_wtf.file import FileField, FileRequired, FileAllowed
 from wtforms import SelectField, SubmitField
 from wtforms.validators import DataRequired
 from flask_login import current_user
-
-from models import Account
+from models import Account, BankStatementUpload
 
 class BankStatementUploadForm(FlaskForm):
     """Form for bank statement upload with proper validation"""

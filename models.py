@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, Text, DateTime
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, Text, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -23,6 +23,51 @@ from flask_login import LoginManager
 login_manager = LoginManager()
 
 logger = logging.getLogger(__name__)
+
+class BankStatementUpload(db.Model):
+    """
+    Model for tracking bank statement uploads
+    Completely isolated from historical data processing
+    """
+    __tablename__ = 'bank_statement_upload'
+
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    status = db.Column(
+        SQLEnum('pending', 'processing', 'completed', 'failed', name='bank_statement_status'),
+        nullable=False,
+        default='pending'
+    )
+    error_message = db.Column(db.Text)
+    processing_notes = db.Column(db.Text)
+
+    # Foreign keys with cascade delete
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id', ondelete='CASCADE'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+
+    # Relationships with cascade options - removed duplicate backrefs
+    account = db.relationship('Account')
+    user = db.relationship('User')
+
+    def __repr__(self):
+        return f'<BankStatementUpload {self.filename} ({self.status})>'
+
+    @property
+    def is_processed(self):
+        """Check if upload has been processed"""
+        return self.status in ('completed', 'failed')
+
+    def set_error(self, message: str):
+        """Set error status with message"""
+        self.status = 'failed'
+        self.error_message = message
+
+    def set_success(self, notes: Optional[str] = None):
+        """Mark upload as successfully processed"""
+        self.status = 'completed'
+        if notes:
+            self.processing_notes = notes
 
 class User(UserMixin, db.Model):
     """User model with enhanced security features including MFA and password reset"""
@@ -42,10 +87,11 @@ class User(UserMixin, db.Model):
     reset_token = Column(String(100), unique=True)
     reset_token_expires = Column(DateTime)
 
-    transactions = relationship('Transaction', backref='user', lazy=True, cascade='all, delete-orphan')
-    accounts = relationship('Account', backref='user', lazy=True, cascade='all, delete-orphan')
-    company_settings = relationship('CompanySettings', backref='user', uselist=False, lazy=True, cascade='all, delete-orphan')
-    financial_goals = relationship('FinancialGoal', backref='user', lazy=True, cascade='all, delete-orphan')
+    # Define relationships with cascade delete
+    transactions = relationship('Transaction', backref='user', cascade='all, delete-orphan')
+    accounts = relationship('Account', backref='user', cascade='all, delete-orphan')
+    company_settings = relationship('CompanySettings', backref='user', uselist=False, cascade='all, delete-orphan')
+    bank_statement_uploads = relationship('BankStatementUpload', backref='user_ref', cascade='all, delete-orphan')
 
     def generate_mfa_secret(self):
         """Generate a new MFA secret key"""
@@ -229,6 +275,28 @@ class User(UserMixin, db.Model):
             logger.info(f"Subscription reactivated for user {self.username}")
 
 
+class Account(db.Model):
+    __tablename__ = 'account'
+
+    id = db.Column(db.Integer, primary_key=True)
+    link = db.Column(db.String(20), nullable=False)
+    category = db.Column(String(100), nullable=False)
+    sub_category = db.Column(String(100))
+    account_code = db.Column(String(20))
+    name = db.Column(String(100), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Updated relationships with cascade delete
+    transactions = db.relationship('Transaction', backref='account', cascade='all, delete-orphan')
+    bank_statement_uploads = db.relationship('BankStatementUpload', 
+                                           backref='account_ref',
+                                           cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<Account {self.link}: {self.name}>'
 
 class UploadedFile(db.Model):
     __tablename__ = 'uploaded_file'
@@ -264,23 +332,6 @@ class Transaction(db.Model):
 
     def __repr__(self):
         return f'<Transaction {self.date}: {self.description}>'
-
-class Account(db.Model):
-    __tablename__ = 'account'
-
-    id = Column(Integer, primary_key=True)
-    link = Column(String(20), nullable=False)
-    category = Column(String(100), nullable=False)
-    sub_category = Column(String(100))
-    account_code = Column(String(20))
-    name = Column(String(100), nullable=False)
-    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def __repr__(self):
-        return f'<Account {self.link}: {self.name}>'
 
 class CompanySettings(db.Model):
     __tablename__ = 'company_settings'
