@@ -90,12 +90,10 @@ class BankStatementUpload(db.Model):
     )
     error_message = Column(Text)
     processing_notes = Column(Text)
-
-    # Foreign keys with cascade delete
     account_id = Column(Integer, ForeignKey('account.id', ondelete='CASCADE'), nullable=False)
     user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
 
-    # Define relationships without duplicate backrefs
+    # Define relationship only on the child side
     account = relationship('Account')
 
     def __repr__(self):
@@ -131,25 +129,25 @@ class User(UserMixin, db.Model):
     subscription_status = Column(String(20), default='pending')
     is_deleted = Column(Boolean, default=False)
 
+    # Security fields
     mfa_secret = Column(String(32))
     mfa_enabled = Column(Boolean, default=False)
     reset_token = Column(String(100), unique=True)
     reset_token_expires = Column(DateTime)
 
-    # Define relationships with cascade delete
+    # Define one-to-many relationships
     transactions = relationship('Transaction', backref='user', cascade='all, delete-orphan')
     accounts = relationship('Account', backref='user', cascade='all, delete-orphan')
-    company_settings = relationship('CompanySettings', backref='user', uselist=False, 
-                                  cascade='all, delete-orphan')
-    bank_statement_uploads = relationship('BankStatementUpload', backref='user', 
-                                        cascade='all, delete-orphan')
-    financial_goals = relationship('FinancialGoal', backref='user', cascade='all, delete-orphan')
+    bank_statement_uploads = relationship('BankStatementUpload', backref='user', cascade='all, delete-orphan')
     alert_configurations = relationship('AlertConfiguration', backref='user', cascade='all, delete-orphan')
     alert_history = relationship('AlertHistory', backref='user', cascade='all, delete-orphan')
     historical_data = relationship('HistoricalData', backref='user', cascade='all, delete-orphan')
     risk_assessments = relationship('RiskAssessment', backref='user', cascade='all, delete-orphan')
-    financial_recommendations = relationship('FinancialRecommendation', backref='user', 
-                                          cascade='all, delete-orphan')
+    financial_recommendations = relationship('FinancialRecommendation', backref='user', cascade='all, delete-orphan')
+    financial_goals = relationship('FinancialGoal', backref='user', cascade='all, delete-orphan')
+
+    # One-to-one relationship
+    company_settings = relationship('CompanySettings', backref='user', uselist=False, cascade='all, delete-orphan')
 
     def set_password(self, password):
         """Set hashed password"""
@@ -157,29 +155,14 @@ class User(UserMixin, db.Model):
             raise ValueError('Password cannot be empty')
         try:
             self.password_hash = generate_password_hash(password)
-            logger.info(f"Password hash generated successfully for user {self.username}")
         except Exception as e:
-            logger.error(f"Error setting password for user {self.username}: {str(e)}")
-            raise
+            raise ValueError(f"Error setting password: {str(e)}")
 
     def check_password(self, password):
         """Check if provided password matches hash"""
-        if not password:
-            logger.warning("Empty password provided for verification")
+        if not password or not self.password_hash:
             return False
-        if not self.password_hash:
-            logger.warning(f"No password hash found for user {self.username}")
-            return False
-        try:
-            result = check_password_hash(self.password_hash, password)
-            if result:
-                logger.info(f"Password verification successful for user {self.username}")
-            else:
-                logger.warning(f"Password verification failed for user {self.username}")
-            return result
-        except Exception as e:
-            logger.error(f"Error verifying password for user {self.username}: {str(e)}")
-            return False
+        return check_password_hash(self.password_hash, password)
 
     def soft_delete(self):
         """Soft delete user by marking as deleted and cleaning up data"""
@@ -211,25 +194,12 @@ def load_user(user_id):
     """Load user by ID with enhanced error handling"""
     try:
         if not user_id:
-            logger.warning("No user_id provided to load_user")
             return None
-
         user = User.query.get(int(user_id))
-        if not user:
-            logger.warning(f"No user found with id {user_id}")
+        if not user or user.is_deleted:
             return None
-
-        # Check if user is deleted or deactivated
-        if user.is_deleted:
-            logger.warning(f"Attempted login by deleted user {user_id}")
-            return None
-
         return user
-    except ValueError as e:
-        logger.error(f"Invalid user_id format: {user_id}")
-        return None
     except Exception as e:
-        logger.error(f"Error loading user {user_id}: {str(e)}")
         return None
 
 class CompanySettings(db.Model):
