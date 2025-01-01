@@ -105,7 +105,7 @@ def create_app(env=None):
                     (admin, '/admin'),
                     (historical_data, ''),
                     (suggestions, ''),
-                    (chat, ''),
+                    (chat, '/chat'),  # Updated to match blueprint's url_prefix
                     (main, ''),
                     (reports, '/reports'),
                     (bank_statements, '')
