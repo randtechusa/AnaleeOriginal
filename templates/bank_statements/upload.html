@@ -64,44 +64,6 @@
             </form>
         </div>
     </div>
-
-    <!-- Recent Uploads -->
-    <div class="card">
-        <div class="card-body">
-            <h5 class="card-title">Recent Uploads</h5>
-            {% if recent_files %}
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Filename</th>
-                                <th>Upload Date</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for file in recent_files %}
-                                <tr>
-                                    <td>{{ file.filename }}</td>
-                                    <td>{{ file.upload_date.strftime('%Y-%m-%d %H:%M') }}</td>
-                                    <td>{{ file.status }}</td>
-                                    <td>
-                                        {% if file.status == 'completed' %}
-                                            <a href="{{ url_for('main.analyze', file_id=file.id) }}" 
-                                               class="btn btn-sm btn-primary">View</a>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <p class="text-muted">No recent uploads</p>
-            {% endif %}
-        </div>
-    </div>
 </div>
 {% endblock %}
 
@@ -118,16 +80,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const errorText = document.getElementById('errorText');
     const errorDetails = document.getElementById('errorDetails');
     const uploadButton = document.getElementById('uploadButton');
-    const csrfToken = document.querySelector('input[name="csrf_token"]').value;
 
     function showError(message, details = []) {
         errorContainer.classList.remove('d-none');
         errorText.textContent = message;
-
-        // Clear previous details
         errorDetails.innerHTML = '';
 
-        // Add details if provided
         if (details && details.length > 0) {
             const detailsList = document.createElement('ul');
             detailsList.className = 'mb-0 pl-3';
@@ -149,39 +107,40 @@ document.addEventListener('DOMContentLoaded', function() {
         progressBar.classList.remove('bg-danger');
         statusText.textContent = 'Processing...';
         processedRows.textContent = '0';
-        uploadButton.disabled = false;
     }
 
     form.onsubmit = async function(e) {
         e.preventDefault();
-
-        // Reset UI state
         resetUI();
+
+        const formData = new FormData(form);
+        uploadButton.disabled = true;
         progressDiv.classList.remove('d-none');
         statusDiv.classList.remove('d-none');
-        uploadButton.disabled = true;
 
         try {
-            const formData = new FormData(form);
-
-            const response = await fetch(form.action || window.location.href, {
+            const response = await fetch(form.action, {
                 method: 'POST',
                 body: formData,
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRFToken': csrfToken
-                }
+                    'X-CSRFToken': form.querySelector('input[name="csrf_token"]').value
+                },
+                credentials: 'same-origin'
             });
 
             let result;
             try {
                 result = await response.json();
-            } catch (jsonError) {
-                throw new Error('Invalid server response');
+            } catch (parseError) {
+                throw new Error('Server returned an invalid response. Please try again.');
             }
 
             if (!response.ok) {
-                throw new Error(result.error || `Upload failed: ${response.statusText}`);
+                throw {
+                    message: result.error || `Upload failed: ${response.statusText}`,
+                    details: result.details || []
+                };
             }
 
             if (result.success) {
@@ -189,17 +148,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 progressBar.textContent = '100%';
                 statusText.textContent = 'Upload successful!';
                 statusDiv.className = 'alert alert-success';
+
                 if (result.rows_processed) {
                     processedRows.textContent = result.rows_processed;
                 }
 
-                // Show any processing notes
+                // Show processing notes if any
                 if (result.processing_notes && result.processing_notes.length > 0) {
                     showError('Processing Notes:', result.processing_notes);
                     errorContainer.classList.remove('alert-danger');
                     errorContainer.classList.add('alert-info');
                 }
 
+                // Reload page after success
                 setTimeout(() => window.location.reload(), 2000);
             } else {
                 throw new Error(result.error || 'Upload failed');
