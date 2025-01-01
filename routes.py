@@ -15,6 +15,7 @@ from models import (
 )
 from forms.company import CompanySettingsForm
 from ai_insights import FinancialInsightsGenerator  # Add import for iCountant interface
+from predictive_features import PredictiveFeatures # Add after the existing imports
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -367,6 +368,71 @@ def analyze(file_id):
         logger.exception("Full analyze route error:")
         flash('Error loading transaction data')
         return redirect(url_for('main.upload'))
+
+@main.route('/analyze/similar-transactions', methods=['POST'])
+@login_required
+def find_similar_transactions():
+    """ERF: Find similar transactions based on description and explanation"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+        explanation = data.get('explanation', '').strip()
+
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+
+        predictor = PredictiveFeatures()
+        similar_transactions = predictor.find_similar_transactions(description, explanation)
+
+        return jsonify({
+            'success': True,
+            'similar_transactions': similar_transactions
+        })
+
+    except Exception as e:
+        logger.error(f"Error finding similar transactions: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/analyze/suggest-account', methods=['POST'])
+@login_required
+def suggest_account():
+    """ASF: Suggest account based on description and explanation"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+        explanation = data.get('explanation', '').strip()
+
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+
+        predictor = PredictiveFeatures()
+        suggestion = predictor.suggest_account(description, explanation)
+
+        return jsonify(suggestion)
+
+    except Exception as e:
+        logger.error(f"Error suggesting account: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/analyze/suggest-explanation', methods=['POST'])
+@login_required
+def suggest_explanation():
+    """ESF: Suggest explanation based on transaction description"""
+    try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+
+        if not description:
+            return jsonify({'error': 'Description is required'}), 400
+
+        predictor = PredictiveFeatures()
+        suggestion = predictor.suggest_explanation(description)
+
+        return jsonify(suggestion)
+
+    except Exception as e:
+        logger.error(f"Error suggesting explanation: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @main.route('/account/<int:account_id>/edit', methods=['GET', 'POST'])
 @login_required
