@@ -96,8 +96,7 @@ class BankStatementUpload(db.Model):
     user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
 
     # Define relationships without duplicate backrefs
-    account = relationship('Account', foreign_keys=[account_id])
-    user = relationship('User', foreign_keys=[user_id])
+    account = relationship('Account')
 
     def __repr__(self):
         return f'<BankStatementUpload {self.filename} ({self.status})>'
@@ -142,14 +141,15 @@ class User(UserMixin, db.Model):
     accounts = relationship('Account', backref='user', cascade='all, delete-orphan')
     company_settings = relationship('CompanySettings', backref='user', uselist=False, 
                                   cascade='all, delete-orphan')
-    bank_statement_uploads = relationship('BankStatementUpload', backref='user',
+    bank_statement_uploads = relationship('BankStatementUpload', backref='user', 
                                         cascade='all, delete-orphan')
     financial_goals = relationship('FinancialGoal', backref='user', cascade='all, delete-orphan')
-    alert_configurations = relationship('AlertConfiguration', cascade='all, delete-orphan')
-    alert_history = relationship('AlertHistory', cascade='all, delete-orphan')
-    historical_data = relationship('HistoricalData', cascade='all, delete-orphan')
-    risk_assessments = relationship('RiskAssessment', cascade='all, delete-orphan')
-    financial_recommendations = relationship('FinancialRecommendation', cascade='all, delete-orphan')
+    alert_configurations = relationship('AlertConfiguration', backref='user', cascade='all, delete-orphan')
+    alert_history = relationship('AlertHistory', backref='user', cascade='all, delete-orphan')
+    historical_data = relationship('HistoricalData', backref='user', cascade='all, delete-orphan')
+    risk_assessments = relationship('RiskAssessment', backref='user', cascade='all, delete-orphan')
+    financial_recommendations = relationship('FinancialRecommendation', backref='user', 
+                                          cascade='all, delete-orphan')
 
     def set_password(self, password):
         """Set hashed password"""
