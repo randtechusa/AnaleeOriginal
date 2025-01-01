@@ -272,7 +272,7 @@ def analyze_list():
 @main.route('/analyze/<int:file_id>')
 @login_required
 def analyze(file_id):
-    """Analyze specific file transactions"""
+    """Analyze specific file transactions with enhanced processing checks"""
     logger.info(f"Starting analysis for file_id: {file_id} for user {current_user.id}")
 
     try:
@@ -295,7 +295,7 @@ def analyze(file_id):
             flash('File not found or unauthorized access')
             return redirect(url_for('main.upload'))
 
-        # Load ALL transactions for the file
+        # Load transactions with improved filtering
         try:
             transactions = Transaction.query.filter_by(
                 file_id=file_id,
@@ -322,10 +322,15 @@ def analyze(file_id):
 
             logger.info(f"Successfully loaded {len(accounts)} active accounts")
 
-            # Initialize insights for each transaction
+            # Initialize insights with improved processing logic
             transaction_insights = {}
             for transaction in transactions:
-                logger.info(f"Processing transaction {transaction.id}: {transaction.description}")
+                # Only mark as needing processing if no account AND no explanation
+                needs_processing = (
+                    transaction.account_id is None and 
+                    (transaction.explanation is None or transaction.explanation.strip() == '')
+                )
+
                 transaction_insights[transaction.id] = {
                     'similar_transactions': [],
                     'pattern_matches': [],
@@ -334,12 +339,14 @@ def analyze(file_id):
                     'explanation_suggestion': None,
                     'confidence': 0,
                     'ai_processed': False,
-                    'needs_processing': transaction.account_id is None
+                    'needs_processing': needs_processing
                 }
 
-            # Count unprocessed transactions
-            unprocessed_count = sum(1 for t in transactions if t.account_id is None)
-            logger.info(f"Found {unprocessed_count} unprocessed transactions")
+            # Count unprocessed transactions with improved criteria
+            unprocessed_count = sum(1 for t in transactions 
+                                  if transaction_insights[t.id]['needs_processing'])
+
+            logger.info(f"Found {unprocessed_count} transactions that need processing")
 
             if unprocessed_count == 0:
                 flash('All transactions have been processed')
@@ -838,7 +845,6 @@ def expense_forecast():
         sorted_months = sorted(monthly_data.keys())
         monthly_labels = [datetime.strptime(m, '%Y-%m').strftime('%b %Y') for m in sorted_months]
         monthly_amounts = [monthly_data[m]['amount'] for m in sorted_months]
-
         # Calculate confidence intervals
         import statistics
         mean_amount = sum(monthly_amounts) / len(monthly_amounts) if monthly_amounts else 0
