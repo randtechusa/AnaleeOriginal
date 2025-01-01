@@ -418,7 +418,7 @@ def analyze(file_id):
 
 @main.route('/analyze/similar-transactions', methods=['POST'])
 @login_required
-def find_similar_transactions():
+def find_similar_transactions_api():
     """ERF: Find similar transactions based on description and explanation"""
     try:
         data = request.get_json()

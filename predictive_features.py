@@ -24,7 +24,12 @@ class PredictiveFeatures:
     def __init__(self):
         self.text_similarity_threshold = 0.70  # 70% text similarity
         self.semantic_similarity_threshold = 0.95  # 95% semantic similarity
-        self.client = get_openai_client()
+        try:
+            self.client = get_openai_client()
+            logger.info("OpenAI client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+            self.client = None
         logger.info("PredictiveFeatures initialized with thresholds - Text: 70%, Semantic: 95%")
 
     def find_similar_transactions(self, description: str, explanation: str = None) -> List[Dict]:
@@ -52,15 +57,21 @@ class PredictiveFeatures:
             if self.client and explanation:
                 try:
                     response = self.client.embeddings.create(
-                        model="text-embedding-3-small",
-                        input=[explanation]
+                        model="text-embedding-ada-002",  # Updated to use text-embedding-ada-002
+                        input=explanation,
+                        encoding_format="float"
                     )
                     current_embedding = response.data[0].embedding
                     logger.info("Successfully generated embedding for current explanation")
                 except Exception as e:
                     logger.error(f"Error getting embeddings: {str(e)}")
+                    current_embedding = None
 
             for transaction in transactions:
+                # Skip if it's the same transaction
+                if transaction.description == description:
+                    continue
+
                 # Calculate text similarity
                 text_ratio = SequenceMatcher(
                     None, 
@@ -74,13 +85,16 @@ class PredictiveFeatures:
                 if current_embedding and transaction.explanation:
                     try:
                         response = self.client.embeddings.create(
-                            model="text-embedding-3-small",
-                            input=[transaction.explanation]
+                            model="text-embedding-ada-002",
+                            input=transaction.explanation,
+                            encoding_format="float"
                         )
                         tx_embedding = response.data[0].embedding
-                        semantic_ratio = np.dot(current_embedding, tx_embedding)
+                        semantic_ratio = float(np.dot(current_embedding, tx_embedding))
+                        logger.info(f"Calculated semantic similarity: {semantic_ratio}")
                     except Exception as e:
                         logger.error(f"Error calculating semantic similarity: {str(e)}")
+                        semantic_ratio = 1.0
 
                 # Only include if both thresholds are met
                 if (text_ratio >= self.text_similarity_threshold and 
@@ -94,11 +108,18 @@ class PredictiveFeatures:
                     })
 
             logger.info(f"Found {len(similar_transactions)} similar transactions")
-            return similar_transactions
+            return {
+                'success': True,
+                'similar_transactions': similar_transactions
+            }
 
         except Exception as e:
             logger.error(f"Error finding similar transactions: {str(e)}")
-            return []
+            return {
+                'success': False,
+                'error': str(e),
+                'similar_transactions': []
+            }
 
     def replicate_explanation(self, transaction_id: int, similar_transaction_id: int) -> bool:
         """
@@ -204,66 +225,6 @@ class PredictiveFeatures:
             return {
                 'success': False,
                 'message': f'Error suggesting account: {str(e)}'
-            }
-
-    def suggest_explanation(self, description: str) -> Dict:
-        """
-        ESF: Suggest explanation based on transaction description and past data
-        Args:
-            description: Transaction description
-        Returns:
-            Dictionary containing suggested explanation and confidence score
-        """
-        try:
-            # Find similar past transactions
-            similar_transactions = self.find_similar_transactions(description, '')
-
-            if similar_transactions:
-                # Use the explanation from the most similar transaction
-                best_match = max(
-                    similar_transactions,
-                    key=lambda x: x['text_similarity']
-                )
-
-                return {
-                    'success': True,
-                    'explanation': best_match['explanation'],
-                    'confidence': best_match['text_similarity'],
-                    'source': 'historical_data'
-                }
-
-            # If no similar transactions found and AI available, get AI suggestion
-            if self.client:
-                try:
-                    response = self.client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": "You are a financial transaction expert."},
-                            {"role": "user", "content": f"Suggest a clear explanation for this transaction:\n{description}"}
-                        ],
-                        temperature=0.3
-                    )
-
-                    return {
-                        'success': True,
-                        'explanation': response.choices[0].message.content.strip(),
-                        'confidence': 0.7,  # Default confidence for AI suggestions
-                        'source': 'ai_generated'
-                    }
-
-                except Exception as e:
-                    logger.error(f"Error getting AI explanation: {str(e)}")
-
-            return {
-                'success': False,
-                'message': 'No similar transactions found and AI unavailable'
-            }
-
-        except Exception as e:
-            logger.error(f"Error suggesting explanation: {str(e)}")
-            return {
-                'success': False,
-                'message': f'Error suggesting explanation: {str(e)}'
             }
 
     def _basic_account_matching(self, text: str, accounts: List[Account]) -> Dict:

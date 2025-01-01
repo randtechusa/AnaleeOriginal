@@ -656,7 +656,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const explanation = this.value.trim();
             const similarTransactionsDiv = document.getElementById(`similar-transactions-${transactionId}`);
 
-            if (explanation) {
+            if (explanation && description) {
                 try {
                     const response = await fetch('/analyze/similar-transactions', {
                         method: 'POST',
@@ -671,7 +671,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     const data = await response.json();
 
-                    if (data.success && data.similar_transactions.length > 0) {
+                    if (data.success && data.similar_transactions && data.similar_transactions.length > 0) {
                         const similarList = data.similar_transactions.map(t => `
                             <button class="list-group-item list-group-item-action" 
                                     onclick="replicateExplanation(${transactionId}, ${t.id})">
@@ -699,6 +699,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 } catch (error) {
                     console.error('Error finding similar transactions:', error);
+                    similarTransactionsDiv.style.display = 'none';
                 }
             } else {
                 similarTransactionsDiv.style.display = 'none';
@@ -707,6 +708,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// Function to handle explanation replication
 async function replicateExplanation(transactionId, similarTransactionId) {
     try {
         const response = await fetch('/analyze/replicate-explanation', {
@@ -736,7 +738,7 @@ async function replicateExplanation(transactionId, similarTransactionId) {
                 document.getElementById(`similar-transactions-${transactionId}`).style.display = 'none';
             }
         } else {
-            alert('Failed to replicate explanation: ' + data.message);
+            alert('Failed to replicate explanation: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('Error replicating explanation:', error);
