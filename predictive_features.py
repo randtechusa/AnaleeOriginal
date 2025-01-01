@@ -25,17 +25,18 @@ class PredictiveFeatures:
         self.text_similarity_threshold = 0.70  # 70% text similarity
         self.semantic_similarity_threshold = 0.95  # 95% semantic similarity
         self.client = get_openai_client()
+        logger.info("PredictiveFeatures initialized with thresholds - Text: 70%, Semantic: 95%")
 
-    def find_similar_transactions(self, description: str, explanation: str) -> List[Dict]:
+    def find_similar_transactions(self, description: str, explanation: str = None) -> List[Dict]:
         """
         ERF: Find similar transactions based on text and semantic similarity
 
         Args:
             description: Current transaction description
-            explanation: Current transaction explanation
+            explanation: Current transaction explanation (optional)
 
         Returns:
-            List of similar transactions with their similarity scores
+            List of similar transactions with their similarity scores and explanations
         """
         try:
             # Get all transactions with explanations
@@ -44,8 +45,10 @@ class PredictiveFeatures:
             ).all()
 
             similar_transactions = []
+            logger.info(f"Finding similar transactions for description: {description}")
 
-            # Calculate semantic embeddings if client available
+            # Calculate semantic embeddings if client available and explanation provided
+            current_embedding = None
             if self.client and explanation:
                 try:
                     response = self.client.embeddings.create(
@@ -53,11 +56,9 @@ class PredictiveFeatures:
                         input=[explanation]
                     )
                     current_embedding = response.data[0].embedding
+                    logger.info("Successfully generated embedding for current explanation")
                 except Exception as e:
                     logger.error(f"Error getting embeddings: {str(e)}")
-                    current_embedding = None
-            else:
-                current_embedding = None
 
             for transaction in transactions:
                 # Calculate text similarity
@@ -92,23 +93,46 @@ class PredictiveFeatures:
                         'semantic_similarity': semantic_ratio
                     })
 
+            logger.info(f"Found {len(similar_transactions)} similar transactions")
             return similar_transactions
 
         except Exception as e:
             logger.error(f"Error finding similar transactions: {str(e)}")
             return []
 
-    def suggest_account(self, description: str, explanation: str) -> Dict:
+    def replicate_explanation(self, transaction_id: int, similar_transaction_id: int) -> bool:
         """
-        ASF: Suggest account based on description and explanation
+        ERF: Replicate explanation from a similar transaction to the current one
 
         Args:
-            description: Transaction description
-            explanation: Transaction explanation
+            transaction_id: ID of the transaction to update
+            similar_transaction_id: ID of the transaction to copy explanation from
 
         Returns:
-            Dictionary containing suggested account and confidence score
+            Boolean indicating success
         """
+        try:
+            # Get source and target transactions
+            source = Transaction.query.get(similar_transaction_id)
+            target = Transaction.query.get(transaction_id)
+
+            if not source or not target:
+                logger.error("Source or target transaction not found")
+                return False
+
+            # Copy explanation
+            target.explanation = source.explanation
+            db.session.commit()
+            logger.info(f"Successfully replicated explanation from transaction {similar_transaction_id} to {transaction_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error replicating explanation: {str(e)}")
+            db.session.rollback()
+            return False
+
+    def suggest_account(self, description: str, explanation: str) -> Dict:
+        """ASF: Suggest account based on description and explanation"""
         try:
             # Get active accounts
             accounts = Account.query.filter_by(is_active=True).all()
@@ -185,10 +209,8 @@ class PredictiveFeatures:
     def suggest_explanation(self, description: str) -> Dict:
         """
         ESF: Suggest explanation based on transaction description and past data
-
         Args:
             description: Transaction description
-
         Returns:
             Dictionary containing suggested explanation and confidence score
         """

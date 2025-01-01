@@ -159,6 +159,46 @@ def dashboard():
 # Moving explanation API to a separate blueprint to avoid conflicts
 
 
+@main.route('/analyze/replicate-explanation', methods=['POST'])
+@login_required
+def replicate_explanation():
+    """ERF: Handle explanation replication between similar transactions"""
+    try:
+        data = request.get_json()
+        transaction_id = data.get('transaction_id')
+        similar_transaction_id = data.get('similar_transaction_id')
+
+        if not transaction_id or not similar_transaction_id:
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        # Verify transaction ownership
+        transaction = Transaction.query.filter_by(
+            id=transaction_id,
+            user_id=current_user.id
+        ).first()
+
+        if not transaction:
+            return jsonify({'error': 'Transaction not found'}), 404
+
+        # Initialize predictive features and replicate explanation
+        predictor = PredictiveFeatures()
+        success = predictor.replicate_explanation(transaction_id, similar_transaction_id)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Explanation replicated successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to replicate explanation'
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Error replicating explanation: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @main.route('/logout')
 @login_required
 def logout():
