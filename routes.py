@@ -14,6 +14,7 @@ from models import (
     UploadedFile, AdminChartOfAccounts
 )
 from forms.company import CompanySettingsForm
+from ai_insights import FinancialInsightsGenerator  # Add import for iCountant interface
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
