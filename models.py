@@ -63,6 +63,110 @@ class FinancialGoal(db.Model):
     def __repr__(self):
         return f'<FinancialGoal {self.name}: {self.current_amount}/{self.target_amount}>'
 
+class User(UserMixin, db.Model):
+    """User model with enhanced security features"""
+    __tablename__ = 'user'
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String(64), unique=True, nullable=False)
+    email = Column(String(120), unique=True, nullable=False)
+    password_hash = Column(String(256))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_admin = Column(Boolean, default=False)
+    subscription_status = Column(String(20), default='pending')
+    is_deleted = Column(Boolean, default=False)
+
+    # Security fields
+    mfa_secret = Column(String(32))
+    mfa_enabled = Column(Boolean, default=False)
+    reset_token = Column(String(100), unique=True)
+    reset_token_expires = Column(DateTime)
+
+    # Relationships - explicitly define backref names to avoid conflicts
+    financial_goals = relationship('FinancialGoal', backref='user_goals', cascade='all, delete-orphan')
+    transactions = relationship('Transaction', backref='transaction_user', cascade='all, delete-orphan')
+    accounts = relationship('Account', backref='account_user', cascade='all, delete-orphan')
+    bank_statement_uploads = relationship('BankStatementUpload', backref='upload_user', cascade='all, delete-orphan')
+    alert_configurations = relationship('AlertConfiguration', backref='alert_config_user', cascade='all, delete-orphan')
+    alert_history = relationship('AlertHistory', backref='alert_history_user', cascade='all, delete-orphan')
+    historical_data = relationship('HistoricalData', backref='historical_data_user', cascade='all, delete-orphan')
+    risk_assessments = relationship('RiskAssessment', backref='risk_assessment_user', cascade='all, delete-orphan')
+    financial_recommendations = relationship('FinancialRecommendation', backref='recommendation_user', cascade='all, delete-orphan')
+    company_settings = relationship('CompanySettings', backref='company_settings_user', uselist=False, cascade='all, delete-orphan')
+
+    def set_password(self, password):
+        """Set hashed password"""
+        if not password:
+            raise ValueError('Password cannot be empty')
+        try:
+            self.password_hash = generate_password_hash(password)
+        except Exception as e:
+            logger.error(f"Error setting password: {str(e)}")
+            raise ValueError(f"Error setting password: {str(e)}")
+
+    def check_password(self, password):
+        """Check if provided password matches hash"""
+        if not password or not self.password_hash:
+            return False
+        try:
+            return check_password_hash(self.password_hash, password)
+        except Exception as e:
+            logger.error(f"Error checking password: {str(e)}")
+            return False
+
+    def soft_delete(self):
+        """Soft delete user by marking as deleted and cleaning up data"""
+        try:
+            logger.info(f"Starting soft delete process for user {self.id}")
+
+            # Mark user as deleted first
+            self.is_deleted = True
+            self.subscription_status = 'deactivated'
+            self.mfa_secret = None
+            self.reset_token = None
+            self.reset_token_expires = None
+
+            # Save changes immediately
+            db.session.commit()
+            logger.info(f"Successfully marked user {self.id} as deleted")
+
+            return True
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to soft delete user {self.id}: {str(e)}")
+            raise
+
+    @property
+    def is_active(self):
+        """Check if user is active for Flask-Login"""
+        return not self.is_deleted and self.subscription_status != 'deactivated'
+
+    def __repr__(self):
+        return f'<User {self.username}>'
+
+@login_manager.user_loader
+def load_user(user_id):
+    """Load user by ID with enhanced error handling"""
+    try:
+        if not user_id:
+            logger.warning("Attempted to load user with empty ID")
+            return None
+
+        user = User.query.get(int(user_id))
+        if not user:
+            logger.warning(f"No user found with ID {user_id}")
+            return None
+
+        if user.is_deleted:
+            logger.info(f"Attempted to load deleted user {user_id}")
+            return None
+
+        return user
+    except Exception as e:
+        logger.error(f"Error loading user {user_id}: {str(e)}")
+        return None
+
 class Transaction(db.Model):
     """Model for financial transactions"""
     __tablename__ = 'transaction'
@@ -153,160 +257,6 @@ class BankStatementUpload(db.Model):
         self.status = 'completed'
         if notes:
             self.processing_notes = notes
-
-class User(UserMixin, db.Model):
-    """User model with enhanced security features"""
-    __tablename__ = 'user'
-
-    id = Column(Integer, primary_key=True)
-    username = Column(String(64), unique=True, nullable=False)
-    email = Column(String(120), unique=True, nullable=False)
-    password_hash = Column(String(256))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    is_admin = Column(Boolean, default=False)
-    subscription_status = Column(String(20), default='pending')
-    is_deleted = Column(Boolean, default=False)
-
-    # Security fields
-    mfa_secret = Column(String(32))
-    mfa_enabled = Column(Boolean, default=False)
-    reset_token = Column(String(100), unique=True)
-    reset_token_expires = Column(DateTime)
-
-    # Relationships - explicitly define backref names to avoid conflicts
-    financial_goals = relationship('FinancialGoal', 
-                                 backref='user_goals',
-                                 cascade='all, delete-orphan',
-                                 lazy='dynamic')
-    transactions = relationship('Transaction',
-                              backref='transaction_user',
-                              lazy='dynamic')
-    accounts = relationship('Account',
-                          backref='account_user',
-                          lazy='dynamic')
-    bank_statement_uploads = relationship('BankStatementUpload',
-                                        backref='upload_user',
-                                        lazy='dynamic')
-    alert_configurations = relationship('AlertConfiguration',
-                                      backref='alert_config_user',
-                                      lazy='dynamic')
-    alert_history = relationship('AlertHistory',
-                               backref='alert_history_user',
-                               lazy='dynamic')
-    historical_data = relationship('HistoricalData',
-                                 backref='historical_data_user',
-                                 lazy='dynamic')
-    risk_assessments = relationship('RiskAssessment',
-                                  backref='risk_assessment_user',
-                                  lazy='dynamic')
-    financial_recommendations = relationship('FinancialRecommendation',
-                                          backref='recommendation_user',
-                                          lazy='dynamic')
-    company_settings = relationship('CompanySettings',
-                                  backref='company_settings_user',
-                                  uselist=False)
-
-    def set_password(self, password):
-        """Set hashed password"""
-        if not password:
-            raise ValueError('Password cannot be empty')
-        try:
-            self.password_hash = generate_password_hash(password)
-        except Exception as e:
-            logger.error(f"Error setting password: {str(e)}")
-            raise ValueError(f"Error setting password: {str(e)}")
-
-    def check_password(self, password):
-        """Check if provided password matches hash"""
-        if not password or not self.password_hash:
-            return False
-        try:
-            return check_password_hash(self.password_hash, password)
-        except Exception as e:
-            logger.error(f"Error checking password: {str(e)}")
-            return False
-
-    def soft_delete(self):
-        """Soft delete user by marking as deleted and cleaning up data"""
-        try:
-            # Start a transaction to ensure all operations complete together
-            db.session.begin_nested()
-            logger.info(f"Starting soft delete process for user {self.id}")
-
-            try:
-                # Delete relationships in correct order to avoid foreign key violations
-                for goal in self.financial_goals.all():
-                    db.session.delete(goal)
-                logger.info(f"Deleted financial goals for user {self.id}")
-
-                for data in self.historical_data.all():
-                    db.session.delete(data)
-                logger.info(f"Deleted historical data for user {self.id}")
-
-                for upload in self.bank_statement_uploads.all():
-                    db.session.delete(upload)
-                logger.info(f"Deleted bank statement uploads for user {self.id}")
-
-                for transaction in self.transactions.all():
-                    db.session.delete(transaction)
-                logger.info(f"Deleted transactions for user {self.id}")
-
-                for account in self.accounts.all():
-                    db.session.delete(account)
-                logger.info(f"Deleted accounts for user {self.id}")
-
-                # Mark user as deleted
-                self.is_deleted = True
-                self.subscription_status = 'deactivated'
-                self.mfa_secret = None
-                self.reset_token = None
-                self.reset_token_expires = None
-
-                # Commit the transaction
-                db.session.commit()
-                logger.info(f"Successfully completed soft delete for user {self.id}")
-                return True
-
-            except Exception as e:
-                db.session.rollback()
-                logger.error(f"Error during soft delete operations for user {self.id}: {str(e)}")
-                raise
-
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Failed to soft delete user {self.id}: {str(e)}")
-            raise
-
-    @property
-    def is_active(self):
-        """Check if user is active for Flask-Login"""
-        return not self.is_deleted and self.subscription_status != 'deactivated'
-
-    def __repr__(self):
-        return f'<User {self.username}>'
-
-@login_manager.user_loader
-def load_user(user_id):
-    """Load user by ID with enhanced error handling"""
-    try:
-        if not user_id:
-            logger.warning("Attempted to load user with empty ID")
-            return None
-
-        user = User.query.get(int(user_id))
-        if not user:
-            logger.warning(f"No user found with ID {user_id}")
-            return None
-
-        if user.is_deleted:
-            logger.info(f"Attempted to load deleted user {user_id}")
-            return None
-
-        return user
-    except Exception as e:
-        logger.error(f"Error loading user {user_id}: {str(e)}")
-        return None
 
 class CompanySettings(db.Model):
     __tablename__ = 'company_settings'
