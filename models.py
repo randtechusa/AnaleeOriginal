@@ -134,17 +134,17 @@ class User(UserMixin, db.Model):
     reset_token = Column(String(100), unique=True)
     reset_token_expires = Column(DateTime)
 
-    # Define one-to-many relationships without circular references
-    transactions = relationship('Transaction', backref='user', lazy='dynamic')
-    accounts = relationship('Account', backref='user', lazy='dynamic')
-    bank_statement_uploads = relationship('BankStatementUpload', backref='user', lazy='dynamic')
-    alert_configurations = relationship('AlertConfiguration', backref='user', lazy='dynamic')
-    alert_history = relationship('AlertHistory', backref='user', lazy='dynamic')
-    historical_data = relationship('HistoricalData', backref='user', lazy='dynamic')
-    risk_assessments = relationship('RiskAssessment', backref='user', lazy='dynamic')
-    financial_recommendations = relationship('FinancialRecommendation', backref='user', lazy='dynamic')
-    financial_goals = relationship('FinancialGoal', backref='user', lazy='dynamic')
-    company_settings = relationship('CompanySettings', backref='user', uselist=False)
+    # Define relationships with explicit naming to avoid conflicts
+    transactions = relationship('Transaction', lazy='dynamic', backref='transaction_user')
+    accounts = relationship('Account', lazy='dynamic', backref='account_user')
+    bank_statement_uploads = relationship('BankStatementUpload', lazy='dynamic', backref='upload_user')
+    alert_configurations = relationship('AlertConfiguration', lazy='dynamic', backref='alert_config_user')
+    alert_history = relationship('AlertHistory', lazy='dynamic', backref='alert_history_user')
+    historical_data = relationship('HistoricalData', lazy='dynamic', backref='historical_data_user')
+    risk_assessments = relationship('RiskAssessment', lazy='dynamic', backref='risk_assessment_user')
+    financial_recommendations = relationship('FinancialRecommendation', lazy='dynamic', backref='recommendation_user')
+    financial_goals = relationship('FinancialGoal', lazy='dynamic', backref='goal_user')
+    company_settings = relationship('CompanySettings', uselist=False, backref='company_settings_user')
 
     def set_password(self, password):
         """Set hashed password"""
