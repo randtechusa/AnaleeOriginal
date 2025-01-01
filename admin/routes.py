@@ -471,44 +471,36 @@ def delete_subscriber(user_id):
             flash('Only deactivated users can be deleted', 'error')
             return redirect(url_for('admin.deactivated_subscribers'))
 
-        # Additional verification for active data
-        has_active_data = any([
-            Transaction.query.filter_by(user_id=user.id).first() is not None,
-            Account.query.filter_by(user_id=user.id).first() is not None,
-            CompanySettings.query.filter_by(user_id=user.id).first() is not None,
-            UploadedFile.query.filter_by(user_id=user.id).first() is not None,
-            BankStatementUpload.query.filter_by(user_id=user.id).first() is not None
-        ])
-
-        if has_active_data:
-            current_app.logger.warning(f"Attempting to delete user {user.username} with active data")
-
         # Log the deletion attempt
         current_app.logger.info(f"Admin {current_user.username} deleting user {user.username}")
 
         try:
             # Delete user's data in specific order to handle dependencies
+            BankStatementUpload.query.filter_by(user_id=user.id).delete()
+            db.session.flush()
 
-            # First, delete bank statement uploads that reference accounts
-            bank_statements = BankStatementUpload.query.filter_by(user_id=user.id).all()
-            for statement in bank_statements:
-                db.session.delete(statement)
-            db.session.flush()  # Ensure bank statements are deleted before proceeding
-
-            # Then delete transactions
             Transaction.query.filter_by(user_id=user.id).delete()
-            db.session.flush()  # Ensure transactions are deleted before proceeding
+            db.session.flush()
 
-            # Now it's safe to delete accounts
+            # Delete accounts after transactions are removed
             Account.query.filter_by(user_id=user.id).delete()
             db.session.flush()
 
             # Delete other user-related data
             CompanySettings.query.filter_by(user_id=user.id).delete()
+            UploadedFile.query.filter_by(user_id=user.id).delete()
+            FinancialGoal.query.filter_by(user_id=user.id).delete()
+            AlertConfiguration.query.filter_by(user_id=user.id).delete()
+            AlertHistory.query.filter_by(user_id=user.id).delete()
+            HistoricalData.query.filter_by(user_id=user.id).delete()
+            RiskAssessment.query.filter_by(user_id=user.id).delete()
+            FinancialRecommendation.query.filter_by(user_id=user.id).delete()
             db.session.flush()
 
-            UploadedFile.query.filter_by(user_id=user.id).delete()
-            db.session.flush()
+            # Force logout all sessions for this user
+            from flask_login import logout_user
+            if current_user.id == user.id:
+                logout_user()
 
             # Finally delete the user
             db.session.delete(user)

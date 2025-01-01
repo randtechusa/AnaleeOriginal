@@ -93,12 +93,23 @@ def login():
 
         form = LoginForm()
         if form.validate_on_submit():
-            # Find and verify user
+            # Find and verify user with enhanced status checks
             user = User.query.filter_by(email=form.email.data.lower().strip()).first()
 
-            if not user or not user.check_password(form.password.data):
+            if not user:
+                logger.warning(f"Login attempt with non-existent email: {form.email.data}")
+                flash('Invalid email or password', 'error')
+                return render_template('auth/login.html', form=form)
+
+            if not user.check_password(form.password.data):
                 logger.warning(f"Failed login attempt for email: {form.email.data}")
                 flash('Invalid email or password', 'error')
+                return render_template('auth/login.html', form=form)
+
+            # Enhanced status checks
+            if user.is_deleted:
+                logger.warning(f"Login attempt by deleted user: {form.email.data}")
+                flash('This account has been deleted.', 'error')
                 return render_template('auth/login.html', form=form)
 
             # Handle MFA if enabled
@@ -144,11 +155,9 @@ def logout():
     """Handle user logout with proper cleanup"""
     try:
         # Store user type before logout for proper message
-        was_admin = current_user.is_admin
         user_email = current_user.email
-
         logout_user()
-        session.clear()  # Clear all session data
+        session.clear()  # Clear all session data to prevent session fixation
 
         logger.info(f"User {user_email} logged out successfully")
         flash('You have been logged out successfully.', 'info')

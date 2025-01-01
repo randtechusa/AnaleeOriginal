@@ -130,6 +130,7 @@ class User(UserMixin, db.Model):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_admin = Column(Boolean, default=False)
     subscription_status = Column(String(20), default='pending')
+    is_deleted = Column(Boolean, default=False)
 
     mfa_secret = Column(String(32))
     mfa_enabled = Column(Boolean, default=False)
@@ -173,6 +174,17 @@ class User(UserMixin, db.Model):
         except Exception as e:
             logger.error(f"Error verifying password for user {self.username}: {str(e)}")
             return False
+
+    def soft_delete(self):
+        """Soft delete user by marking as deleted"""
+        self.is_deleted = True
+        self.subscription_status = 'deactivated'
+        logger.info(f"User {self.username} marked as deleted")
+
+    @property
+    def is_active(self):
+        """Check if user is active for Flask-Login"""
+        return not self.is_deleted and self.subscription_status != 'deactivated'
 
     def __repr__(self):
         return f'<User {self.username}>'
