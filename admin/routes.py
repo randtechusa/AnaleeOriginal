@@ -454,7 +454,7 @@ def subscription_stats():
 @login_required
 @admin_required
 def delete_subscriber(user_id):
-    """Delete a deactivated subscriber with additional safety checks"""
+    """Delete a deactivated subscriber and remove all associated data"""
     try:
         # Verify system is not in maintenance mode
         if current_app.config.get('MAINTENANCE_MODE', False):
@@ -475,6 +475,9 @@ def delete_subscriber(user_id):
         current_app.logger.info(f"Admin {current_user.username} deleting user {user.username}")
 
         try:
+            # Mark user as deleted first
+            user.soft_delete()
+
             # Delete user's data in specific order to handle dependencies
             BankStatementUpload.query.filter_by(user_id=user.id).delete()
             db.session.flush()
@@ -486,7 +489,7 @@ def delete_subscriber(user_id):
             Account.query.filter_by(user_id=user.id).delete()
             db.session.flush()
 
-            # Delete other user-related data
+            # Delete all other user-related data
             CompanySettings.query.filter_by(user_id=user.id).delete()
             UploadedFile.query.filter_by(user_id=user.id).delete()
             FinancialGoal.query.filter_by(user_id=user.id).delete()
@@ -497,15 +500,12 @@ def delete_subscriber(user_id):
             FinancialRecommendation.query.filter_by(user_id=user.id).delete()
             db.session.flush()
 
-            # Force logout all sessions for this user
+            # Force logout if the deleted user has any active sessions
             from flask_login import logout_user
             if current_user.id == user.id:
                 logout_user()
 
-            # Finally delete the user
-            db.session.delete(user)
             db.session.commit()
-
             flash(f'User {user.username} has been permanently deleted', 'success')
             current_app.logger.info(f"User {user.username} deleted successfully by admin {current_user.username}")
 
