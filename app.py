@@ -3,7 +3,7 @@ import os
 import logging
 import sys
 from datetime import datetime
-from flask import Flask, current_app
+from flask import Flask, current_app, redirect, url_for
 from flask_migrate import Migrate
 from dotenv import load_dotenv
 from sqlalchemy import text
@@ -67,8 +67,7 @@ def create_app(env=None):
                 'pool_timeout': 30,
                 'pool_recycle': 300,
                 'max_overflow': 2
-            },
-            'DEBUG': True  # Enable debug mode for development
+            }
         })
 
         # Initialize extensions
@@ -89,12 +88,12 @@ def create_app(env=None):
                 db.session.execute(text('SELECT 1'))
                 logger.info("Database connection verified")
 
-                # Import blueprints here to avoid circular imports
+                # Import blueprints
                 from auth import auth
                 from admin import admin
                 from historical_data import historical_data
                 from suggestions import suggestions
-                from chat import chat  
+                from chat import chat
                 from routes import main
                 from reports import reports
                 from bank_statements import bank_statements
@@ -139,7 +138,7 @@ def main():
         app = create_app()
         if app:
             port = int(os.environ.get('PORT', 5000))
-            app.run(host='0.0.0.0', port=port, debug=True)
+            app.run(host='0.0.0.0', port=port)
         else:
             logger.error("Application creation failed")
             sys.exit(1)
