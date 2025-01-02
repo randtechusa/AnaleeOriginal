@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from flask_login import login_required, current_user, logout_user
+from flask_login import current_user, login_required, logout_user
 from sqlalchemy import text
 from werkzeug.utils import secure_filename
 from flask_wtf import FlaskForm
@@ -13,11 +13,6 @@ from models import (
     db, User, CompanySettings, Account, Transaction, 
     UploadedFile, AdminChartOfAccounts
 )
-from forms.company import CompanySettingsForm
-from ai_insights import FinancialInsightsGenerator  # Add import for iCountant interface
-from predictive_features import PredictiveFeatures # Add after the existing imports
-from anomaly_detection import AnomalyDetectionService # Add import for anomaly detection
-
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -60,106 +55,48 @@ main = Blueprint('main', __name__)
 
 @main.route('/')
 def index():
-    """Root route - redirects to appropriate dashboard based on user type"""
-    if current_user.is_authenticated:
-        if current_user.is_admin:
-            logger.info(f"Admin user {current_user.email} redirected to admin dashboard")
-            return redirect(url_for('admin.dashboard'))
-        logger.info(f"Regular user {current_user.email} redirected to main dashboard")
-        return redirect(url_for('main.dashboard'))
-    return redirect(url_for('auth.login'))
+    """Root route - redirects to appropriate dashboard based on authentication status"""
+    try:
+        if current_user.is_authenticated:
+            if current_user.is_deleted:
+                logout_user()
+                flash('This account has been deleted. Please register again.', 'error')
+                return redirect(url_for('auth.login'))
+
+            if current_user.is_admin:
+                return redirect(url_for('admin.dashboard'))
+            return redirect(url_for('main.dashboard'))
+
+        return redirect(url_for('auth.login'))
+    except Exception as e:
+        logger.error(f"Error in index route: {str(e)}")
+        return redirect(url_for('auth.login'))
 
 @main.route('/dashboard')
 @login_required
 def dashboard():
     """Main dashboard view showing financial overview"""
     try:
-        # Check company settings (existing logic)
+        # Check company settings
         company_settings = CompanySettings.query.filter_by(user_id=current_user.id).first()
         if not company_settings:
             flash('Please configure company settings first.')
             return redirect(url_for('main.company_settings'))
 
-        # Get recent transactions and calculate totals (existing logic)
+        # Get recent transactions
         recent_transactions = Transaction.query.filter_by(user_id=current_user.id)\
             .order_by(Transaction.date.desc())\
             .limit(5)\
             .all()
 
-        # Calculate financial metrics (existing logic)
-        total_income = sum(t.amount for t in Transaction.query.filter_by(
-            user_id=current_user.id).filter(Transaction.amount > 0).all()) or 0
-
-        total_expenses = abs(sum(t.amount for t in Transaction.query.filter_by(
-            user_id=current_user.id).filter(Transaction.amount < 0).all())) or 0
-
-        net_position = total_income - total_expenses
-
-        # Add monthly chart data with separate income and expenses
-        monthly_income = {}
-        monthly_expenses = {}
-        all_transactions = Transaction.query.filter_by(user_id=current_user.id)\
-            .order_by(Transaction.date).all()
-
-        for transaction in all_transactions:
-            month_key = transaction.date.strftime('%Y-%m')
-            if month_key not in monthly_income:
-                monthly_income[month_key] = 0
-                monthly_expenses[month_key] = 0
-
-            if transaction.amount > 0:
-                monthly_income[month_key] += transaction.amount
-            else:
-                monthly_expenses[month_key] += abs(transaction.amount)
-
-        # Sort months and prepare chart data
-        sorted_months = sorted(set(monthly_income.keys()) | set(monthly_expenses.keys()))
-        monthly_labels = [datetime.strptime(m, '%Y-%m').strftime('%b %Y') 
-                         for m in sorted_months]
-        monthly_income_data = [monthly_income.get(m, 0) for m in sorted_months]
-        monthly_expenses_data = [monthly_expenses.get(m, 0) for m in sorted_months]
-
-        # Category chart data
-        category_data = {}
-        for transaction in all_transactions:
-            if transaction.account:
-                category = transaction.account.category or 'Uncategorized'
-                if category not in category_data:
-                    category_data[category] = 0
-                category_data[category] += abs(transaction.amount)
-
-        category_labels = list(category_data.keys())
-        category_amounts = [category_data[cat] for cat in category_labels]
-
-        # Return template with all required variables
         return render_template('dashboard.html',
-                           transactions=recent_transactions,
-                           total_income=total_income,
-                           total_expenses=total_expenses,
-                           net_position=net_position,
-                           monthly_labels=monthly_labels,
-                           monthly_income=monthly_income_data,
-                           monthly_expenses=monthly_expenses_data,
-                           category_labels=category_labels,
-                           category_amounts=category_amounts)
+                            transactions=recent_transactions)
 
     except Exception as e:
         logger.error(f"Error loading dashboard: {str(e)}")
         flash('Error loading dashboard data')
-        # Return basic template with empty values
         return render_template('dashboard.html', 
-                             transactions=[],
-                             total_income=0,
-                             total_expenses=0,
-                             net_position=0,
-                             monthly_labels=[],
-                             monthly_income=[],
-                             monthly_expenses=[],
-                             category_labels=[],
-                             category_amounts=[])
-
-# Moving explanation API to a separate blueprint to avoid conflicts
-
+                            transactions=[])
 
 @main.route('/analyze/replicate-explanation', methods=['POST'])
 @login_required
@@ -296,7 +233,6 @@ def company_settings():
         settings=settings,
         months=months
     )
-
 
 
 @main.route('/analyze')
@@ -1449,18 +1385,18 @@ def find_similar_transactions(description):
     except Exception as e:
         logger.error(f"Error finding similar transactions: {str(e)}")
         return []
-
+        
 @main.route('/analyze/anomalies')
 @login_required
 def analyze_anomalies():
     """Analyze transactions for anomalies"""
     try:
         days_back = request.args.get('days', default=90, type=int)
-
+        
         # Initialize anomaly detection service
         detector = AnomalyDetectionService(current_user.id)
         result = detector.detect_anomalies(days_back=days_back)
-
+        
         if result['status'] == 'success':
             return render_template(
                 'anomaly_analysis.html',
@@ -1471,27 +1407,27 @@ def analyze_anomalies():
         else:
             flash(result['message'], 'error')
             return redirect(url_for('main.dashboard'))
-
+        
     except Exception as e:
         logger.error(f"Error in anomaly analysis route: {str(e)}")
         flash('Error analyzing anomalies', 'error')
         return redirect(url_for('main.dashboard'))
-
+        
 @main.route('/api/anomalies')
 @login_required
 def get_anomalies():
     """API endpoint for anomaly detection results"""
     try:
         days_back = request.args.get('days', default=90, type=int)
-
+        
         detector = AnomalyDetectionService(current_user.id)
         result = detector.detect_anomalies(days_back=days_back)
-
+        
         if result['status'] == 'success':
             return jsonify(result)
         else:
             return jsonify({'error': result['message']}), 400
-
+        
     except Exception as e:
         logger.error(f"Error in anomaly API route: {str(e)}")
         return jsonify({'error': str(e)}), 500

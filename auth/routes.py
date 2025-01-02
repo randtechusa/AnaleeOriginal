@@ -25,46 +25,66 @@ logger = logging.getLogger(__name__)
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
     """Handle new user registration"""
-    if current_user.is_authenticated:
-        return redirect(url_for('main.dashboard'))
+    try:
+        if current_user.is_authenticated:
+            logger.info(f"Authenticated user {current_user.id} redirected from registration")
+            return redirect(url_for('main.dashboard'))
 
-    form = RegistrationForm()
-    if form.validate_on_submit():
-        try:
-            user = User(
-                username=form.username.data,
-                email=form.email.data.lower().strip(),
-            )
-            user.set_password(form.password.data)
+        form = RegistrationForm()
+        if form.validate_on_submit():
+            # Check if user already exists but is soft deleted
+            existing_user = User.query.filter_by(email=form.email.data.lower().strip()).first()
 
-            db.session.add(user)
-            db.session.commit()
+            if existing_user:
+                if existing_user.is_deleted:
+                    # Restore soft-deleted account
+                    existing_user.restore_account()
+                    existing_user.set_password(form.password.data)
+                    db.session.commit()
+                    flash('Your account has been restored. Please login.', 'success')
+                    logger.info(f"Restored deleted account for {existing_user.email}")
+                else:
+                    flash('An account with this email already exists.', 'error')
+                return redirect(url_for('auth.login'))
 
-            flash('Registration successful! Please log in.', 'success')
-            logger.info(f"New user registered: {user.email}")
-            return redirect(url_for('auth.login'))
+            try:
+                # Create new user
+                user = User(
+                    username=form.username.data,
+                    email=form.email.data.lower().strip()
+                )
+                user.set_password(form.password.data)
+                db.session.add(user)
+                db.session.commit()
+                logger.info(f"New user registered successfully: {user.email}")
+                flash('Registration successful! Please log in.', 'success')
+                return redirect(url_for('auth.login'))
 
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Registration error: {str(e)}")
-            flash('An error occurred during registration.', 'error')
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"Registration error: {str(e)}")
+                flash('An error occurred during registration.', 'error')
 
-    return render_template('auth/register.html', form=form)
+        return render_template('auth/register.html', form=form)
+    except Exception as e:
+        logger.error(f"Unexpected error in registration: {str(e)}")
+        flash('An unexpected error occurred.', 'error')
+        return redirect(url_for('auth.login'))
 
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login with enhanced security and session management."""
     try:
+        # Clear any existing session data
+        session.clear()
+
         # If user is already authenticated, redirect appropriately
-        if current_user.is_authenticated:
+        if current_user.is_authenticated and not current_user.is_deleted:
             logger.info(f"Already authenticated user {current_user.id} redirected to dashboard")
-            if current_user.is_admin:
-                return redirect(url_for('admin.dashboard'))
             return redirect(url_for('main.dashboard'))
 
         form = LoginForm()
         if form.validate_on_submit():
-            # Find and verify user with enhanced status checks
             user = User.query.filter_by(email=form.email.data.lower().strip()).first()
 
             if not user:
@@ -72,15 +92,14 @@ def login():
                 flash('Invalid email or password', 'error')
                 return render_template('auth/login.html', form=form)
 
+            if user.is_deleted:
+                logger.warning(f"Login attempt by deleted user: {form.email.data}")
+                flash('This account has been deleted. Please register again.', 'error')
+                return render_template('auth/login.html', form=form)
+
             if not user.check_password(form.password.data):
                 logger.warning(f"Failed login attempt for email: {form.email.data}")
                 flash('Invalid email or password', 'error')
-                return render_template('auth/login.html', form=form)
-
-            # Enhanced status checks
-            if user.is_deleted:
-                logger.warning(f"Login attempt by deleted user: {form.email.data}")
-                flash('This account has been deleted.', 'error')
                 return render_template('auth/login.html', form=form)
 
             # Handle MFA if enabled
@@ -93,16 +112,15 @@ def login():
             login_user(user, remember=form.remember_me.data)
             logger.info(f"User {user.email} logged in successfully")
 
-            # Redirect based on user type with proper flash message
-            if user.is_admin:
-                flash('Welcome back, Administrator!', 'success')
-                return redirect(url_for('admin.dashboard'))
+            # Get the next page from the session or default to dashboard
+            next_page = session.get('next', url_for('main.dashboard'))
+            session.pop('next', None)  # Remove the next page from session
+
             flash('Login successful!', 'success')
-            return redirect(url_for('main.dashboard'))
+            return redirect(next_page)
 
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
-        db.session.rollback()
         flash('An error occurred during login.', 'error')
 
     # GET request or form validation failed
@@ -116,14 +134,11 @@ def logout():
         user_email = current_user.email
         logout_user()
         session.clear()  # Clear all session data
-
         logger.info(f"User {user_email} logged out successfully")
         flash('You have been logged out.', 'info')
-
     except Exception as e:
         logger.error(f"Logout error: {str(e)}")
         flash('Error during logout.', 'error')
-
     return redirect(url_for('auth.login'))
 
 @auth.route('/setup_mfa', methods=['GET', 'POST'])
