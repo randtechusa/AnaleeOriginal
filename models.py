@@ -74,7 +74,7 @@ class User(UserMixin, db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_admin = Column(Boolean, default=False)
-    subscription_status = Column(String(20), default='pending')
+    subscription_status = Column(String(20), default='active')  # Changed from 'pending' to 'active'
     is_deleted = Column(Boolean, default=False)
 
     # Security fields
@@ -157,7 +157,7 @@ class User(UserMixin, db.Model):
     @property
     def is_active(self):
         """Check if user is active for Flask-Login"""
-        return not self.is_deleted and self.subscription_status != 'deactivated'
+        return not self.is_deleted  # Simplified check to only look at deletion status
 
     def __repr__(self):
         return f'<User {self.username}>'
