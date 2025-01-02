@@ -74,7 +74,6 @@ class User(UserMixin, db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_admin = Column(Boolean, default=False)
-    subscription_status = Column(String(20), default='active')  # Changed from 'pending' to 'active'
     is_deleted = Column(Boolean, default=False)
 
     # Security fields
@@ -119,10 +118,7 @@ class User(UserMixin, db.Model):
         """Soft delete user by marking as deleted and cleaning up data"""
         try:
             logger.info(f"Starting soft delete process for user {self.id}")
-
-            # Mark user as deleted first
             self.is_deleted = True
-            self.subscription_status = 'deactivated'
             self.mfa_enabled = False
             self.mfa_secret = None
             self.reset_token = None
@@ -131,7 +127,6 @@ class User(UserMixin, db.Model):
             # Save changes immediately
             db.session.commit()
             logger.info(f"Successfully marked user {self.id} as deleted")
-
             return True
         except Exception as e:
             db.session.rollback()
@@ -145,7 +140,6 @@ class User(UserMixin, db.Model):
                 return False
 
             self.is_deleted = False
-            self.subscription_status = 'active'
             db.session.commit()
             logger.info(f"Successfully restored user account {self.id}")
             return True
@@ -157,7 +151,7 @@ class User(UserMixin, db.Model):
     @property
     def is_active(self):
         """Check if user is active for Flask-Login"""
-        return not self.is_deleted  # Simplified check to only look at deletion status
+        return not self.is_deleted
 
     def __repr__(self):
         return f'<User {self.username}>'
