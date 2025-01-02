@@ -6,7 +6,6 @@ Enhanced with user-friendly error notifications
 import logging
 import os
 from typing import Tuple, Dict, Any
-from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 from .models import BankStatementUpload
 from .excel_reader import BankStatementExcelReader
@@ -44,7 +43,7 @@ class BankStatementService:
 
     def process_upload(
         self,
-        file: FileStorage,
+        file,
         account_id: int,
         user_id: int
     ) -> Tuple[bool, Dict[str, Any]]:
@@ -110,6 +109,10 @@ class BankStatementService:
                         'error': error_msg,
                         'error_type': 'empty_file'
                     }
+
+                # Process successful
+                upload.set_success(f"Successfully processed {len(df)} rows")
+                db.session.commit()
 
                 return True, {
                     'success': True,

@@ -11,8 +11,7 @@ from flask_login import login_required, current_user
 from . import bank_statements
 from .forms import BankStatementUploadForm
 from .services import BankStatementService
-from .reconciliation import ReconciliationService
-from models import Account, BankStatementUpload, db
+from models import Account, BankStatementUpload, db, Transaction
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -78,13 +77,18 @@ def upload():
         form = BankStatementUploadForm()
         logger.info(f"Processing bank statement upload request for user {current_user.id}")
 
+        # Get user's bank accounts
+        bank_accounts = Account.query.filter(
+            Account.user_id == current_user.id,
+            Account.link.like('ca.810%')
+        ).order_by(Account.name).all()
+
+        # Update form choices
+        form.account.choices = [(acc.id, f"{acc.name} ({acc.link})") for acc in bank_accounts]
+
         if request.method == 'POST':
             # Check if it's an AJAX request
             is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-
-            # Log form data for debugging
-            logger.debug(f"Form data: {request.form}")
-            logger.debug(f"Files: {request.files}")
 
             if not form.validate_on_submit():
                 error_messages = []
@@ -168,24 +172,15 @@ def upload():
                 flash('An error occurred during upload. Please try again.', 'error')
                 return redirect(url_for('bank_statements.upload'))
 
-        # Get user's bank accounts
-        bank_accounts = Account.query.filter(
-            Account.user_id == current_user.id,
-            Account.link.like('ca.810%')
-        ).order_by(Account.name).all()
-
-        if not bank_accounts:
-            flash('No bank accounts found. Please add a bank account (starting with ca.810) in settings first.', 'warning')
-
         # Get recent uploads with status
-        recent_files = BankStatementUpload.query.filter_by(
+        recent_uploads = BankStatementUpload.query.filter_by(
             user_id=current_user.id
         ).order_by(BankStatementUpload.upload_date.desc()).limit(10).all()
 
         return render_template('bank_statements/upload.html',
-                               form=form,
-                               bank_accounts=bank_accounts,
-                               recent_files=recent_files)
+                            form=form,
+                            bank_accounts=bank_accounts,
+                            recent_uploads=recent_uploads)
 
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}", exc_info=True)
