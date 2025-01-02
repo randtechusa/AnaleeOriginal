@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from flask_wtf.csrf import CSRFProtect
-from models import db, login_manager
+from flask_login import LoginManager
 
 # Configure logging with detailed format
 logging.basicConfig(
@@ -27,14 +27,17 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Initialize Flask extensions
+db = None  # Will be initialized with app context
 migrate = Migrate()
 scheduler = APScheduler()
 csrf = CSRFProtect()
+login_manager = LoginManager()
 
 def create_app(env=None):
     """Create and configure the Flask application"""
     try:
         logger.info("Starting application creation...")
+        global db
 
         # Initialize Flask application
         app = Flask(__name__,
@@ -60,17 +63,15 @@ def create_app(env=None):
             'SESSION_COOKIE_SECURE': True,
             'SESSION_COOKIE_HTTPONLY': True,
             'REMEMBER_COOKIE_SECURE': True,
-            'REMEMBER_COOKIE_HTTPONLY': True,
-            'SQLALCHEMY_ENGINE_OPTIONS': {
-                'pool_pre_ping': True,
-                'pool_size': 5,
-                'pool_timeout': 30,
-                'pool_recycle': 300,
-                'max_overflow': 2
-            }
+            'REMEMBER_COOKIE_HTTPONLY': True
         })
 
-        # Initialize extensions
+        # Import db after app creation to avoid circular imports
+        from models import db as models_db, User
+        global db
+        db = models_db
+
+        # Initialize extensions with app context
         db.init_app(app)
         migrate.init_app(app, db)
         csrf.init_app(app)
@@ -82,51 +83,32 @@ def create_app(env=None):
         login_manager.login_message_category = 'info'
         login_manager.session_protection = 'strong'
 
+        @login_manager.user_loader
+        def load_user(user_id):
+            """Load user by ID with enhanced error handling"""
+            if not user_id:
+                return None
+            return User.query.get(int(user_id))
+
+        # Import and register blueprints within app context
         with app.app_context():
-            try:
-                # Verify database connection
-                db.session.execute(text('SELECT 1'))
-                logger.info("Database connection verified")
+            # Verify database connection
+            db.session.execute(text('SELECT 1'))
+            logger.info("Database connection verified")
 
-                # Import blueprints
-                from auth import auth
-                from admin import admin
-                from historical_data import historical_data
-                from suggestions import suggestions
-                from chat import chat
-                from routes import main
-                from reports import reports
-                from bank_statements import bank_statements
+            # Import blueprints
+            from auth import auth
+            from routes import main
 
-                # Register blueprints with proper URL prefixes
-                blueprints = [
-                    (auth, ''),
-                    (admin, '/admin'),
-                    (historical_data, ''),
-                    (suggestions, ''),
-                    (chat, '/chat'),
-                    (main, ''),
-                    (reports, '/reports'),
-                    (bank_statements, '')
-                ]
+            # Register blueprints
+            app.register_blueprint(auth)
+            app.register_blueprint(main)
 
-                for blueprint, url_prefix in blueprints:
-                    try:
-                        app.register_blueprint(blueprint, url_prefix=url_prefix)
-                        logger.info(f"Registered blueprint: {blueprint.name}")
-                    except Exception as e:
-                        logger.error(f"Error registering blueprint {blueprint.name}: {str(e)}")
-                        raise
+            # Ensure database tables exist
+            db.create_all()
+            logger.info("Database tables verified")
 
-                # Ensure database tables exist
-                db.create_all()
-                logger.info("Database tables verified")
-
-                return app
-
-            except Exception as e:
-                logger.error(f"Error during application setup: {str(e)}")
-                raise
+            return app
 
     except Exception as e:
         logger.error(f"Critical error in application creation: {str(e)}")

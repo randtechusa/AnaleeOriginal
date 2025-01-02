@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 import logging
 import os
 from datetime import datetime, timedelta
-from flask_login import UserMixin, LoginManager
+from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, Text, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import relationship
@@ -13,9 +13,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize database and login manager
+# Initialize database
 db = SQLAlchemy()
-login_manager = LoginManager()
 
 class User(UserMixin, db.Model):
     """User model with enhanced security features"""
@@ -29,24 +28,20 @@ class User(UserMixin, db.Model):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_admin = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False)
+    subscription_status = Column(String(20), default='active')  # Changed default to active
 
-    # Security fields
-    mfa_secret = Column(String(32))
-    mfa_enabled = Column(Boolean, default=False)
-    reset_token = Column(String(100))
-    reset_token_expires = Column(DateTime)
-
-    # Define relationships with explicit back_populates to avoid conflicts
+    # Define relationships with explicit back_populates
     financial_goals = relationship('FinancialGoal', back_populates='user', cascade='all, delete-orphan')
     transactions = relationship('Transaction', back_populates='user', cascade='all, delete-orphan')
     accounts = relationship('Account', back_populates='user', cascade='all, delete-orphan')
+    company_settings = relationship('CompanySettings', back_populates='user', uselist=False, cascade='all, delete-orphan')
     bank_statement_uploads = relationship('BankStatementUpload', back_populates='user', cascade='all, delete-orphan')
     alert_configurations = relationship('AlertConfiguration', back_populates='user', cascade='all, delete-orphan')
     alert_history = relationship('AlertHistory', back_populates='user', cascade='all, delete-orphan')
     historical_data = relationship('HistoricalData', back_populates='user', cascade='all, delete-orphan')
     risk_assessments = relationship('RiskAssessment', back_populates='user', cascade='all, delete-orphan')
     financial_recommendations = relationship('FinancialRecommendation', back_populates='user', cascade='all, delete-orphan')
-    company_settings = relationship('CompanySettings', back_populates='user', uselist=False, cascade='all, delete-orphan')
+
 
     def set_password(self, password: str) -> None:
         """Set hashed password"""
@@ -69,67 +64,13 @@ class User(UserMixin, db.Model):
             logger.error(f"Error checking password for user {self.id}: {str(e)}")
             return False
 
-    def soft_delete(self) -> bool:
-        """Soft delete user by marking as deleted and cleaning up data"""
-        try:
-            logger.info(f"Starting soft delete process for user {self.id}")
-            self.is_deleted = True
-            self.mfa_enabled = False
-            self.mfa_secret = None
-            self.reset_token = None
-            self.reset_token_expires = None
-            db.session.commit()
-            logger.info(f"Successfully marked user {self.id} as deleted")
-            return True
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Failed to soft delete user {self.id}: {str(e)}")
-            raise
-
-    def restore_account(self) -> bool:
-        """Restore a soft-deleted account"""
-        try:
-            if not self.is_deleted:
-                logger.info(f"Account {self.id} is not deleted, no restoration needed")
-                return False
-            self.is_deleted = False
-            db.session.commit()
-            logger.info(f"Successfully restored user account {self.id}")
-            return True
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Failed to restore user {self.id}: {str(e)}")
-            raise
-
     @property
     def is_active(self) -> bool:
         """Check if user is active for Flask-Login"""
-        return not self.is_deleted
+        return not self.is_deleted and self.subscription_status in ['active', 'pending']
 
     def __repr__(self):
         return f'<User {self.username}>'
-
-@login_manager.user_loader
-def load_user(user_id: str) -> Optional[User]:
-    """Load user by ID with enhanced error handling"""
-    try:
-        if not user_id:
-            logger.warning("Attempted to load user with empty ID")
-            return None
-
-        user = User.query.get(int(user_id))
-        if not user:
-            logger.warning(f"No user found with ID {user_id}")
-            return None
-
-        if user.is_deleted:
-            logger.info(f"Attempted to load deleted user {user_id}")
-            return None
-
-        return user
-    except Exception as e:
-        logger.error(f"Error loading user {user_id}: {str(e)}")
-        return None
 
 class FinancialGoal(db.Model):
     """Model for financial goals"""
@@ -448,8 +389,3 @@ class AdminChartOfAccounts(db.Model):
             'sub_category': self.sub_category,
             'description': self.description
         }
-
-# Update the login manager configuration
-login_manager.login_view = 'auth.login'
-login_manager.login_message_category = 'info'
-login_manager.session_protection = 'strong'
