@@ -34,14 +34,13 @@ def register():
             user = User(
                 username=form.username.data,
                 email=form.email.data.lower().strip(),
-                subscription_status='pending'  # Set initial status as pending
             )
             user.set_password(form.password.data)
 
             db.session.add(user)
             db.session.commit()
 
-            flash('Registration successful! Please wait for admin approval before logging in.', 'success')
+            flash('Registration successful! Please log in.', 'success')
             logger.info(f"New user registered: {user.email}")
             return redirect(url_for('auth.login'))
 
@@ -52,41 +51,13 @@ def register():
 
     return render_template('auth/register.html', form=form)
 
-def create_admin_if_not_exists():
-    """Create admin user if it doesn't exist"""
-    try:
-        # Check if admin exists
-        admin = User.query.filter_by(email='festusa@cnbs.co.za').first()
-        if not admin:
-            # Create new admin user with proper fields
-            admin = User(
-                username='admin',
-                email='festusa@cnbs.co.za',
-                is_admin=True,
-                subscription_status='active'
-            )
-            # Set password with proper hashing
-            admin.set_password('admin123')
-
-            # Add and commit to database
-            db.session.add(admin)
-            db.session.commit()
-            logger.info("Admin user created successfully")
-            return True
-        return True
-    except Exception as e:
-        logger.error(f"Error creating admin user: {str(e)}")
-        # Rollback on error
-        db.session.rollback()
-        return False
-
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     """Handle user login with enhanced security and session management."""
     try:
         # If user is already authenticated, redirect appropriately
         if current_user.is_authenticated:
-            logger.info(f"Already authenticated user {current_user.id} redirected to appropriate dashboard")
+            logger.info(f"Already authenticated user {current_user.id} redirected to dashboard")
             if current_user.is_admin:
                 return redirect(url_for('admin.dashboard'))
             return redirect(url_for('main.dashboard'))
@@ -118,18 +89,6 @@ def login():
                 logger.info(f"MFA verification required for user {user.email}")
                 return redirect(url_for('auth.verify_mfa'))
 
-            # Only check subscription status for non-admin users
-            if not user.is_admin:
-                if user.subscription_status == 'pending':
-                    logger.warning(f"Login attempt by pending user: {user.email}")
-                    flash('Your account is pending approval.', 'warning')
-                    return render_template('auth/login.html', form=form)
-
-                if user.subscription_status == 'deactivated':
-                    logger.warning(f"Login attempt by deactivated user: {user.email}")
-                    flash('Your account has been deactivated.', 'error')
-                    return render_template('auth/login.html', form=form)
-
             # Login successful
             login_user(user, remember=form.remember_me.data)
             logger.info(f"User {user.email} logged in successfully")
@@ -154,13 +113,12 @@ def login():
 def logout():
     """Handle user logout with proper cleanup"""
     try:
-        # Store user type before logout for proper message
         user_email = current_user.email
         logout_user()
-        session.clear()  # Clear all session data to prevent session fixation
+        session.clear()  # Clear all session data
 
         logger.info(f"User {user_email} logged out successfully")
-        flash('You have been logged out successfully.', 'info')
+        flash('You have been logged out.', 'info')
 
     except Exception as e:
         logger.error(f"Logout error: {str(e)}")
@@ -285,3 +243,30 @@ def reset_password(token):
         return redirect(url_for('auth.login'))
 
     return render_template('auth/reset_password.html', form=form)
+
+def create_admin_if_not_exists():
+    """Create admin user if it doesn't exist"""
+    try:
+        # Check if admin exists
+        admin = User.query.filter_by(email='festusa@cnbs.co.za').first()
+        if not admin:
+            # Create new admin user with proper fields
+            admin = User(
+                username='admin',
+                email='festusa@cnbs.co.za',
+                is_admin=True,
+            )
+            # Set password with proper hashing
+            admin.set_password('admin123')
+
+            # Add and commit to database
+            db.session.add(admin)
+            db.session.commit()
+            logger.info("Admin user created successfully")
+            return True
+        return True
+    except Exception as e:
+        logger.error(f"Error creating admin user: {str(e)}")
+        # Rollback on error
+        db.session.rollback()
+        return False

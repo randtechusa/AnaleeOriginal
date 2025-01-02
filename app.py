@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from flask_apscheduler import APScheduler
 from flask_wtf.csrf import CSRFProtect
-from models import db, login_manager, User
+from models import db, login_manager
 
 # Configure logging with detailed format
 logging.basicConfig(
@@ -94,7 +94,7 @@ def create_app(env=None):
                 from admin import admin
                 from historical_data import historical_data
                 from suggestions import suggestions
-                from chat import chat  # Import chat blueprint
+                from chat import chat  
                 from routes import main
                 from reports import reports
                 from bank_statements import bank_statements
@@ -105,7 +105,7 @@ def create_app(env=None):
                     (admin, '/admin'),
                     (historical_data, ''),
                     (suggestions, ''),
-                    (chat, '/chat'),  # Register chat blueprint with /chat prefix
+                    (chat, '/chat'),
                     (main, ''),
                     (reports, '/reports'),
                     (bank_statements, '')
