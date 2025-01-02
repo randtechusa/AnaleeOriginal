@@ -13,6 +13,7 @@ from models import (
     db, User, CompanySettings, Account, Transaction, 
     UploadedFile, AdminChartOfAccounts
 )
+from forms.company import CompanySettingsForm
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,20 +31,15 @@ class UploadForm(FlaskForm):
         super(UploadForm, self).__init__(*args, **kwargs)
         if current_user.is_authenticated:
             try:
-                # Get active bank accounts that start with ca.810
-                # Using case-insensitive comparison for better matching
                 accounts = Account.query.filter(
                     Account.user_id == current_user.id,
                     Account.link.ilike('ca.810%'),
                     Account.is_active == True
                 ).order_by(Account.link).all()
 
-                # Log the number of accounts found
                 logger.info(f"Found {len(accounts)} active bank accounts for user {current_user.id}")
-
-                # Populate choices with account information
                 self.account.choices = [(str(acc.id), f"{acc.link} - {acc.name}") 
-                                      for acc in accounts]
+                                     for acc in accounts]
 
                 if not self.account.choices:
                     logger.warning(f"No active bank accounts found for user {current_user.id}")
@@ -60,7 +56,7 @@ def index():
         if current_user.is_authenticated:
             if current_user.is_deleted:
                 logout_user()
-                flash('This account has been deleted. Please register again.', 'error')
+                flash('This account has been deleted. Please contact support to restore your account.', 'error')
                 return redirect(url_for('auth.login'))
 
             if current_user.is_admin:
@@ -97,53 +93,6 @@ def dashboard():
         flash('Error loading dashboard data')
         return render_template('dashboard.html', 
                             transactions=[])
-
-@main.route('/analyze/replicate-explanation', methods=['POST'])
-@login_required
-def replicate_explanation():
-    """ERF: Handle explanation replication between similar transactions"""
-    try:
-        data = request.get_json()
-        transaction_id = data.get('transaction_id')
-        similar_transaction_id = data.get('similar_transaction_id')
-
-        if not transaction_id or not similar_transaction_id:
-            return jsonify({'error': 'Missing required fields'}), 400
-
-        # Verify transaction ownership
-        transaction = Transaction.query.filter_by(
-            id=transaction_id,
-            user_id=current_user.id
-        ).first()
-
-        if not transaction:
-            return jsonify({'error': 'Transaction not found'}), 404
-
-        # Initialize predictive features and replicate explanation
-        predictor = PredictiveFeatures()
-        success = predictor.replicate_explanation(transaction_id, similar_transaction_id)
-
-        if success:
-            return jsonify({
-                'success': True,
-                'message': 'Explanation replicated successfully'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': 'Failed to replicate explanation'
-            }), 500
-
-    except Exception as e:
-        logger.error(f"Error replicating explanation: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/logout')
-@login_required
-def logout():
-    """Redirect logout to auth blueprint"""
-    logout_user()
-    return redirect(url_for('auth.login'))
 
 @main.route('/settings', methods=['GET', 'POST'])
 @login_required
@@ -205,11 +154,11 @@ def company_settings():
             settings.financial_year_end = int(form.financial_year_end.data)
 
             db.session.commit()
-            flash('Company settings updated successfully')
+            flash('Company settings updated successfully', 'success')
 
         except Exception as e:
             logger.error(f'Error updating company settings: {str(e)}')
-            flash('Error updating company settings')
+            flash('Error updating company settings', 'error')
             db.session.rollback()
 
     if settings:
@@ -233,7 +182,6 @@ def company_settings():
         settings=settings,
         months=months
     )
-
 
 @main.route('/analyze')
 @login_required

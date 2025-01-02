@@ -2,8 +2,6 @@
 from typing import Dict, List, Optional
 import logging
 import os
-import base64
-import pyotp
 from datetime import datetime, timedelta
 from flask_login import UserMixin, LoginManager
 from flask_sqlalchemy import SQLAlchemy
@@ -35,20 +33,20 @@ class User(UserMixin, db.Model):
     # Security fields
     mfa_secret = Column(String(32))
     mfa_enabled = Column(Boolean, default=False)
-    reset_token = Column(String(100), unique=True)
+    reset_token = Column(String(100))
     reset_token_expires = Column(DateTime)
 
-    # Relationships - explicitly define backref names to avoid conflicts
-    financial_goals = relationship('FinancialGoal', backref='user_goals', cascade='all, delete-orphan')
-    transactions = relationship('Transaction', backref='transaction_user', cascade='all, delete-orphan')
-    accounts = relationship('Account', backref='account_user', cascade='all, delete-orphan')
-    bank_statement_uploads = relationship('BankStatementUpload', backref='upload_user', cascade='all, delete-orphan')
-    alert_configurations = relationship('AlertConfiguration', backref='alert_config_user', cascade='all, delete-orphan')
-    alert_history = relationship('AlertHistory', backref='alert_history_user', cascade='all, delete-orphan')
-    historical_data = relationship('HistoricalData', backref='historical_data_user', cascade='all, delete-orphan')
-    risk_assessments = relationship('RiskAssessment', backref='risk_assessment_user', cascade='all, delete-orphan')
-    financial_recommendations = relationship('FinancialRecommendation', backref='recommendation_user', cascade='all, delete-orphan')
-    company_settings = relationship('CompanySettings', backref='company_settings_user', uselist=False, cascade='all, delete-orphan')
+    # Define relationships with explicit back_populates to avoid conflicts
+    financial_goals = relationship('FinancialGoal', back_populates='user', cascade='all, delete-orphan')
+    transactions = relationship('Transaction', back_populates='user', cascade='all, delete-orphan')
+    accounts = relationship('Account', back_populates='user', cascade='all, delete-orphan')
+    bank_statement_uploads = relationship('BankStatementUpload', back_populates='user', cascade='all, delete-orphan')
+    alert_configurations = relationship('AlertConfiguration', back_populates='user', cascade='all, delete-orphan')
+    alert_history = relationship('AlertHistory', back_populates='user', cascade='all, delete-orphan')
+    historical_data = relationship('HistoricalData', back_populates='user', cascade='all, delete-orphan')
+    risk_assessments = relationship('RiskAssessment', back_populates='user', cascade='all, delete-orphan')
+    financial_recommendations = relationship('FinancialRecommendation', back_populates='user', cascade='all, delete-orphan')
+    company_settings = relationship('CompanySettings', back_populates='user', uselist=False, cascade='all, delete-orphan')
 
     def set_password(self, password: str) -> None:
         """Set hashed password"""
@@ -92,6 +90,7 @@ class User(UserMixin, db.Model):
         """Restore a soft-deleted account"""
         try:
             if not self.is_deleted:
+                logger.info(f"Account {self.id} is not deleted, no restoration needed")
                 return False
             self.is_deleted = False
             db.session.commit()
@@ -150,6 +149,7 @@ class FinancialGoal(db.Model):
     recurrence_period = Column(String(20))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user = relationship("User", back_populates="financial_goals")
 
     def calculate_progress(self):
         """Calculate current progress as percentage"""
@@ -186,16 +186,14 @@ class Transaction(db.Model):
     user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
     account_id = Column(Integer, ForeignKey('account.id', ondelete='CASCADE'))
     file_id = Column(Integer, ForeignKey('uploaded_file.id', ondelete='SET NULL'))
-    ai_category = Column(String(50))
-    ai_confidence = Column(Float)
-    ai_explanation = Column(String(200))
     explanation = Column(String(200))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Define relationships without backrefs to avoid conflicts
-    account = relationship('Account')
-    file = relationship('UploadedFile')
+    # Define relationships with back_populates
+    user = relationship('User', back_populates='transactions')
+    account = relationship('Account', back_populates='transactions')
+    file = relationship('UploadedFile', back_populates='transactions')
 
     def __repr__(self):
         return f'<Transaction {self.date}: {self.description}>'
@@ -215,13 +213,10 @@ class Account(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Define relationships with cascade delete
-    transactions = relationship('Transaction', backref='transaction_account',
-                              cascade='all, delete-orphan',
-                              foreign_keys=[Transaction.account_id])
-
-    bank_statement_uploads = relationship('BankStatementUpload',
-                                        cascade='all, delete-orphan')
+    # Define relationships with back_populates
+    user = relationship('User', back_populates='accounts')
+    transactions = relationship('Transaction', back_populates='account', cascade='all, delete-orphan')
+    bank_statement_uploads = relationship('BankStatementUpload', back_populates='account', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<Account {self.link}: {self.name}>'
@@ -234,7 +229,9 @@ class BankStatementUpload(db.Model):
     filename = Column(String(255), nullable=False)
     upload_date = Column(DateTime, nullable=False, default=datetime.utcnow)
     status = Column(
-        SQLEnum('pending', 'processing', 'completed', 'failed', name='bank_statement_status'),
+        SQLEnum('pending', 'processing', 'completed', 'failed', 
+               name='bank_statement_status', 
+               create_constraint=True),
         nullable=False,
         default='pending'
     )
@@ -242,9 +239,8 @@ class BankStatementUpload(db.Model):
     processing_notes = Column(Text)
     account_id = Column(Integer, ForeignKey('account.id', ondelete='CASCADE'), nullable=False)
     user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
-
-    # Define relationship only on the child side
-    account = relationship('Account')
+    user = relationship("User", back_populates="bank_statement_uploads")
+    account = relationship('Account', back_populates='bank_statement_uploads')
 
     def __repr__(self):
         return f'<BankStatementUpload {self.filename} ({self.status})>'
@@ -278,6 +274,7 @@ class CompanySettings(db.Model):
     financial_year_end = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user = relationship("User", back_populates="company_settings")
 
 class UploadedFile(db.Model):
     __tablename__ = 'uploaded_file'
@@ -286,9 +283,7 @@ class UploadedFile(db.Model):
     filename = Column(String(255), nullable=False)
     upload_date = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
-
-    # Define relationship without circular reference
-    transactions = relationship('Transaction', foreign_keys=[Transaction.file_id])
+    transactions = relationship('Transaction', back_populates='file')
 
 class KeywordRule(db.Model):
     __tablename__ = 'keyword_rule'
@@ -318,9 +313,8 @@ class HistoricalData(db.Model):
     upload_date = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
     account = relationship('Account')
-    user = relationship('User')
+    user = relationship("User", back_populates="historical_data")
 
     def __repr__(self):
         return f'<HistoricalData {self.date}: {self.description}>'
@@ -338,8 +332,7 @@ class RiskAssessment(db.Model):
     recommendations = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    user = relationship('User')
+    user = relationship("User", back_populates="risk_assessments")
 
     def __repr__(self):
         return f'<RiskAssessment {self.assessment_date}: {self.risk_level}>'
@@ -354,7 +347,6 @@ class RiskIndicator(db.Model):
     threshold_value = Column(Float, nullable=False)
     is_breach = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-
     assessment = relationship('RiskAssessment')
 
     def __repr__(self):
@@ -373,8 +365,7 @@ class AlertConfiguration(db.Model):
     notification_method = Column(String(50), default='web')  # web, email
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    user = relationship('User')
+    user = relationship("User", back_populates="alert_configurations")
 
     def __repr__(self):
         return f'<AlertConfiguration {self.name}: {self.alert_type}>'
@@ -390,9 +381,8 @@ class AlertHistory(db.Model):
     status = Column(String(20), default='new')  # new, acknowledged, resolved
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
     alert_config = relationship('AlertConfiguration')
-    user = relationship('User')
+    user = relationship("User", back_populates="alert_history")
 
     def __repr__(self):
         return f'<AlertHistory {self.severity}: {self.alert_message[:50]}>'
@@ -410,8 +400,7 @@ class FinancialRecommendation(db.Model):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     applied_at = Column(DateTime)
-
-    user = relationship('User')
+    user = relationship("User", back_populates="financial_recommendations")
 
     def __repr__(self):
         return f'<FinancialRecommendation {self.category}: {self.recommendation[:50]}>'
@@ -426,7 +415,6 @@ class RecommendationMetrics(db.Model):
     current_value = Column(Float)
     target_value = Column(Float)
     measured_at = Column(DateTime, default=datetime.utcnow)
-
     recommendation = relationship('FinancialRecommendation')
 
     def __repr__(self):
@@ -460,3 +448,8 @@ class AdminChartOfAccounts(db.Model):
             'sub_category': self.sub_category,
             'description': self.description
         }
+
+# Update the login manager configuration
+login_manager.login_view = 'auth.login'
+login_manager.login_message_category = 'info'
+login_manager.session_protection = 'strong'
