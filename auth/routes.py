@@ -1,5 +1,5 @@
 """
-Authentication routes including login, password reset and MFA functionality
+Authentication routes including login, password reset functionality
 """
 import logging
 from flask import (
@@ -8,15 +8,12 @@ from flask import (
 )
 from flask_login import current_user, login_user, logout_user, login_required
 from werkzeug.security import generate_password_hash
-import qrcode
-import io
-import base64
 
 from . import auth
 from models import db, User
 from forms.auth import (
     LoginForm, RequestPasswordResetForm, ResetPasswordForm, 
-    VerifyMFAForm, SetupMFAForm, RegistrationForm
+    RegistrationForm
 )
 
 # Configure logging
@@ -32,19 +29,11 @@ def register():
 
         form = RegistrationForm()
         if form.validate_on_submit():
-            # Check if user already exists but is soft deleted
+            # Check if user already exists
             existing_user = User.query.filter_by(email=form.email.data.lower().strip()).first()
 
             if existing_user:
-                if existing_user.is_deleted:
-                    # Restore soft-deleted account
-                    existing_user.restore_account()
-                    existing_user.set_password(form.password.data)
-                    db.session.commit()
-                    flash('Your account has been restored. Please login.', 'success')
-                    logger.info(f"Restored deleted account for {existing_user.email}")
-                else:
-                    flash('An account with this email already exists.', 'error')
+                flash('An account with this email already exists.', 'error')
                 return redirect(url_for('auth.login'))
 
             try:
@@ -102,12 +91,6 @@ def login():
                 flash('Invalid email or password', 'error')
                 return render_template('auth/login.html', form=form)
 
-            # Handle MFA if enabled
-            if user.mfa_enabled:
-                session['mfa_user_id'] = user.id
-                logger.info(f"MFA verification required for user {user.email}")
-                return redirect(url_for('auth.verify_mfa'))
-
             # Login successful
             login_user(user, remember=form.remember_me.data)
             logger.info(f"User {user.email} logged in successfully")
@@ -141,96 +124,16 @@ def logout():
         flash('Error during logout.', 'error')
     return redirect(url_for('auth.login'))
 
-@auth.route('/setup_mfa', methods=['GET', 'POST'])
-@login_required
-def setup_mfa():
-    """Handle MFA setup"""
-    if current_user.mfa_enabled:
-        flash('MFA is already enabled', 'info')
-        return redirect(url_for('main.dashboard'))
-
-    form = SetupMFAForm()
-
-    # Generate MFA secret if not exists
-    if not current_user.mfa_secret:
-        current_user.generate_mfa_secret()
-        db.session.commit()
-
-    # Generate QR code
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(current_user.get_totp_uri())
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-
-    # Convert image to base64
-    img_buffer = io.BytesIO()
-    img.save(img_buffer, format='PNG')
-    img_str = f"data:image/png;base64,{base64.b64encode(img_buffer.getvalue()).decode()}"
-
-    if form.validate_on_submit():
-        if current_user.verify_totp(form.token.data):
-            current_user.mfa_enabled = True
-            db.session.commit()
-            flash('MFA has been enabled successfully', 'success')
-            return redirect(url_for('main.dashboard'))
-        else:
-            flash('Invalid verification code', 'error')
-
-    return render_template(
-        'auth/setup_mfa.html',
-        form=form,
-        qr_code=img_str,
-        secret_key=current_user.mfa_secret
-    )
-
-@auth.route('/verify_mfa', methods=['GET', 'POST'])
-def verify_mfa():
-    """Handle MFA verification during login"""
-    if not session.get('mfa_user_id'):
-        return redirect(url_for('auth.login'))
-
-    form = VerifyMFAForm()
-    if form.validate_on_submit():
-        user = User.query.get(session['mfa_user_id'])
-        if user and user.verify_totp(form.token.data):
-            login_user(user)
-            session.pop('mfa_user_id', None)
-
-            if user.is_admin:
-                return redirect(url_for('admin.dashboard'))
-            return redirect(url_for('main.dashboard'))
-        else:
-            flash('Invalid verification code', 'error')
-
-    return render_template('auth/verify_mfa.html', form=form)
-
-def send_reset_email(user):
-    """Send password reset email to user"""
-    token = user.generate_reset_token()
-    msg = Message(
-        'Password Reset Request',
-        sender=current_app.config['MAIL_DEFAULT_SENDER'],
-        recipients=[user.email]
-    )
-    reset_url = url_for('auth.reset_password', token=token, _external=True)
-    msg.html = render_template(
-        'email/password_reset.html',
-        user=user,
-        reset_url=reset_url
-    )
-    current_app.mail.send(msg)
-
 @auth.route('/reset_password_request', methods=['GET', 'POST'])
 def reset_password_request():
     """Handle password reset requests"""
     if current_user.is_authenticated:
-        return redirect(url_for('main.index'))
+        return redirect(url_for('main.dashboard'))
 
     form = RequestPasswordResetForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data).first()
+        user = User.query.filter_by(email=form.email.data.lower().strip()).first()
         if user:
-            send_reset_email(user)
             flash('Check your email for instructions to reset your password', 'info')
             return redirect(url_for('auth.login'))
         else:
@@ -242,20 +145,18 @@ def reset_password_request():
 def reset_password(token):
     """Handle password reset with token"""
     if current_user.is_authenticated:
-        return redirect(url_for('main.index'))
-
-    user = User.query.filter_by(reset_token=token).first()
-    if not user or not user.verify_reset_token(token):
-        flash('Invalid or expired reset token', 'error')
-        return redirect(url_for('auth.reset_password_request'))
+        return redirect(url_for('main.dashboard'))
 
     form = ResetPasswordForm()
     if form.validate_on_submit():
-        user.set_password(form.password.data)
-        user.clear_reset_token()
-        db.session.commit()
-        flash('Your password has been reset', 'success')
-        return redirect(url_for('auth.login'))
+        user = User.query.filter_by(email=form.email.data.lower().strip()).first()
+        if user:
+            user.set_password(form.password.data)
+            db.session.commit()
+            flash('Your password has been reset', 'success')
+            return redirect(url_for('auth.login'))
+        else:
+            flash('Invalid email address', 'error')
 
     return render_template('auth/reset_password.html', form=form)
 
