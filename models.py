@@ -123,6 +123,7 @@ class User(UserMixin, db.Model):
             # Mark user as deleted first
             self.is_deleted = True
             self.subscription_status = 'deactivated'
+            self.mfa_enabled = False
             self.mfa_secret = None
             self.reset_token = None
             self.reset_token_expires = None
@@ -135,6 +136,22 @@ class User(UserMixin, db.Model):
         except Exception as e:
             db.session.rollback()
             logger.error(f"Failed to soft delete user {self.id}: {str(e)}")
+            raise
+
+    def restore_account(self):
+        """Restore a soft-deleted account"""
+        try:
+            if not self.is_deleted:
+                return False
+
+            self.is_deleted = False
+            self.subscription_status = 'active'
+            db.session.commit()
+            logger.info(f"Successfully restored user account {self.id}")
+            return True
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to restore user {self.id}: {str(e)}")
             raise
 
     @property

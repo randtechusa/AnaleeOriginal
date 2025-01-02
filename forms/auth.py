@@ -4,7 +4,7 @@ Authentication related forms including login, password reset and MFA
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField
 from wtforms.validators import DataRequired, Email, EqualTo, Length, ValidationError
-from models import User
+from models import User, db
 
 class LoginForm(FlaskForm):
     """Form for user login with CSRF protection"""
@@ -16,6 +16,12 @@ class LoginForm(FlaskForm):
     password = PasswordField('Password', validators=[DataRequired()])
     remember_me = BooleanField('Remember Me')
     submit = SubmitField('Login')
+
+    def validate_email(self, field):
+        """Check if email exists and account status"""
+        user = User.query.filter_by(email=field.data.lower()).first()
+        if user and user.is_deleted:
+            raise ValidationError('This account has been deleted. Please register a new account or contact support for account restoration.')
 
 class RegistrationForm(FlaskForm):
     """Form for new user registration"""
@@ -39,10 +45,16 @@ class RegistrationForm(FlaskForm):
     submit = SubmitField('Register')
 
     def validate_email(self, email):
-        """Check if email is already registered"""
+        """Check if email is available for registration"""
         user = User.query.filter_by(email=email.data.lower()).first()
         if user:
-            raise ValidationError('Email already registered. Please use a different email.')
+            if user.is_deleted:
+                # If the account is deleted, allow re-registration
+                user.restore_account()
+                db.session.delete(user)
+                db.session.commit()
+            else:
+                raise ValidationError('Email already registered. Please use a different email or login to your existing account.')
 
 class RequestPasswordResetForm(FlaskForm):
     """Form for requesting a password reset"""
