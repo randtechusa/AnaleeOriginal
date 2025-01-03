@@ -20,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global client instance
+# Global client instance with proper error tracking
 _openai_client = None
 _last_client_error = None
 _last_client_init = None
@@ -33,27 +33,28 @@ def get_openai_client() -> Optional[OpenAI]:
     global _openai_client, _last_client_error, _last_client_init, _client_error_count
 
     try:
+        # Use existing client if available and working
+        if _openai_client is not None:
+            return _openai_client
+
         # Check if we need to wait before retrying
         if _last_client_error and _client_error_count >= MAX_ERROR_COUNT:
-            if _last_client_init:  # Only calculate wait time if we have a last init time
+            if _last_client_init:
                 wait_time = CLIENT_RETRY_INTERVAL - (time.time() - _last_client_init)
                 if wait_time > 0:
                     logger.warning(f"Rate limit cooldown: waiting {wait_time:.0f}s")
                     return None
-
-        # Use existing client if available
-        if _openai_client is not None:
-            return _openai_client
 
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
             logger.error("OpenAI API key not found")
             return None
 
-        # Initialize client with only api_key
+        # Initialize client with required configuration
         _openai_client = OpenAI(api_key=api_key)
         _last_client_init = time.time()
-        logger.info("OpenAI client initialized")
+        _client_error_count = 0  # Reset error count on successful initialization
+        logger.info("OpenAI client initialized successfully")
 
         return _openai_client
 
@@ -83,6 +84,7 @@ def wait_for_rate_limit():
             break
     request_times.append(now)
 
+# Transaction categories
 CATEGORIES = [
     'income', 'groceries', 'utilities', 'transportation', 'entertainment',
     'shopping', 'healthcare', 'housing', 'education', 'investments',
@@ -90,6 +92,7 @@ CATEGORIES = [
 ]
 
 def get_category_prompt(description: str) -> str:
+    """Generate prompt for transaction categorization"""
     return f"""Analyze this financial transaction and categorize it:
 Transaction: {description}
 
@@ -104,15 +107,14 @@ Please respond with:
 Format: category|confidence|explanation"""
 
 @retry(
-    stop=stop_after_attempt(5),  # Increase retry attempts
-    wait=wait_exponential(multiplier=2, min=4, max=30),  # Longer waits between retries
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
     reraise=True
 )
 def categorize_transaction(description: str) -> Tuple[str, float, str]:
     """
     Use OpenAI to categorize a financial transaction with explanation
     Returns: (category, confidence, explanation)
-    Implements improved rate limiting and error handling
     """
     if not description:
         logger.warning("Empty description provided for categorization")
@@ -137,7 +139,6 @@ def categorize_transaction(description: str) -> Tuple[str, float, str]:
             max_tokens=150
         )
 
-        # Parse response
         if not response.choices:
             logger.error("Empty response from OpenAI API")
             return 'other', 0.1, "Service returned empty response"
@@ -147,13 +148,12 @@ def categorize_transaction(description: str) -> Tuple[str, float, str]:
             category = result[0].strip().lower()
             try:
                 confidence = float(result[1].strip())
-                confidence = max(0.0, min(1.0, confidence))  # Ensure confidence is between 0 and 1
+                confidence = max(0.0, min(1.0, confidence))
             except ValueError:
                 logger.warning(f"Invalid confidence value: {result[1]}")
                 confidence = 0.5
             explanation = result[2].strip()
 
-            # Validate category
             if category not in CATEGORIES:
                 logger.warning(f"Invalid category returned: {category}")
                 category = 'other'
