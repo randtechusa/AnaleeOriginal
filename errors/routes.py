@@ -7,12 +7,17 @@ import logging
 from datetime import datetime, timedelta
 from flask import render_template, current_app
 from flask_login import login_required
+import traceback
 from . import errors
 from models import db
 from ai_insights import FinancialInsightsGenerator
 
 # Configure logging
 logger = logging.getLogger(__name__)
+handler = logging.FileHandler('error_monitoring.log')
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
+logger.setLevel(logging.ERROR)
 
 @errors.route('/dashboard')
 @login_required
@@ -22,13 +27,22 @@ def error_dashboard():
         # Get AI service status
         ai_service = FinancialInsightsGenerator()
         ai_status = {
-            'consecutive_failures': getattr(ai_service.service_status, 'consecutive_failures', 0),
-            'error_count': getattr(ai_service.service_status, 'error_count', 0),
-            'last_success': (ai_service.service_status.last_success.strftime('%Y-%m-%d %H:%M:%S') 
-                           if hasattr(ai_service.service_status, 'last_success') and 
-                           ai_service.service_status.last_success else None),
+            'consecutive_failures': 0,
+            'error_count': 0,
+            'last_success': None,
             'last_update': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
+
+        try:
+            ai_status.update({
+                'consecutive_failures': getattr(ai_service.service_status, 'consecutive_failures', 0),
+                'error_count': getattr(ai_service.service_status, 'error_count', 0),
+                'last_success': (ai_service.service_status.last_success.strftime('%Y-%m-%d %H:%M:%S') 
+                               if hasattr(ai_service.service_status, 'last_success') and 
+                               ai_service.service_status.last_success else None),
+            })
+        except AttributeError as e:
+            logger.warning(f"Error accessing AI service status attributes: {str(e)}")
 
         # Get recent errors from logs
         recent_errors = []
@@ -42,7 +56,7 @@ def error_dashboard():
                         'message': error_data.get('message', 'No error message available')
                     })
 
-            # Add OpenAI client initialization error if present
+            # Add initialization error if present
             if hasattr(ai_service, 'client_error'):
                 recent_errors.append({
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -50,7 +64,7 @@ def error_dashboard():
                     'message': str(ai_service.client_error)
                 })
         except Exception as e:
-            logger.error(f"Error retrieving error history: {str(e)}")
+            logger.error(f"Error retrieving error history: {str(e)}\n{traceback.format_exc()}")
             recent_errors.append({
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'type': 'Error Log Access Error',
@@ -59,7 +73,7 @@ def error_dashboard():
 
         # Generate recommendations based on status
         recommendations = []
-        failure_count = getattr(ai_service.service_status, 'consecutive_failures', 0)
+        failure_count = ai_status['consecutive_failures']
 
         if failure_count > 3:
             recommendations.extend([
@@ -86,8 +100,7 @@ def error_dashboard():
                              uptime=uptime)
 
     except Exception as e:
-        logger.error(f"Error loading error dashboard: {str(e)}")
-        # Provide graceful fallback with basic error information
+        logger.error(f"Error loading error dashboard: {str(e)}\n{traceback.format_exc()}")
         return render_template('error_dashboard.html', 
                              error="Error loading dashboard data",
                              ai_status={'error_count': 0, 'consecutive_failures': 0},

@@ -3,12 +3,13 @@ AI utilities module with enhanced error handling and rate limiting
 """
 
 import logging
-import os
-from typing import Optional
-from openai import OpenAI, APIError, RateLimitError
 from datetime import datetime
+from typing import Optional, List, Dict
+from openai import OpenAI, APIError, RateLimitError
+import os
 import time
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import json
 
 # Configure logging with proper format
 logging.basicConfig(
@@ -59,6 +60,7 @@ def get_openai_client() -> Optional[OpenAI]:
         logger.error(f"Unexpected error during client initialization: {str(e)}")
         _last_client_error = str(e)
         return None
+
 
 # Enhance the rate limit handler
 def handle_rate_limit(func, max_retries=3, base_delay=2):
@@ -147,12 +149,14 @@ def process_in_batches(items, process_func, batch_size=3):
                 break
 
     return results
+
 # Configure logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Initialize OpenAI client function to ensure fresh client on each request
 # Global client instance
+
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
@@ -917,7 +921,7 @@ def find_similar_transactions(transaction_description: str, transactions: list) 
             return []
             
     except Exception as e:
-        logger.error(f"Critical error in find_similar_transactions: {str(e)}")
+        logger.error(f"Critical error in findsimilar_transactions: {str(e)}")
         return []
 
 def suggest_explanation(description: str, similar_transactions: list = None) -> dict:
@@ -1056,3 +1060,77 @@ def verify_ai_features() -> bool:
     except Exception as e:
         logger.error(f"AI features verification failed: {str(e)}")
         return False
+
+import logging
+from datetime import datetime
+from tenacity import retry, stop_after_attempt, wait_exponential
+from nlp_utils import get_openai_client, clean_text
+
+logger = logging.getLogger(__name__)
+handler = logging.FileHandler('ai_utils.log')
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
+logger.setLevel(logging.ERROR)
+
+class AIUtils:
+    def __init__(self):
+        self._client = None
+        self._initialize_client()
+
+    def _initialize_client(self):
+        """Initialize OpenAI client safely"""
+        try:
+            self._client = get_openai_client()
+            if self._client is None:
+                logger.error("Failed to initialize OpenAI client")
+            else:
+                logger.info("OpenAI client initialized successfully in AIUtils")
+        except Exception as e:
+            logger.error(f"Error initializing OpenAI client in AIUtils: {str(e)}")
+            self._client = None
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    async def analyze_transaction(self, transaction_data):
+        """Analyze a financial transaction with retries"""
+        if self._client is None:
+            self._initialize_client()
+            if self._client is None:
+                raise ValueError("OpenAI client unavailable")
+
+        try:
+            response = await self._client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial transaction analyzer."},
+                    {"role": "user", "content": f"Analyze this transaction: {clean_text(str(transaction_data))}"}
+                ],
+                max_tokens=100,
+                temperature=0.5
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Failed to analyze transaction: {str(e)}")
+            raise
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    async def categorize_transaction(self, description):
+        """Categorize a transaction based on its description"""
+        if self._client is None:
+            self._initialize_client()
+            if self._client is None:
+                raise ValueError("OpenAI client unavailable")
+
+        try:
+            response = await self._client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial transaction categorizer."},
+                    {"role": "user", "content": f"Categorize this transaction: {clean_text(description)}"}
+                ],
+                max_tokens=50,
+                temperature=0.3
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Failed to categorize transaction: {str(e)}")
+            raise

@@ -1,226 +1,100 @@
 import os
 import logging
-from typing import Dict, List, Optional
+import openai
 from datetime import datetime
-from openai import OpenAI, APIError, RateLimitError
-from nlp_utils import get_openai_client, categorize_transaction
+from tenacity import retry, stop_after_attempt, wait_exponential
+from nlp_utils import get_openai_client, clean_text
+from models import db, ErrorLog
 
-# Enhanced logging configuration
+# Configure logging
 logger = logging.getLogger(__name__)
+handler = logging.FileHandler('ai_service.log')
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
+logger.setLevel(logging.ERROR)
 
-class AIServiceStatus:
-    """Track AI service status and errors"""
+class ServiceStatus:
     def __init__(self):
-        self.last_error = None
+        self.consecutive_failures = 0
         self.error_count = 0
         self.last_success = None
-        self.consecutive_failures = 0
-
-    def record_error(self, error: Exception) -> None:
-        """Record an error occurrence"""
-        self.last_error = {
-            'timestamp': datetime.now(),
-            'error_type': type(error).__name__,
-            'message': str(error)
-        }
-        self.error_count += 1
-        self.consecutive_failures += 1
-
-    def record_success(self) -> None:
-        """Record a successful operation"""
-        self.last_success = datetime.now()
-        self.consecutive_failures = 0
+        self.last_error = None
 
 class FinancialInsightsGenerator:
-    """
-    Class responsible for generating financial insights using AI.
-    Handles both OpenAI-powered and fallback basic analysis.
-    """
     def __init__(self):
-        self.api_key = os.environ.get('OPENAI_API_KEY')
-        self.client = get_openai_client() if self.api_key else None
-        self.env = os.environ.get('FLASK_ENV', 'development')
-        self.service_status = AIServiceStatus()
+        self.service_status = ServiceStatus()
+        self.client = None
+        self.client_error = None
+        self._initialize_client()
 
-    def _log_service_status(self, operation: str) -> None:
-        """Log current service status"""
-        status_info = {
-            'operation': operation,
-            'error_count': self.service_status.error_count,
-            'consecutive_failures': self.service_status.consecutive_failures,
-            'last_error': self.service_status.last_error,
-            'last_success': self.service_status.last_success
-        }
-        logger.info(f"AI Service Status: {status_info}")
-
-    def generate_transaction_insights(self, transaction_data: List[Dict]) -> Dict:
-        """
-        Generate AI-powered insights for transactions with enhanced error handling.
-
-        Args:
-            transaction_data (List[Dict]): List of transaction information
-
-        Returns:
-            Dict: Generated insights and analysis results with error status
-        """
+    def _initialize_client(self):
+        """Initialize OpenAI client with proper error handling"""
         try:
-            if not isinstance(transaction_data, list) or not transaction_data:
-                logger.error("Invalid or empty transaction data provided")
-                return self._generate_fallback_insights([], error="No valid transaction data provided")
-
-            # For single transaction analysis, use the first transaction
-            transaction = transaction_data[0]
-
-            if not self.client:
-                logger.warning("AI service client unavailable, using fallback analysis")
-                return self._generate_fallback_insights([transaction], error="AI service temporarily unavailable")
-
-            # Prepare transaction for analysis
-            transaction_summary = self._prepare_transaction_summary([transaction])
-
-            # Get AI categorization with error handling
-            try:
-                category, confidence, explanation = categorize_transaction(transaction.get('description', ''))
-            except (APIError, RateLimitError) as e:
-                logger.error(f"AI API Error in categorization: {str(e)}")
-                self.service_status.record_error(e)
-                return self._generate_fallback_insights([transaction], error=f"AI service error: {str(e)}")
-            except Exception as e:
-                logger.error(f"Unexpected error in categorization: {str(e)}")
-                self.service_status.record_error(e)
-                category, confidence, explanation = None, 0, "Categorization unavailable"
-
-            # Generate insights using OpenAI with enhanced error handling
-            try:
-                max_tokens = 300 if self.env == 'production' else 500
-                temperature = 0.5 if self.env == 'production' else 0.7
-
-                response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a financial analyst providing insights on transaction data."},
-                        {"role": "user", "content": f"Analyze this financial transaction and provide key insights: {transaction_summary}"}
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=temperature
-                )
-
-                insights = response.choices[0].message.content
-                self.service_status.record_success()
-                self._log_service_status("generate_insights")
-
-            except (APIError, RateLimitError) as e:
-                logger.error(f"OpenAI API Error: {str(e)}")
-                self.service_status.record_error(e)
-                return self._generate_fallback_insights([transaction], error=f"AI service error: {str(e)}")
-            except Exception as e:
-                logger.error(f"Unexpected error generating insights: {str(e)}")
-                self.service_status.record_error(e)
-                insights = "AI insights currently unavailable. Using basic analysis."
-
-            return {
-                'success': True,
-                'insights': insights,
-                'generated_at': datetime.now().isoformat(),
-                'analysis_type': 'ai_powered',
-                'service_status': {
-                    'error_count': self.service_status.error_count,
-                    'last_success': self.service_status.last_success.isoformat() if self.service_status.last_success else None
-                },
-                'category_suggestion': {
-                    'category': category,
-                    'confidence': confidence,
-                    'explanation': explanation
-                }
-            }
-
+            self.client = get_openai_client()
+            if self.client is None:
+                raise ValueError("Failed to initialize OpenAI client")
+            self.client_error = None
+            logger.info("OpenAI client initialized successfully")
         except Exception as e:
-            logger.error(f"Critical error in insight generation: {str(e)}")
-            self.service_status.record_error(e)
-            return self._generate_fallback_insights(
-                [transaction_data[0]] if transaction_data else [], 
-                error=f"Critical error: {str(e)}"
+            self.client_error = str(e)
+            logger.error(f"Error initializing OpenAI client: {str(e)}")
+            self._log_error("OpenAI Client Initialization", str(e))
+
+    def _log_error(self, error_type, message):
+        """Log error to database and update service status"""
+        try:
+            error_log = ErrorLog(
+                timestamp=datetime.utcnow(),
+                error_type=error_type,
+                message=message
+            )
+            db.session.add(error_log)
+            db.session.commit()
+
+            self.service_status.error_count += 1
+            self.service_status.consecutive_failures += 1
+            self.service_status.last_error = datetime.utcnow()
+        except Exception as e:
+            logger.error(f"Failed to log error: {str(e)}")
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    async def generate_insight(self, transaction_data):
+        """Generate financial insights with retries and error handling"""
+        if self.client is None:
+            self._initialize_client()
+            if self.client is None:
+                raise ValueError("OpenAI client unavailable")
+
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial analyst assistant."},
+                    {"role": "user", "content": f"Analyze this transaction: {clean_text(str(transaction_data))}"}
+                ],
+                max_tokens=150,
+                temperature=0.7
             )
 
-    def generate_insights(self, transactions: List[Dict]) -> Dict:
-        """Generate insights from transaction data using AI."""
-        try:
-            if not self.client:
-                return self._generate_fallback_insights(transactions)
-
-            # Prepare transaction data for analysis
-            transaction_summary = self._prepare_transaction_summary(transactions)
-
-            # Get AI categorization for the latest transaction
-            latest_transaction = transactions[0] if transactions else None
-            if latest_transaction:
-                try:
-                    category, confidence, explanation = categorize_transaction(latest_transaction['description'])
-                except (APIError, RateLimitError) as e:
-                    logger.error(f"AI API Error in categorization: {str(e)}")
-                    self.service_status.record_error(e)
-                    return self._generate_fallback_insights(transactions, error=f"AI service error during categorization: {str(e)}")
-                except Exception as e:
-                    logger.error(f"Unexpected error in categorization: {str(e)}")
-                    self.service_status.record_error(e)
-                    category, confidence, explanation = None, 0, "Categorization unavailable"
-            else:
-                category, confidence, explanation = None, 0, "No transaction to analyze"
-
-            # Generate combined insights using OpenAI with environment-specific handling
-            try:
-                if self.env == 'production':
-                    # Production: More conservative token usage and caching
-                    max_tokens = 300
-                    temperature = 0.5
-                else:
-                    # Development: More experimental
-                    max_tokens = 500
-                    temperature = 0.7
-
-                response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a financial analyst providing insights on transaction data."},
-                        {"role": "user", "content": f"Analyze these financial transactions and provide key insights: {transaction_summary}"}
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=temperature
-                )
-
-                insights = response.choices[0].message.content
-                self.service_status.record_success()
-                self._log_service_status("generate_insights")
-
-            except (APIError, RateLimitError) as e:
-                logger.error(f"OpenAI API Error: {str(e)}")
-                self.service_status.record_error(e)
-                return self._generate_fallback_insights(transactions, error=f"AI service error: {str(e)}")
-            except Exception as e:
-                logger.error(f"Unexpected error generating insights: {str(e)}")
-                self.service_status.record_error(e)
-                insights = "AI insights currently unavailable. Using basic analysis."
-
-            return {
-                'success': True,
-                'insights': insights,
-                'generated_at': datetime.now().isoformat(),
-                'analysis_type': 'ai_powered',
-                'service_status': {
-                    'error_count': self.service_status.error_count,
-                    'last_success': self.service_status.last_success.isoformat() if self.service_status.last_success else None
-                },
-                'category_suggestion': {
-                    'category': category,
-                    'confidence': confidence,
-                    'explanation': explanation
-                }
-            }
+            self.service_status.consecutive_failures = 0
+            self.service_status.last_success = datetime.utcnow()
+            return response.choices[0].message.content
 
         except Exception as e:
-            logger.error(f"Critical error generating insights: {str(e)}")
-            self.service_status.record_error(e)
-            return self._generate_fallback_insights(transactions, error=f"Critical error: {str(e)}")
+            error_msg = f"Failed to generate insight: {str(e)}"
+            self._log_error("AI Insight Generation", error_msg)
+            raise
+
+    def get_service_health(self):
+        """Return current service health status"""
+        return {
+            'status': 'healthy' if self.client_error is None else 'degraded',
+            'consecutive_failures': self.service_status.consecutive_failures,
+            'error_count': self.service_status.error_count,
+            'last_success': self.service_status.last_success,
+            'last_error': self.service_status.last_error,
+            'client_status': 'initialized' if self.client else 'failed'
+        }
 
     def _prepare_transaction_summary(self, transactions: List[Dict]) -> str:
         """Prepare transaction data for AI analysis."""
@@ -350,3 +224,127 @@ class FinancialInsightsGenerator:
                     'explanation': f"Error in fallback analysis: {str(e)}"
                 }
             }
+
+    async def generate_transaction_insights(self, transaction_data: List[Dict]) -> Dict:
+        """Generate AI-powered insights for transactions with enhanced error handling."""
+        try:
+            if not isinstance(transaction_data, list) or not transaction_data:
+                logger.error("Invalid or empty transaction data provided")
+                return self._generate_fallback_insights([], error="No valid transaction data provided")
+
+            # For single transaction analysis, use the first transaction
+            transaction = transaction_data[0]
+
+            if self.client is None:
+                logger.warning("AI service client unavailable, using fallback analysis")
+                return self._generate_fallback_insights([transaction], error="AI service temporarily unavailable")
+
+
+            try:
+                insights = await self.generate_insight(transaction)
+                self.service_status.last_success = datetime.utcnow()
+                self.service_status.consecutive_failures = 0
+
+                return {
+                    'success': True,
+                    'insights': insights,
+                    'generated_at': datetime.now().isoformat(),
+                    'analysis_type': 'ai_powered',
+                    'service_status': {
+                        'error_count': self.service_status.error_count,
+                        'last_success': self.service_status.last_success.isoformat() if self.service_status.last_success else None
+                    },
+                    'category_suggestion': {
+                        'category': None,
+                        'confidence': 0,
+                        'explanation': None
+                    }
+                }
+            except Exception as e:
+                logger.error(f"Error generating insights: {str(e)}")
+                self._log_error("AI Insight Generation", str(e))
+                return self._generate_fallback_insights([transaction], error=f"AI service error: {str(e)}")
+        except Exception as e:
+            logger.error(f"Critical error in insight generation: {str(e)}")
+            self._log_error("Critical Error", str(e))
+            return self._generate_fallback_insights(
+                [transaction_data[0]] if transaction_data else [],
+                error=f"Critical error: {str(e)}"
+            )
+
+
+    async def generate_insights(self, transactions: List[Dict]) -> Dict:
+        """Generate insights from transaction data using AI."""
+        try:
+            if self.client is None:
+                return self._generate_fallback_insights(transactions)
+
+            # Prepare transaction data for analysis
+            transaction_summary = self._prepare_transaction_summary(transactions)
+
+            # Get AI categorization for the latest transaction
+            latest_transaction = transactions[0] if transactions else None
+            category, confidence, explanation = None, 0, "No transaction to analyze"
+            if latest_transaction:
+                try:
+                    category, confidence, explanation = categorize_transaction(latest_transaction['description'])
+                except (openai.APIError, openai.RateLimitError) as e:
+                    logger.error(f"AI API Error in categorization: {str(e)}")
+                    self._log_error("AI Categorization", str(e))
+                    return self._generate_fallback_insights(transactions, error=f"AI service error during categorization: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Unexpected error in categorization: {str(e)}")
+                    self._log_error("AI Categorization", str(e))
+                    category, confidence, explanation = None, 0, "Categorization unavailable"
+
+            # Generate combined insights using OpenAI with environment-specific handling
+            try:
+                insights = await self.generate_insight(transaction_summary)
+                self.service_status.last_success = datetime.utcnow()
+                self.service_status.consecutive_failures = 0
+
+                return {
+                    'success': True,
+                    'insights': insights,
+                    'generated_at': datetime.now().isoformat(),
+                    'analysis_type': 'ai_powered',
+                    'service_status': {
+                        'error_count': self.service_status.error_count,
+                        'last_success': self.service_status.last_success.isoformat() if self.service_status.last_success else None
+                    },
+                    'category_suggestion': {
+                        'category': category,
+                        'confidence': confidence,
+                        'explanation': explanation
+                    }
+                }
+
+            except (openai.APIError, openai.RateLimitError) as e:
+                logger.error(f"OpenAI API Error: {str(e)}")
+                self._log_error("AI Insight Generation", str(e))
+                return self._generate_fallback_insights(transactions, error=f"AI service error: {str(e)}")
+            except Exception as e:
+                logger.error(f"Unexpected error generating insights: {str(e)}")
+                self._log_error("AI Insight Generation", str(e))
+                insights = "AI insights currently unavailable. Using basic analysis."
+
+                return {
+                    'success': True,
+                    'insights': insights,
+                    'generated_at': datetime.now().isoformat(),
+                    'analysis_type': 'ai_powered',
+                    'service_status': {
+                        'error_count': self.service_status.error_count,
+                        'last_success': self.service_status.last_success.isoformat() if self.service_status.last_success else None
+                    },
+                    'category_suggestion': {
+                        'category': category,
+                        'confidence': confidence,
+                        'explanation': explanation
+                    }
+                }
+
+        except Exception as e:
+            logger.error(f"Critical error generating insights: {str(e)}")
+            self._log_error("Critical Error", str(e))
+            return self._generate_fallback_insights(transactions, error=f"Critical error: {str(e)}")
