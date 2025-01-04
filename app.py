@@ -36,8 +36,8 @@ login_manager = LoginManager()
 
 def verify_database_connection(app):
     """Verify database connection with retries"""
-    max_retries = 3
-    retry_delay = 5  # seconds
+    max_retries = 5
+    retry_delay = 2  # seconds
 
     for attempt in range(max_retries):
         try:
@@ -66,23 +66,17 @@ def create_app(env=None):
                    template_folder='templates',
                    static_folder='static')
 
-        # Use development database by default for safety
-        database_url = os.environ.get('DEV_DATABASE_URL')
-        if not database_url:
-            logger.warning("DEV_DATABASE_URL not set, falling back to previous configuration")
-            database_url = os.environ.get('DATABASE_URL')
-
-        if not database_url:
-            logger.error("No valid database URL configured")
-            return None
-
-        logger.info("Configuring application...")
-
         # Basic configuration with core feature protection
         app.config.update({
             'SECRET_KEY': os.environ.get('FLASK_SECRET_KEY', os.urandom(32)),
-            'SQLALCHEMY_DATABASE_URI': database_url,
+            'SQLALCHEMY_DATABASE_URI': os.environ['DATABASE_URL'],
             'SQLALCHEMY_TRACK_MODIFICATIONS': False,
+            'SQLALCHEMY_ENGINE_OPTIONS': {
+                'pool_size': 5,
+                'max_overflow': 10,
+                'pool_timeout': 30,
+                'pool_recycle': 1800,
+            },
             'TEMPLATES_AUTO_RELOAD': True,
             'WTF_CSRF_ENABLED': True,
             'WTF_CSRF_TIME_LIMIT': 3600,
@@ -115,7 +109,11 @@ def create_app(env=None):
             """Load user by ID with enhanced error handling"""
             if not user_id:
                 return None
-            return User.query.get(int(user_id))
+            try:
+                return User.query.get(int(user_id))
+            except Exception as e:
+                logger.error(f"Error loading user {user_id}: {str(e)}")
+                return None
 
         # Import and register blueprints within app context
         with app.app_context():
@@ -127,19 +125,24 @@ def create_app(env=None):
             # Import blueprints
             from auth import auth
             from routes import main
-            from historical_data import historical_data #Added
-            from errors import errors #Added
+            from historical_data import historical_data
+            from errors import errors
+            from chat import chat
 
             # Register blueprints with core feature protection
-            if app.config['PROTECT_CORE_FEATURES']:
-                app.register_blueprint(auth)
-                app.register_blueprint(main)
-                app.register_blueprint(historical_data) #Added
-                app.register_blueprint(errors) #Added
+            app.register_blueprint(auth)
+            app.register_blueprint(main)
+            app.register_blueprint(historical_data)
+            app.register_blueprint(errors)
+            app.register_blueprint(chat)
 
             # Ensure database tables exist
             db.create_all()
             logger.info("Database tables verified")
+
+            # Create admin user if not exists
+            from auth.routes import create_admin_if_not_exists
+            create_admin_if_not_exists()
 
             return app
 
@@ -147,8 +150,7 @@ def create_app(env=None):
         logger.error(f"Critical error in application creation: {str(e)}")
         return None
 
-def main():
-    """Main entry point for the application"""
+if __name__ == '__main__':
     try:
         # Determine environment
         env = os.environ.get('FLASK_ENV', 'development')
@@ -163,6 +165,3 @@ def main():
     except Exception as e:
         logger.error(f"Failed to start application: {str(e)}")
         sys.exit(1)
-
-if __name__ == '__main__':
-    main()
