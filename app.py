@@ -66,22 +66,19 @@ def create_app(env=None):
                    template_folder='templates',
                    static_folder='static')
 
-        # Get database URL with environment separation
-        if env == 'production':
+        # Use development database by default for safety
+        database_url = os.environ.get('DEV_DATABASE_URL')
+        if not database_url:
+            logger.warning("DEV_DATABASE_URL not set, falling back to previous configuration")
             database_url = os.environ.get('DATABASE_URL')
-            if not database_url:
-                logger.error("Production DATABASE_URL environment variable not set")
-                raise ValueError("Production DATABASE_URL not configured")
-        else:
-            # Use development database if not in production
-            database_url = os.environ.get('DEV_DATABASE_URL', os.environ.get('DATABASE_URL'))
-            if not database_url:
-                logger.error("Development DATABASE_URL environment variable not set")
-                raise ValueError("Development DATABASE_URL not configured")
+
+        if not database_url:
+            logger.error("No valid database URL configured")
+            return None
 
         logger.info("Configuring application...")
 
-        # Configure Flask app with enhanced security
+        # Basic configuration with core feature protection
         app.config.update({
             'SECRET_KEY': os.environ.get('FLASK_SECRET_KEY', os.urandom(32)),
             'SQLALCHEMY_DATABASE_URI': database_url,

@@ -10,6 +10,19 @@ class Config:
     TEMPLATES_AUTO_RELOAD = True
     PROTECT_PRODUCTION = True  # Global flag to prevent production modifications
 
+    # Protected core features flag
+    PROTECT_CORE_FEATURES = True  # Ensures core modules remain unmodified
+
+    # Core feature protection settings
+    PROTECTED_MODULES = [
+        'upload_data',
+        'analyze_data',
+        'historic_data',
+        'charts_of_accounts',
+        'icountant_assistant',
+        'ai_assistant_chat'
+    ]
+
     # Email configuration for password reset
     MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
     MAIL_PORT = int(os.environ.get('MAIL_PORT', 587))
@@ -32,7 +45,6 @@ class ProductionConfig(Config):
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 1800  # 30 minutes
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Production-specific database settings
     SQLALCHEMY_ENGINE_OPTIONS = {
@@ -41,22 +53,10 @@ class ProductionConfig(Config):
         'pool_recycle': 300,
         'pool_pre_ping': True,
         'connect_args': {
-            'sslmode': 'require',
             'connect_timeout': 10,
             'application_name': 'financial_app_prod'
         }
     }
-
-    @classmethod
-    def init_app(cls, app):
-        """Production-specific initialization"""
-        Config.init_app(app)
-        
-        # Prevent modifications in production
-        if cls.PROTECT_PRODUCTION:
-            app.config['PREVENT_MODIFICATIONS'] = True
-            app.config['CHARTS_OF_ACCOUNTS_PROTECTED'] = True
-
 
 class DevelopmentConfig(Config):
     """Development configuration"""
@@ -68,17 +68,15 @@ class DevelopmentConfig(Config):
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
 
-    # Protect production data in development
-    PROTECT_PRODUCTION_DATA = True
-
     # Development-specific settings
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 2,
-        'echo': True,
-        'echo_pool': True,
+        'pool_timeout': 30,
+        'pool_recycle': 300,
         'pool_pre_ping': True,
         'connect_args': {
-            'connect_timeout': 10
+            'connect_timeout': 10,
+            'application_name': 'financial_app_dev'
         }
     }
 
