@@ -1,113 +1,83 @@
-"""
-Authentication routes including login, password reset functionality
-"""
+"""Authentication routes for login and registration"""
 import logging
-from flask import (
-    render_template, redirect, url_for, flash,
-    request, session, current_app
-)
-from flask_login import current_user, login_user, logout_user, login_required
+from flask import Blueprint, render_template, redirect, url_for, flash, request, session
+from flask_login import login_user, logout_user, current_user, login_required
 from werkzeug.security import generate_password_hash
 
-from . import auth
 from models import db, User
-from forms.auth import (
-    LoginForm, RequestPasswordResetForm, ResetPasswordForm, 
-    RegistrationForm
-)
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-@auth.route('/register', methods=['GET', 'POST'])
-def register():
-    """Handle new user registration"""
-    try:
-        if current_user.is_authenticated:
-            logger.info(f"Authenticated user {current_user.id} redirected from registration")
-            return redirect(url_for('main.dashboard'))
-
-        form = RegistrationForm()
-        if form.validate_on_submit():
-            # Check if user already exists
-            existing_user = User.query.filter_by(email=form.email.data.lower().strip()).first()
-
-            if existing_user:
-                flash('An account with this email already exists.', 'error')
-                return redirect(url_for('auth.login'))
-
-            try:
-                # Create new user
-                user = User(
-                    username=form.username.data,
-                    email=form.email.data.lower().strip()
-                )
-                user.set_password(form.password.data)
-                db.session.add(user)
-                db.session.commit()
-                logger.info(f"New user registered successfully: {user.email}")
-                flash('Registration successful! Please log in.', 'success')
-                return redirect(url_for('auth.login'))
-
-            except Exception as e:
-                db.session.rollback()
-                logger.error(f"Registration error: {str(e)}")
-                flash('An error occurred during registration.', 'error')
-
-        return render_template('auth/register.html', form=form)
-    except Exception as e:
-        logger.error(f"Unexpected error in registration: {str(e)}")
-        flash('An unexpected error occurred.', 'error')
-        return redirect(url_for('auth.login'))
+auth = Blueprint('auth', __name__)
 
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
-    """Handle user login with enhanced security and session management."""
-    try:
-        # Clear any existing session data
-        session.clear()
+    """Handle user login"""
+    if current_user.is_authenticated:
+        return redirect(url_for('main.index'))
 
-        # If user is already authenticated, redirect appropriately
-        if current_user.is_authenticated and not current_user.is_deleted:
-            logger.info(f"Already authenticated user {current_user.id} redirected to dashboard")
-            return redirect(url_for('main.dashboard'))
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        remember = request.form.get('remember', False)
 
-        form = LoginForm()
-        if form.validate_on_submit():
-            user = User.query.filter_by(email=form.email.data.lower().strip()).first()
+        if not email or not password:
+            flash('Please fill in all fields.', 'error')
+            return render_template('auth/login.html')
 
-            if not user:
-                logger.warning(f"Login attempt with non-existent email: {form.email.data}")
-                flash('Invalid email or password', 'error')
-                return render_template('auth/login.html', form=form)
+        user = User.query.filter_by(email=email.lower().strip()).first()
 
-            if user.is_deleted:
-                logger.warning(f"Login attempt by deleted user: {form.email.data}")
-                flash('This account has been deleted. Please register again.', 'error')
-                return render_template('auth/login.html', form=form)
-
-            if not user.check_password(form.password.data):
-                logger.warning(f"Failed login attempt for email: {form.email.data}")
-                flash('Invalid email or password', 'error')
-                return render_template('auth/login.html', form=form)
-
-            # Login successful
-            login_user(user, remember=form.remember_me.data)
+        if user and user.check_password(password):
+            login_user(user, remember=remember)
             logger.info(f"User {user.email} logged in successfully")
+            flash('Logged in successfully!', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('main.index'))
+        else:
+            logger.warning(f"Failed login attempt for email: {email}")
+            flash('Invalid email or password.', 'error')
 
-            # Get the next page from the session or default to dashboard
-            next_page = session.get('next', url_for('main.dashboard'))
-            session.pop('next', None)  # Remove the next page from session
+    return render_template('auth/login.html')
 
-            flash('Login successful!', 'success')
-            return redirect(next_page)
+@auth.route('/register', methods=['GET', 'POST'])
+def register():
+    """Handle user registration"""
+    if current_user.is_authenticated:
+        return redirect(url_for('main.index'))
 
-    except Exception as e:
-        logger.error(f"Login error: {str(e)}")
-        flash('An error occurred during login.', 'error')
+    if request.method == 'POST':
+        email = request.form.get('email')
+        username = request.form.get('username')
+        password = request.form.get('password')
 
-    # GET request or form validation failed
-    return render_template('auth/login.html', form=form)
+        if not email or not username or not password:
+            flash('Please fill in all fields.', 'error')
+            return render_template('auth/register.html')
+
+        if User.query.filter_by(email=email.lower().strip()).first():
+            flash('Email already registered.', 'error')
+            return render_template('auth/register.html')
+
+        user = User(
+            email=email.lower().strip(),
+            username=username,
+            is_admin=False
+        )
+        user.set_password(password)
+
+        try:
+            db.session.add(user)
+            db.session.commit()
+            logger.info(f"New user registered successfully: {email}")
+            flash('Registration successful! Please login.', 'success')
+            return redirect(url_for('auth.login'))
+        except Exception as e:
+            logger.error(f"Error registering user: {str(e)}")
+            db.session.rollback()
+            flash('Registration failed. Please try again.', 'error')
+
+    return render_template('auth/register.html')
 
 @auth.route('/logout')
 @login_required
@@ -124,65 +94,26 @@ def logout():
         flash('Error during logout.', 'error')
     return redirect(url_for('auth.login'))
 
-@auth.route('/reset_password_request', methods=['GET', 'POST'])
-def reset_password_request():
-    """Handle password reset requests"""
-    if current_user.is_authenticated:
-        return redirect(url_for('main.dashboard'))
-
-    form = RequestPasswordResetForm()
-    if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data.lower().strip()).first()
-        if user:
-            flash('Check your email for instructions to reset your password', 'info')
-            return redirect(url_for('auth.login'))
-        else:
-            flash('Email address not found', 'error')
-
-    return render_template('auth/reset_password_request.html', form=form)
-
-@auth.route('/reset_password/<token>', methods=['GET', 'POST'])
-def reset_password(token):
-    """Handle password reset with token"""
-    if current_user.is_authenticated:
-        return redirect(url_for('main.dashboard'))
-
-    form = ResetPasswordForm()
-    if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data.lower().strip()).first()
-        if user:
-            user.set_password(form.password.data)
-            db.session.commit()
-            flash('Your password has been reset', 'success')
-            return redirect(url_for('auth.login'))
-        else:
-            flash('Invalid email address', 'error')
-
-    return render_template('auth/reset_password.html', form=form)
-
 def create_admin_if_not_exists():
-    """Create admin user if it doesn't exist"""
+    """Create default admin user if not exists"""
     try:
-        # Check if admin exists
-        admin = User.query.filter_by(email='festusa@cnbs.co.za').first()
-        if not admin:
-            # Create new admin user with proper fields
-            admin = User(
-                username='admin',
-                email='festusa@cnbs.co.za',
-                is_admin=True,
-            )
-            # Set password with proper hashing
-            admin.set_password('admin123')
+        admin_email = "admin@example.com"
+        admin = User.query.filter_by(email=admin_email).first()
 
-            # Add and commit to database
+        if not admin:
+            admin = User(
+                username="admin",
+                email=admin_email,
+                is_admin=True
+            )
+            admin.set_password("admin123")  # Default password
             db.session.add(admin)
             db.session.commit()
             logger.info("Admin user created successfully")
             return True
+
         return True
     except Exception as e:
         logger.error(f"Error creating admin user: {str(e)}")
-        # Rollback on error
         db.session.rollback()
         return False
