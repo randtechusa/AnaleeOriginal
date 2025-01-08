@@ -37,9 +37,20 @@ class ProductionConfig(Config):
     TESTING = False
     ENV = 'production'
     PROTECT_PRODUCTION = True
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
-    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+    
+    # Try PostgreSQL first, fallback to SQLite
+    try:
+        SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+        if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
+            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+        # Test the connection
+        from sqlalchemy import create_engine
+        engine = create_engine(SQLALCHEMY_DATABASE_URI)
+        with engine.connect():
+            pass
+    except Exception as e:
+        print(f"PostgreSQL connection failed: {str(e)}")
+        SQLALCHEMY_DATABASE_URI = 'sqlite:///app.db'
 
     # Enhanced production security settings
     SESSION_COOKIE_SECURE = True
