@@ -57,7 +57,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "flask db migrate -m 'Add subscription status field' && flask db upgrade"
+args = "flask db upgrade"
 
 [[workflows.workflow]]
 name = "Database Setup"
@@ -86,7 +86,7 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python app.py"
-waitForPort = 5000
+waitForPort = 8080
 
 [[workflows.workflow]]
 name = "System Restore"

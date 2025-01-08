@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Welcome to the Financial Intelligence Platform</h1>
+    {% if current_user.is_admin %}
+    <div class="alert alert-info">
+        You are logged in as an administrator.
+        <a href="{{ url_for('main.admin_dashboard') }}" class="alert-link">Go to Admin Dashboard</a>
+    </div>
+    {% endif %}
+    <div class="mt-4">
+        <p>You are logged in as: {{ current_user.username }}</p>
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-danger">Logout</a>
+    </div>
+</div>
+{% endblock %}

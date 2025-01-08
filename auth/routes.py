@@ -31,6 +31,11 @@ def login():
             login_user(user, remember=remember)
             logger.info(f"User {user.email} logged in successfully")
             flash('Logged in successfully!', 'success')
+
+            # Redirect admin users to admin dashboard
+            if user.is_admin:
+                return redirect(url_for('main.admin_dashboard'))
+
             next_page = request.args.get('next')
             return redirect(next_page or url_for('main.index'))
         else:
@@ -80,13 +85,13 @@ def register():
 @auth.route('/logout')
 @login_required
 def logout():
-    """Handle user logout with proper cleanup"""
+    """Handle user logout"""
     try:
         user_email = current_user.email
         logout_user()
         session.clear()
         logger.info(f"User {user_email} logged out successfully")
-        flash('You have been logged out.', 'info')
+        flash('You have been logged out.', 'success')
     except Exception as e:
         logger.error(f"Logout error: {str(e)}")
         flash('Error during logout.', 'error')
@@ -108,11 +113,6 @@ def create_admin_if_not_exists():
             db.session.add(admin)
             db.session.commit()
             logger.info("Admin user created successfully")
-
-            # Log the admin credentials for easy access
-            logger.info("Default admin credentials:")
-            logger.info("Email: admin@example.com")
-            logger.info("Password: admin123")
             return True
         return True
     except Exception as e:
