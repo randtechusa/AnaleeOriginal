@@ -21,11 +21,14 @@ def create_app():
     # Basic configuration
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32))
 
-    # Database configuration - use DATABASE_URL and fix postgres:// URLs
-    db_url = os.environ.get('DATABASE_URL')
-    if db_url and db_url.startswith("postgres://"):
+    # Database configuration with fallback
+    db_url = os.environ.get('DATABASE_URL', 'sqlite:///fallback.db')
+    if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+    app.config['SQLALCHEMY_POOL_SIZE'] = 5
+    app.config['SQLALCHEMY_MAX_OVERFLOW'] = 10
+    app.config['SQLALCHEMY_POOL_TIMEOUT'] = 30
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     # Initialize extensions
