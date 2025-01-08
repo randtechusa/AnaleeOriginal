@@ -5,7 +5,6 @@ from flask import Flask
 from flask_migrate import Migrate
 from flask_login import LoginManager
 from models import db, User
-from sqlalchemy.exc import SQLAlchemyError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,23 +14,14 @@ logger = logging.getLogger(__name__)
 migrate = Migrate()
 login_manager = LoginManager()
 
-def verify_db_connection(app):
-    """Verify database connection"""
-    try:
-        with app.app_context():
-            db.engine.connect()
-            logger.info("Database connection successful")
-            return True
-    except SQLAlchemyError as e:
-        logger.error(f"Database connection failed: {str(e)}")
-        return False
-
 def create_app():
     """Create and configure the Flask application"""
     app = Flask(__name__)
 
     # Basic configuration
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32))
+
+    # Database configuration
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -60,28 +50,18 @@ def create_app():
 if __name__ == '__main__':
     app = create_app()
 
-    # Verify database connection before starting
-    if not verify_db_connection(app):
-        logger.error("Could not connect to database. Exiting...")
-        exit(1)
-
+    # Try to initialize database
     with app.app_context():
         try:
-            # Initialize database tables
             db.create_all()
             logger.info("Database tables created successfully")
 
-            # Create admin user if not exists
+            # Create admin user
             from auth.routes import create_admin_if_not_exists
-            if create_admin_if_not_exists():
-                logger.info("Admin user verified/created successfully")
-            else:
-                logger.warning("Failed to verify/create admin user")
-
-            # Start the server
-            port = int(os.environ.get('PORT', 8080))
-            app.run(host='0.0.0.0', port=port, debug=True)
-
+            create_admin_if_not_exists()
         except Exception as e:
-            logger.error(f"Error during startup: {str(e)}")
-            raise
+            logger.error(f"Database initialization error: {str(e)}")
+
+    # Start the server with debug mode to see detailed errors
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=True)
