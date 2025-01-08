@@ -21,8 +21,11 @@ def create_app():
     # Basic configuration
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32))
 
-    # Database configuration
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+    # Database configuration - use DATABASE_URL and fix postgres:// URLs
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url and db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     # Initialize extensions
@@ -50,18 +53,21 @@ def create_app():
 if __name__ == '__main__':
     app = create_app()
 
-    # Try to initialize database
+    # Initialize database and create admin user
     with app.app_context():
         try:
+            # Create all database tables
             db.create_all()
             logger.info("Database tables created successfully")
 
             # Create admin user
             from auth.routes import create_admin_if_not_exists
-            create_admin_if_not_exists()
+            if create_admin_if_not_exists():
+                logger.info("Admin user setup completed")
+
         except Exception as e:
             logger.error(f"Database initialization error: {str(e)}")
+            raise
 
-    # Start the server with debug mode to see detailed errors
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # Run the application on port 8080
+    app.run(host='0.0.0.0', port=8080, debug=True)
