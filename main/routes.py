@@ -23,15 +23,27 @@ def dashboard():
     """Main dashboard route"""
     return render_template('dashboard.html')
 
-@main.route('/icountant')
+@main.route('/icountant', methods=['GET', 'POST'])
 @login_required
 def icountant():
     """iCountant Assistant route"""
     try:
+        logger.debug("Accessing iCountant route")
         return render_template('icountant.html')
     except Exception as e:
         logger.error(f"Error in icountant route: {str(e)}", exc_info=True)
         flash('Error accessing iCountant Assistant', 'error')
+        return redirect(url_for('main.dashboard'))
+
+@main.route('/icountant_interface', methods=['GET', 'POST'])
+@login_required
+def icountant_interface():
+    """Handle iCountant interface interactions"""
+    try:
+        return render_template('icountant.html')
+    except Exception as e:
+        logger.error(f"Error in iCountant interface: {str(e)}", exc_info=True)
+        flash('Error processing request', 'error')
         return redirect(url_for('main.dashboard'))
 
 @main.route('/upload', methods=['GET', 'POST'])
