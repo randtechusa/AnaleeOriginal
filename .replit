@@ -106,6 +106,10 @@ args = "python restore_icountant.py"
 run = ["sh", "-c", "python app.py"]
 
 [[ports]]
+localPort = 3000
+externalPort = 3000
+
+[[ports]]
 localPort = 5000
 externalPort = 80
 
