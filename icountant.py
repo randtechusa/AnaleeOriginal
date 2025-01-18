@@ -24,7 +24,7 @@ class ICountant:
         self.processed_transactions = []
         self.insights_generator = FinancialInsightsGenerator()
 
-    def get_transaction_insights(self, transaction: Dict) -> Dict:
+    async def get_transaction_insights(self, transaction: Dict) -> Dict:
         """Generate AI-powered insights with enhanced suggestion features"""
         try:
             # Validate transaction amount before processing
@@ -35,6 +35,9 @@ class ICountant:
 
             # Account Suggestion Feature
             suggested_accounts = self._suggest_accounts(transaction)
+
+            # Get insights
+            transaction_insights = await self.insights_generator.generate_transaction_insights(transaction)
 
             # Explanation Suggestion Feature
             suggested_explanation = self._generate_explanation(transaction)
@@ -47,12 +50,10 @@ class ICountant:
                                 if abs(t['entries'][0]['debit'] - abs(amount)) < 100 and
                                 self._description_similarity(t['description'], transaction.get('description', ''))]
 
-            # Generate comprehensive insights using AI
-            insights = self.insights_generator.generate_transaction_insights([transaction])
 
             return {
                 'similar_transactions': similar_transactions[:3],
-                'ai_insights': insights.get('insights', ''),
+                'ai_insights': transaction_insights.get('insights', ''),
                 'suggested_accounts': suggested_accounts,
                 'suggested_explanation': suggested_explanation,
                 'similar_explanations': similar_explanations,
@@ -173,7 +174,7 @@ class ICountant:
             for i, acc in enumerate(self.available_accounts)
         ])
 
-    def process_transaction(self, transaction: Dict) -> Tuple[str, Optional[Dict]]:
+    async def process_transaction(self, transaction: Dict) -> Tuple[str, Optional[Dict]]:
         """
         Process a single transaction and guide the user through account selection
         Returns: (message_to_user, transaction_info)
@@ -201,7 +202,7 @@ class ICountant:
             self.current_transaction = transaction
 
             # Generate insights for the transaction
-            transaction_insights = self.get_transaction_insights(transaction)
+            transaction_insights = await self.get_transaction_insights(transaction)
 
             # Bank account is the default first entry
             bank_entry = {

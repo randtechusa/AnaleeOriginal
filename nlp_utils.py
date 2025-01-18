@@ -49,6 +49,13 @@ def get_openai_client() -> Optional[OpenAI]:
         if _openai_client is not None:
             return _openai_client
 
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            logger.error("OpenAI API key not found")
+            return None
+
+        _openai_client = OpenAI(api_key=api_key)
+
         # Check if we need to wait before retrying
         if _last_client_error and _client_error_count >= MAX_ERROR_COUNT:
             if _last_client_init:
