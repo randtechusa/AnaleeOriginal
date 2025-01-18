@@ -96,7 +96,6 @@ def create_app(config_name='development'):
             try:
                 app.register_blueprint(blueprint)
                 logger.info(f"Registered {name} blueprint")
-                logger.debug(f"Available routes in {name}: {[str(p) for p in blueprint.url_map._rules]}")
             except Exception as e:
                 logger.error(f"Failed to register {name} blueprint: {str(e)}")
                 raise

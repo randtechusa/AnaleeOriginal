@@ -41,7 +41,7 @@ def demo_icountant():
         print("\n" + "="*50)  # Visual separator
 
         # Get guidance message and transaction info
-        message, transaction_info = agent.process_transaction(transaction)
+        message, transaction_info = await agent.process_transaction(transaction)
         print("ICountant says:", message)
 
         if transaction_info:  # Only proceed if transaction was valid
