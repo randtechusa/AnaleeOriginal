@@ -39,18 +39,20 @@ class ProductionConfig(Config):
     PROTECT_PRODUCTION = True
     
     # Try PostgreSQL first, fallback to SQLite
-    try:
-        SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
-        if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
-        # Test the connection
-        from sqlalchemy import create_engine
-        engine = create_engine(SQLALCHEMY_DATABASE_URI)
-        with engine.connect():
-            pass
-    except Exception as e:
-        print(f"PostgreSQL connection failed: {str(e)}")
-        SQLALCHEMY_DATABASE_URI = 'sqlite:///app.db'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///app.db')
+    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
+        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+    
+    # Database connection settings
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 5,
+        'pool_timeout': 30,
+        'pool_recycle': 300,
+        'pool_pre_ping': True,
+        'connect_args': {
+            'connect_timeout': 10
+        }
+    }
 
     # Enhanced production security settings
     SESSION_COOKIE_SECURE = True
