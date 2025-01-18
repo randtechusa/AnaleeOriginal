@@ -1,8 +1,10 @@
 """Main routes for the application"""
+import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, Account, AdminChartOfAccounts
 
+logger = logging.getLogger(__name__)
 main = Blueprint('main', __name__)
 
 @main.route('/')
