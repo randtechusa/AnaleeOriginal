@@ -1,7 +1,7 @@
 """Main application routes including core functionality"""
 import logging
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import current_user, login_required, logout_user
 from sqlalchemy import text
 from werkzeug.utils import secure_filename
@@ -39,7 +39,7 @@ class UploadForm(FlaskForm):
 
                 logger.info(f"Found {len(accounts)} active bank accounts for user {current_user.id}")
                 self.account.choices = [(str(acc.id), f"{acc.link} - {acc.name}") 
-                                     for acc in accounts]
+                                      for acc in accounts]
 
                 if not self.account.choices:
                     logger.warning(f"No active bank accounts found for user {current_user.id}")

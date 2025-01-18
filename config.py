@@ -8,10 +8,9 @@ class Config:
     SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', os.urandom(24).hex())
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     TEMPLATES_AUTO_RELOAD = True
-    PROTECT_PRODUCTION = True  # Global flag to prevent production modifications
-    PROTECT_CORE_FEATURES = True  # Ensures core modules remain unmodified
+    PROTECT_PRODUCTION = True
+    PROTECT_CORE_FEATURES = True
 
-    # Protected core features flag
     PROTECTED_MODULES = [
         'upload_data',
         'analyze_data',
@@ -29,19 +28,36 @@ class Config:
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
     MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER', MAIL_USERNAME)
 
+class DevelopmentConfig(Config):
+    """Development configuration"""
+    DEBUG = True
+    TESTING = False
+    ENV = 'development'
+
+    # Database configuration
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
+
+    # Development-specific database settings
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 2,
+        'pool_timeout': 30,
+        'pool_recycle': 300,
+        'pool_pre_ping': True,
+        'connect_args': {'check_same_thread': False}
+    }
+
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
     TESTING = False
     ENV = 'production'
-    PROTECT_PRODUCTION = True
 
     # Database configuration
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
 
-    # Database connection settings
+    # Production database settings
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 5,
         'pool_timeout': 30,
@@ -53,34 +69,15 @@ class ProductionConfig(Config):
         }
     }
 
-    # Enhanced security settings
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 1800  # 30 minutes
-
-class DevelopmentConfig(Config):
-    """Development configuration"""
-    DEBUG = True
-    TESTING = False
-    ENV = 'development'
-
-    # Use SQLite for development by default with absolute path
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL', 'sqlite:///instance/dev.db')
-
-    # Development-specific settings
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 2,
-        'pool_timeout': 30,
-        'pool_recycle': 300,
-        'pool_pre_ping': True,
-        'connect_args': {}  # SQLite doesn't need special connect args
-    }
 
 class TestingConfig(Config):
     """Testing configuration"""
     DEBUG = True
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = os.environ.get('TEST_DATABASE_URL', 'sqlite:///test.db')
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
     WTF_CSRF_ENABLED = False
 
 config = {

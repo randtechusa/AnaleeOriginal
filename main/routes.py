@@ -1,6 +1,7 @@
 """Main routes for the application"""
-from flask import Blueprint, render_template
-from flask_login import login_required
+from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask_login import login_required, current_user
+from models import db, Account, AdminChartOfAccounts
 
 main = Blueprint('main', __name__)
 
@@ -21,6 +22,43 @@ def analyze_list():
 def dashboard():
     """Main dashboard route"""
     return render_template('dashboard.html')
+
+@main.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    """Protected Chart of Accounts management"""
+    try:
+        if request.method == 'POST':
+            account = Account(
+                link=request.form['link'],
+                name=request.form['name'],
+                category=request.form['category'],
+                sub_category=request.form.get('sub_category', ''),
+                account_code=request.form.get('account_code', ''),
+                user_id=current_user.id
+            )
+            db.session.add(account)
+            db.session.commit()
+            flash('Account added successfully', 'success')
+
+        # Get user's accounts
+        accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).all()
+
+        # Get system-wide Chart of Accounts for reference
+        system_accounts = AdminChartOfAccounts.query.all()
+
+        return render_template(
+            'settings.html',
+            accounts=accounts,
+            system_accounts=system_accounts
+        )
+    except Exception as e:
+        db.session.rollback()
+        flash('Error accessing Chart of Accounts', 'error')
+        return redirect(url_for('main.dashboard'))
 
 @main.route('/admin_dashboard')
 @login_required

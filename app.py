@@ -1,16 +1,12 @@
 """Main application factory with enhanced logging and protection"""
 import os
 import logging
-import time
 from datetime import datetime
-from tenacity import retry, stop_after_attempt, wait_exponential
 from flask import Flask, render_template
 from flask_migrate import Migrate
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from models import db, User
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import OperationalError
 from config import config
 
 # Configure logging
@@ -28,24 +24,6 @@ logger = logging.getLogger(__name__)
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
-@retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    reraise=True
-)
-def test_db_connection(db_url):
-    """Test database connection with retry logic"""
-    try:
-        engine = create_engine(db_url)
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT 1"))
-            result.fetchone()
-        logger.info("Database connection test successful")
-        return True
-    except Exception as e:
-        logger.error(f"Database connection test failed: {str(e)}")
-        raise
-
 def create_app(config_name='development'):
     """Create and configure Flask application with enhanced logging"""
     app = Flask(__name__, instance_relative_config=True)
@@ -61,6 +39,12 @@ def create_app(config_name='development'):
     except Exception as e:
         logger.error(f"Failed to create instance folder: {str(e)}")
         raise
+
+    # Update SQLite database path for development
+    if app.config['ENV'] == 'development':
+        db_path = os.path.join(app.instance_path, 'dev.db')
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+        logger.info(f"Using SQLite database at: {db_path}")
 
     # Initialize extensions
     logger.info("Initializing Flask extensions...")
@@ -90,7 +74,6 @@ def create_app(config_name='development'):
         from chat import chat
         from errors import errors
 
-        # Core protected modules
         blueprints = [
             (auth, "Authentication"),
             (main, "Main Application"),
@@ -109,13 +92,13 @@ def create_app(config_name='development'):
                 logger.error(f"Failed to register {name} blueprint: {str(e)}")
                 raise
 
-        # Initialize database tables
+        # Initialize database
         try:
-            logger.info("Creating database tables if they don't exist...")
+            logger.info("Initializing database...")
             db.create_all()
-            logger.info("Database tables created successfully")
+            logger.info("Database initialized successfully")
         except Exception as e:
-            logger.error(f"Error creating database tables: {str(e)}")
+            logger.error(f"Database initialization failed: {str(e)}")
             raise
 
     # Error handlers
