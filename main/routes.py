@@ -34,6 +34,18 @@ def icountant():
         flash('Error accessing iCountant Assistant', 'error')
         return redirect(url_for('main.dashboard'))
 
+@main.route('/upload', methods=['GET', 'POST'])
+@login_required 
+def upload():
+    """Route for uploading data"""
+    try:
+        logger.debug("Accessing upload route")
+        return render_template('upload.html')
+    except Exception as e:
+        logger.error(f"Error in upload route: {str(e)}", exc_info=True)
+        flash('Error accessing upload page', 'error')
+        return redirect(url_for('main.dashboard'))
+
 @main.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():

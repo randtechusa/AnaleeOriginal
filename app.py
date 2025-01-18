@@ -21,9 +21,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 file_handler = logging.FileHandler('app.log')
+console_handler = logging.StreamHandler()
 file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 logger.setLevel(logging.DEBUG)
+
+# Add route debugging
+from flask import request
+@app.before_request
+def log_request_info():
+    logger.debug('Headers: %s', dict(request.headers))
+    logger.debug('Body: %s', request.get_data())
+    logger.debug('Route: %s %s', request.method, request.url)
 
 # Initialize Flask extensions
 login_manager = LoginManager()
