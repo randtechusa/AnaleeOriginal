@@ -23,6 +23,17 @@ def dashboard():
     """Main dashboard route"""
     return render_template('dashboard.html')
 
+@main.route('/icountant')
+@login_required
+def icountant():
+    """iCountant Assistant route"""
+    try:
+        return render_template('icountant.html')
+    except Exception as e:
+        logger.error(f"Error in icountant route: {str(e)}", exc_info=True)
+        flash('Error accessing iCountant Assistant', 'error')
+        return redirect(url_for('main.dashboard'))
+
 @main.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
