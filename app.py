@@ -28,16 +28,18 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 logger.setLevel(logging.DEBUG)
 
-# Add route debugging
-from flask import request
-@app.before_request
-def log_request_info():
-    logger.debug('Headers: %s', dict(request.headers))
-    logger.debug('Body: %s', request.get_data())
-    logger.debug('Route: %s %s', request.method, request.url)
-
 # Initialize Flask extensions
 login_manager = LoginManager()
+
+def create_app(config_name='development'):
+    app = Flask(__name__, instance_relative_config=True)
+    
+    # Add route debugging
+    @app.before_request
+    def log_request_info():
+        logger.debug('Headers: %s', dict(request.headers))
+        logger.debug('Body: %s', request.get_data())
+        logger.debug('Route: %s %s', request.method, request.url)
 csrf = CSRFProtect()
 
 def create_app(config_name='development'):

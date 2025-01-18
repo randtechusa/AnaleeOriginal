@@ -31,7 +31,7 @@ def main():
         # Start the Flask development server
         app.run(
             host='0.0.0.0',  # Allow external connections
-            port=port,
+            port=3000,  # Use port 3000 consistently
             debug=True
         )
 
