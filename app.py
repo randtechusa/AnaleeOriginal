@@ -1,3 +1,4 @@
+"""Main application factory with enhanced logging and protection"""
 import os
 import logging
 from flask import Flask, render_template, request, session
@@ -5,9 +6,9 @@ from flask_migrate import Migrate
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from models import db, User
+from werkzeug.middleware.proxy_fix import ProxyFix
 
-# Configure logging
-# Configure comprehensive logging
+# Enhanced logging configuration
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
@@ -18,7 +19,17 @@ logging.basicConfig(
     ]
 )
 
-# Add separate error log
+# Add separate debug log for blueprint operations
+debug_handler = logging.FileHandler('blueprint_debug.log')
+debug_handler.setLevel(logging.DEBUG)
+debug_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+))
+blueprint_logger = logging.getLogger('blueprint.operations')
+blueprint_logger.addHandler(debug_handler)
+blueprint_logger.setLevel(logging.DEBUG)
+
+# Add error log
 error_handler = logging.FileHandler('error.log')
 error_handler.setLevel(logging.ERROR)
 error_handler.setFormatter(logging.Formatter(
@@ -40,6 +51,7 @@ def create_app():
     """Create and configure Flask application with enhanced logging"""
     logger.info("Starting application creation...")
     app = Flask(__name__)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     # Basic configuration with logging
     logger.info("Configuring application with database connection...")
@@ -49,13 +61,13 @@ def create_app():
     retry_count = 0
     while retry_count < max_retries:
         try:
-            db_url = os.environ.get('DEV_DATABASE_URL', 'sqlite:///app.db')
+            db_url = os.environ.get('DATABASE_URL', 'sqlite:///app.db')
             app.config['SQLALCHEMY_DATABASE_URI'] = db_url
             app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
             app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32))
-            app.config['WTF_CSRF_ENABLED'] = True # Added CSRF config
-            app.config['SESSION_COOKIE_SECURE'] = True # Added session config
-            app.config['SESSION_COOKIE_HTTPONLY'] = True # Added session config
+            app.config['WTF_CSRF_ENABLED'] = True
+            app.config['SESSION_COOKIE_SECURE'] = True
+            app.config['SESSION_COOKIE_HTTPONLY'] = True
 
             # Test database connection
             db.init_app(app)
@@ -81,7 +93,7 @@ def create_app():
     migrate.init_app(app, db)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
-    csrf.init_app(app) # Initialize CSRF protection
+    csrf.init_app(app)
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -91,16 +103,49 @@ def create_app():
             logger.error(f"Error loading user {user_id}: {str(e)}")
             return None
 
-    # Register blueprints with error handling
-    from auth.routes import auth
-    from main.routes import main
-    from historical_data import historical_data  # Add this import
+    # Register blueprints with enhanced logging and error handling
+    try:
+        from auth.routes import auth
+        from main.routes import main
+        from historical_data import historical_data
+        from bank_statements import bank_statements
+        from reports import reports
+        from chat import chat
+        from errors import errors
 
-    app.register_blueprint(auth)
-    app.register_blueprint(main)
-    app.register_blueprint(historical_data)  # Register historical_data blueprint
+        # Log blueprint registration details
+        blueprint_logger.info("Starting blueprint registration process...")
 
-    logger.info("All blueprints registered successfully")
+        blueprints = [
+            (auth, "Authentication"),
+            (main, "Main Application"),
+            (historical_data, "Historical Data"),
+            (bank_statements, "Bank Statements"),
+            (reports, "Reports"),
+            (chat, "Chat"),
+            (errors, "Error Handling")
+        ]
+
+        for blueprint, name in blueprints:
+            try:
+                blueprint_logger.debug(f"Registering {name} blueprint...")
+                app.register_blueprint(blueprint)
+                blueprint_logger.info(f"Successfully registered {name} blueprint")
+
+                # Log registered routes for debugging
+                routes = [str(rule) for rule in app.url_map.iter_rules() 
+                         if rule.endpoint.startswith(blueprint.name + '.')]
+                blueprint_logger.debug(f"Registered routes for {name}: {routes}")
+
+            except Exception as e:
+                blueprint_logger.error(f"Error registering {name} blueprint: {str(e)}")
+                raise
+
+        logger.info("All blueprints registered successfully")
+
+    except Exception as e:
+        logger.error(f"Critical error during blueprint registration: {str(e)}")
+        raise
 
     # Verify database tables
     with app.app_context():

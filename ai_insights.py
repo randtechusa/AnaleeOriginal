@@ -2,6 +2,7 @@ import os
 import logging
 import openai
 from datetime import datetime
+from typing import List, Dict, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
 from nlp_utils import get_openai_client, clean_text
 from models import db, ErrorLog
