@@ -7,14 +7,28 @@ from flask_wtf.csrf import CSRFProtect
 from models import db, User
 
 # Configure logging
+# Configure comprehensive logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
         logging.FileHandler('app.log'),
+        logging.FileHandler('debug.log'),
         logging.StreamHandler()
     ]
 )
+
+# Add separate error log
+error_handler = logging.FileHandler('error.log')
+error_handler.setLevel(logging.ERROR)
+error_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+))
+logging.getLogger('').addHandler(error_handler)
+
+# Add request logging
+werkzeug_log = logging.getLogger('werkzeug')
+werkzeug_log.setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize Flask extensions 

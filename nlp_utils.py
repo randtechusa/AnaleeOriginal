@@ -5,6 +5,18 @@ Enhanced with proper type checking, validation, and comprehensive features
 import os
 import sys
 from openai import OpenAI
+
+def clean_text(text: str) -> str:
+    """Clean and sanitize text input for API calls"""
+    try:
+        # Remove special characters and excessive whitespace
+        cleaned = ' '.join(str(text).split())
+        # Truncate if too long to avoid token limits
+        return cleaned[:1000] if len(cleaned) > 1000 else cleaned
+    except Exception as e:
+        logger.error(f"Error cleaning text: {str(e)}")
+        return str(text)
+
 from tenacity import retry, stop_after_attempt, wait_exponential
 import logging
 from typing import Optional, Tuple
