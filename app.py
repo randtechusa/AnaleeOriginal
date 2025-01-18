@@ -105,7 +105,10 @@ def create_app():
     @app.errorhandler(Exception)
     def handle_exception(error):
         db.session.rollback()
-        logger.error(f"Unhandled Exception: {str(error)}")
+        logger.error(f"Unhandled Exception: {str(error)}", exc_info=True)
+        logger.debug(f"Request path: {request.path}")
+        logger.debug(f"Request method: {request.method}")
+        logger.debug(f"Request headers: {dict(request.headers)}")
         return render_template('error.html', error=error), 500
 
     logger.info("Flask application created successfully")

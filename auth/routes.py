@@ -36,11 +36,16 @@ def login():
 
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
-    """Handle user registration"""
+    """Handle user registration with enhanced logging"""
+    logger.debug("Entering registration route")
+    
     if current_user.is_authenticated:
+        logger.debug(f"Already authenticated user {current_user.id} attempting to access registration")
         return redirect(url_for('main.index'))
 
-    form = RegistrationForm()
+    try:
+        form = RegistrationForm()
+        logger.debug("Registration form instantiated")
     if form.validate_on_submit():
         try:
             user = User(

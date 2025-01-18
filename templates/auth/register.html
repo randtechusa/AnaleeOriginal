@@ -6,7 +6,15 @@
         <div class="card">
             <div class="card-body">
                 <h2 class="card-title text-center mb-4">Register</h2>
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
                 <form method="POST">
+                    {{ form.csrf_token }}
                     {{ form.hidden_tag() }}
                     <div class="mb-3">
                         {{ form.username.label(class="form-label") }}
