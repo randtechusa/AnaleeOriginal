@@ -4,8 +4,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_user, logout_user, current_user, login_required
 from werkzeug.security import generate_password_hash
 from models import db, User
-#This line is added to make the code runnable.  It needs to be defined elsewhere.
-from forms.auth import LoginForm
+from forms.auth import LoginForm, RegistrationForm
 
 
 # Configure logging
@@ -41,8 +40,24 @@ def register():
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))
 
-    if request.method == 'POST':
-        email = request.form.get('email', '').lower().strip()
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        try:
+            user = User(
+                email=form.email.data.lower(),
+                username=form.username.data,
+                is_admin=False
+            )
+            user.set_password(form.password.data)
+            db.session.add(user)
+            db.session.commit()
+            logger.info(f"New user registered successfully: {form.email.data}")
+            flash('Registration successful! Please login.', 'success')
+            return redirect(url_for('auth.login'))
+        except Exception as e:
+            logger.error(f"Error registering user: {str(e)}")
+            db.session.rollback()
+            flash('Registration failed. Please try again.', 'error')
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
 
