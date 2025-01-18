@@ -94,9 +94,11 @@ def create_app():
     # Register blueprints with error handling
     from auth.routes import auth
     from main.routes import main
+    from historical_data import historical_data  # Add this import
 
     app.register_blueprint(auth)
     app.register_blueprint(main)
+    app.register_blueprint(historical_data)  # Register historical_data blueprint
 
     logger.info("All blueprints registered successfully")
 

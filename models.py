@@ -389,3 +389,54 @@ class AdminChartOfAccounts(db.Model):
             'sub_category': self.sub_category,
             'description': self.description
         }
+
+# Add ErrorLog model after existing models
+
+class ErrorLog(db.Model):
+    """Model for tracking system errors and exceptions"""
+    __tablename__ = 'error_log'
+
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    error_type = Column(String(100), nullable=False)
+    error_message = Column(Text, nullable=False)
+    stack_trace = Column(Text)
+    module = Column(String(100))  # Module where error occurred
+    endpoint = Column(String(200))  # API endpoint if applicable
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='SET NULL'))
+    severity = Column(String(20), default='error')  # error, warning, critical
+    status = Column(String(20), default='new')  # new, investigating, resolved
+    resolution_notes = Column(Text)
+    resolved_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship with User model
+    user = relationship('User', backref=db.backref('error_logs', lazy=True))
+
+    def __repr__(self):
+        return f'<ErrorLog {self.timestamp}: {self.error_type}>'
+
+    @staticmethod
+    def log_error(error_type, error_message, stack_trace=None, module=None, 
+                  endpoint=None, user_id=None, severity='error'):
+        """Create a new error log entry"""
+        error_log = ErrorLog(
+            error_type=error_type,
+            error_message=error_message,
+            stack_trace=stack_trace,
+            module=module,
+            endpoint=endpoint,
+            user_id=user_id,
+            severity=severity
+        )
+        try:
+            db.session.add(error_log)
+            db.session.commit()
+            return error_log
+        except Exception as e:
+            db.session.rollback()
+            # Log to file as fallback if database logging fails
+            logging.error(f"Failed to log error to database: {str(e)}")
+            logging.error(f"Original error - Type: {error_type}, Message: {error_message}")
+            return None
