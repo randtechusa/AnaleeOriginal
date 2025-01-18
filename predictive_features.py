@@ -1,102 +1,96 @@
-"""
-Predictive Features Module for Analyze Data Menu
-Implements the three key predictive features:
-1. Explanation Recognition Feature (ERF)
-2. Account Suggestion Feature (ASF)
-3. Explanation Suggestion Feature (ESF)
-"""
 
+"""
+Enhanced Predictive Features Module with advanced logging and error handling
+"""
 import logging
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Optional
 from difflib import SequenceMatcher
 import numpy as np
 from sqlalchemy import text
 from models import db, Transaction, Account
-from nlp_utils import get_openai_client
+from nlp_utils import get_openai_client, clean_text
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+fh = logging.FileHandler('predictive_features.log')
+fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(fh)
 
 class PredictiveFeatures:
-    """Handles all predictive features for transaction analysis"""
+    """Enhanced predictive features with advanced error handling"""
 
     def __init__(self):
-        self.text_similarity_threshold = 0.70  # 70% text similarity
-        self.semantic_similarity_threshold = 0.95  # 95% semantic similarity
-        try:
-            self.client = get_openai_client()
-            logger.info("OpenAI client initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize OpenAI client: {str(e)}")
-            self.client = None
+        self.text_similarity_threshold = 0.70
+        self.semantic_similarity_threshold = 0.95
+        self._initialize_client()
         logger.info("PredictiveFeatures initialized with thresholds - Text: 70%, Semantic: 95%")
 
-    def find_similar_transactions(self, description: str, explanation: str = None) -> List[Dict]:
-        """
-        ERF: Find similar transactions based on text and semantic similarity
-
-        Args:
-            description: Current transaction description
-            explanation: Current transaction explanation (optional)
-
-        Returns:
-            List of similar transactions with their similarity scores and explanations
-        """
+    def _initialize_client(self):
+        """Initialize OpenAI client with error handling"""
         try:
-            # Get all transactions with explanations
+            self.client = get_openai_client()
+            if not self.client:
+                logger.error("Failed to initialize OpenAI client")
+            else:
+                logger.info("OpenAI client initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing OpenAI client: {str(e)}")
+            self.client = None
+
+    def find_similar_transactions(self, description: str, explanation: str = None) -> Dict:
+        """ERF: Enhanced transaction similarity detection"""
+        try:
+            logger.debug(f"Finding similar transactions for: {description}")
+            
+            if not description:
+                logger.warning("Empty description provided")
+                return {'success': False, 'error': 'Description required', 'similar_transactions': []}
+
+            # Get transactions with explanations
             transactions = Transaction.query.filter(
                 Transaction.explanation.isnot(None)
             ).all()
-
+            
+            logger.info(f"Found {len(transactions)} transactions with explanations")
             similar_transactions = []
-            logger.info(f"Finding similar transactions for description: {description}")
 
-            # Calculate semantic embeddings if client available and explanation provided
+            # Get current embedding if explanation provided
             current_embedding = None
             if self.client and explanation:
                 try:
                     response = self.client.embeddings.create(
-                        model="text-embedding-ada-002",  # Updated to use text-embedding-ada-002
-                        input=explanation,
+                        model="text-embedding-ada-002",
+                        input=clean_text(explanation),
                         encoding_format="float"
                     )
                     current_embedding = response.data[0].embedding
-                    logger.info("Successfully generated embedding for current explanation")
+                    logger.debug("Generated embedding for current explanation")
                 except Exception as e:
-                    logger.error(f"Error getting embeddings: {str(e)}")
-                    current_embedding = None
+                    logger.error(f"Error generating embedding: {str(e)}")
 
             for transaction in transactions:
-                # Skip if it's the same transaction
-                if transaction.description == description:
-                    continue
-
-                # Calculate text similarity
+                # Calculate similarities
                 text_ratio = SequenceMatcher(
                     None, 
                     description.lower(), 
                     transaction.description.lower()
                 ).ratio()
-
-                semantic_ratio = 1.0  # Default if no semantic comparison possible
-
-                # Calculate semantic similarity if embeddings available
+                
+                semantic_ratio = 1.0
                 if current_embedding and transaction.explanation:
                     try:
                         response = self.client.embeddings.create(
                             model="text-embedding-ada-002",
-                            input=transaction.explanation,
+                            input=clean_text(transaction.explanation),
                             encoding_format="float"
                         )
                         tx_embedding = response.data[0].embedding
                         semantic_ratio = float(np.dot(current_embedding, tx_embedding))
-                        logger.info(f"Calculated semantic similarity: {semantic_ratio}")
+                        logger.debug(f"Semantic similarity: {semantic_ratio:.3f}")
                     except Exception as e:
                         logger.error(f"Error calculating semantic similarity: {str(e)}")
-                        semantic_ratio = 1.0
 
-                # Only include if both thresholds are met
                 if (text_ratio >= self.text_similarity_threshold and 
                     semantic_ratio >= self.semantic_similarity_threshold):
                     similar_transactions.append({
@@ -114,153 +108,181 @@ class PredictiveFeatures:
             }
 
         except Exception as e:
-            logger.error(f"Error finding similar transactions: {str(e)}")
+            logger.error(f"Error in find_similar_transactions: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
                 'similar_transactions': []
             }
 
-    def replicate_explanation(self, transaction_id: int, similar_transaction_id: int) -> bool:
-        """
-        ERF: Replicate explanation from a similar transaction to the current one
-
-        Args:
-            transaction_id: ID of the transaction to update
-            similar_transaction_id: ID of the transaction to copy explanation from
-
-        Returns:
-            Boolean indicating success
-        """
+    def suggest_account(self, description: str, explanation: str = None) -> Dict:
+        """ASF: Enhanced account suggestion with context analysis"""
         try:
-            # Get source and target transactions
-            source = Transaction.query.get(similar_transaction_id)
-            target = Transaction.query.get(transaction_id)
-
-            if not source or not target:
-                logger.error("Source or target transaction not found")
-                return False
-
-            # Copy explanation
-            target.explanation = source.explanation
-            db.session.commit()
-            logger.info(f"Successfully replicated explanation from transaction {similar_transaction_id} to {transaction_id}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error replicating explanation: {str(e)}")
-            db.session.rollback()
-            return False
-
-    def suggest_account(self, description: str, explanation: str) -> Dict:
-        """ASF: Suggest account based on description and explanation"""
-        try:
-            # Get active accounts
-            accounts = Account.query.filter_by(is_active=True).all()
-
-            if not accounts:
+            logger.debug(f"Suggesting account for: {description}")
+            
+            if not description:
                 return {
                     'success': False,
-                    'message': 'No active accounts found'
+                    'error': 'Description required'
                 }
 
-            # Combine description and explanation for analysis
-            combined_text = f"{description} - {explanation}"
+            # Get active accounts
+            accounts = Account.query.filter_by(is_active=True).all()
+            if not accounts:
+                logger.warning("No active accounts found")
+                return {
+                    'success': False,
+                    'error': 'No active accounts available'
+                }
 
-            # Get AI suggestion if client available
-            if self.client:
-                try:
-                    # Create prompt with account context
-                    account_context = "\n".join([
-                        f"- {acc.name} (Category: {acc.category})"
-                        for acc in accounts
-                    ])
+            if not self.client:
+                logger.error("OpenAI client unavailable")
+                return self._fallback_account_suggestion(description, accounts)
 
-                    prompt = f"""Analyze this financial transaction and suggest the most appropriate account:
-                    Transaction: {combined_text}
+            # Prepare account context
+            account_context = "\n".join([
+                f"- {acc.name} ({acc.category}): {acc.description if acc.description else 'No description'}"
+                for acc in accounts
+            ])
 
-                    Available accounts:
-                    {account_context}
+            prompt = f"""Analyze this transaction and suggest the most appropriate account:
+            Transaction Description: {clean_text(description)}
+            Additional Context: {clean_text(explanation) if explanation else 'No additional context'}
 
-                    Respond with:
-                    1. Most appropriate account name
-                    2. Confidence score (0-1)
-                    3. Detailed reasoning
+            Available Accounts:
+            {account_context}
 
-                    Format: account|confidence|reasoning"""
+            Respond with:
+            1. Most appropriate account name
+            2. Confidence score (0-1)
+            3. Reasoning
+            Format: account|confidence|reasoning"""
 
-                    response = self.client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": "You are a financial account categorization expert."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.3
-                    )
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial account classification expert."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3
+            )
 
-                    result = response.choices[0].message.content.strip().split('|')
-
-                    if len(result) == 3:
-                        suggested_name = result[0].strip()
-                        confidence = float(result[1].strip())
-                        reasoning = result[2].strip()
-
-                        # Find matching account
-                        for account in accounts:
-                            if account.name.lower() == suggested_name.lower():
-                                return {
-                                    'success': True,
-                                    'account': account.name,
-                                    'confidence': confidence,
-                                    'reasoning': reasoning
-                                }
-                except Exception as e:
-                    logger.error(f"Error getting AI suggestion: {str(e)}")
-
-            # Fallback to basic matching
-            return self._basic_account_matching(combined_text, accounts)
+            result = response.choices[0].message.content.strip().split('|')
+            
+            if len(result) == 3:
+                account_name, confidence, reasoning = result
+                logger.info(f"Account suggestion generated: {account_name}")
+                return {
+                    'success': True,
+                    'account': account_name.strip(),
+                    'confidence': float(confidence.strip()),
+                    'reasoning': reasoning.strip()
+                }
 
         except Exception as e:
-            logger.error(f"Error suggesting account: {str(e)}")
+            logger.error(f"Error in suggest_account: {str(e)}")
             return {
                 'success': False,
-                'message': f'Error suggesting account: {str(e)}'
+                'error': str(e)
             }
 
-    def _basic_account_matching(self, text: str, accounts: List[Account]) -> Dict:
-        """Basic account matching when AI is unavailable"""
+    def _fallback_account_suggestion(self, description: str, accounts: List[Account]) -> Dict:
+        """Fallback account suggestion using basic text matching"""
         try:
             best_match = None
             highest_similarity = 0
-            reasoning = []
-
+            
             for account in accounts:
-                # Compare with account name and category
-                name_similarity = SequenceMatcher(
+                similarity = SequenceMatcher(
                     None,
-                    text.lower(),
+                    description.lower(),
                     f"{account.name} {account.category}".lower()
                 ).ratio()
-
-                if name_similarity > highest_similarity:
-                    highest_similarity = name_similarity
+                
+                if similarity > highest_similarity:
+                    highest_similarity = similarity
                     best_match = account
-                    reasoning = [
-                        f"Best text match with account name and category",
-                        f"Similarity score: {name_similarity:.2f}",
-                        f"Matched against: {account.name} ({account.category})"
-                    ]
 
+            if best_match and highest_similarity > 0.3:
+                return {
+                    'success': True,
+                    'account': best_match.name,
+                    'confidence': highest_similarity,
+                    'reasoning': 'Basic text similarity match'
+                }
+            
             return {
-                'success': True,
-                'account': best_match.name if best_match else None,
-                'confidence': highest_similarity,
-                'reasoning': ' | '.join(reasoning)
+                'success': False,
+                'error': 'No suitable account match found'
             }
 
         except Exception as e:
-            logger.error(f"Error in basic account matching: {str(e)}")
+            logger.error(f"Error in fallback account suggestion: {str(e)}")
             return {
                 'success': False,
-                'message': f'Error in basic account matching: {str(e)}'
+                'error': str(e)
+            }
+
+    def suggest_explanation(self, description: str) -> Dict:
+        """ESF: Enhanced explanation suggestion with context analysis"""
+        try:
+            logger.debug(f"Generating explanation suggestion for: {description}")
+            
+            if not description:
+                return {
+                    'success': False,
+                    'error': 'Description required'
+                }
+
+            if not self.client:
+                logger.error("OpenAI client unavailable")
+                return {
+                    'success': False,
+                    'error': 'AI service unavailable'
+                }
+
+            # Find similar transactions for context
+            similar = self.find_similar_transactions(description)
+            context = ""
+            if similar['success'] and similar['similar_transactions']:
+                context = "Similar transactions:\n" + "\n".join([
+                    f"- Description: {t['description']}\n  Explanation: {t['explanation']}"
+                    for t in similar['similar_transactions'][:3]
+                ])
+
+            prompt = f"""Generate a clear explanation for this financial transaction:
+            Transaction: {clean_text(description)}
+            
+            {context}
+            
+            Provide:
+            1. Clear, professional explanation
+            2. Confidence score (0-1)
+            Format: explanation|confidence"""
+
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial transaction analyst."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3
+            )
+
+            result = response.choices[0].message.content.strip().split('|')
+            
+            if len(result) == 2:
+                explanation, confidence = result
+                logger.info("Explanation suggestion generated successfully")
+                return {
+                    'success': True,
+                    'explanation': explanation.strip(),
+                    'confidence': float(confidence.strip())
+                }
+
+        except Exception as e:
+            logger.error(f"Error in suggest_explanation: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e)
             }

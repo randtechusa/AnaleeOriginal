@@ -1,8 +1,16 @@
 """Main routes for the application"""
 import logging
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from models import db, Account, AdminChartOfAccounts
+
+# Placeholder for PredictiveFeatures class - needs to be implemented separately
+class PredictiveFeatures:
+    def suggest_account(self, description, explanation):
+        # Replace with actual prediction logic
+        # This is a placeholder, replace with your actual implementation
+        suggestions = [{'account': 'Asset', 'confidence': 0.8}, {'account': 'Liability', 'confidence': 0.2}]
+        return suggestions
 
 logger = logging.getLogger(__name__)
 main = Blueprint('main', __name__)
@@ -124,3 +132,27 @@ def financial_insights():
         logger.error(f"Error in financial insights route: {str(e)}", exc_info=True)
         flash('Error accessing Financial Insights', 'error')
         return redirect(url_for('main.dashboard'))
+
+@main.route('/analyze/suggest-account', methods=['POST'])
+@login_required
+def suggest_account():
+    """ASF: Get account suggestions with enhanced error handling"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+        description = data.get('description', '').strip()
+        explanation = data.get('explanation', '').strip()
+
+        if not description:
+            return jsonify({'success': False, 'error': 'Description required'}), 400
+
+        predictor = PredictiveFeatures()
+        suggestions = predictor.suggest_account(description, explanation)
+
+        return jsonify(suggestions)
+
+    except Exception as e:
+        logger.error(f"Error in suggest_account route: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
