@@ -81,6 +81,7 @@ def create_app(config_name='development'):
         from reports import reports
         from chat import chat
         from errors import errors
+        from admin import admin #Import admin blueprint
 
         blueprints = [
             (auth, "Authentication"),
@@ -89,6 +90,7 @@ def create_app(config_name='development'):
             (bank_statements, "Bank Statements"),
             (reports, "Reports"),
             (chat, "Chat"),
+            (admin, "Admin"), # Added admin blueprint
             (errors, "Error Handling")
         ]
 
