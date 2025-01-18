@@ -4,6 +4,9 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_user, logout_user, current_user, login_required
 from werkzeug.security import generate_password_hash
 from models import db, User
+#This line is added to make the code runnable.  It needs to be defined elsewhere.
+from forms import LoginForm
+
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -12,37 +15,25 @@ auth = Blueprint('auth', __name__)
 
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
-    """Handle user login"""
-    if current_user.is_authenticated:
-        return redirect(url_for('main.index'))
+    try:
+        if current_user.is_authenticated:
+            logger.info(f"User {current_user.email} redirected to dashboard")
+            return redirect(url_for('main.dashboard'))
 
-    if request.method == 'POST':
-        email = request.form.get('email', '').lower().strip()
-        password = request.form.get('password', '')
-        remember = request.form.get('remember', False)
-
-        if not email or not password:
-            flash('Please fill in all fields.', 'error')
-            return render_template('auth/login.html')
-
-        user = User.query.filter_by(email=email).first()
-
-        if user and user.check_password(password):
-            login_user(user, remember=remember)
-            logger.info(f"User {user.email} logged in successfully")
-            flash('Logged in successfully!', 'success')
-
-            # Redirect admin users to admin dashboard
-            if user.is_admin:
-                return redirect(url_for('main.admin_dashboard'))
-
-            next_page = request.args.get('next')
-            return redirect(next_page or url_for('main.index'))
-        else:
-            logger.warning(f"Failed login attempt for email: {email}")
-            flash('Invalid email or password.', 'error')
-
-    return render_template('auth/login.html')
+        form = LoginForm()
+        if form.validate_on_submit():
+            user = User.query.filter_by(email=form.email.data).first()
+            if user and user.check_password(form.password.data):
+                login_user(user)
+                logger.info(f"User {user.email} logged in successfully")
+                return redirect(url_for('main.dashboard'))
+            flash('Invalid email or password')
+            logger.warning(f"Failed login attempt for email: {form.email.data}")
+        return render_template('auth/login.html', form=form)
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        flash('An error occurred during login')
+        return render_template('auth/login.html', form=form)
 
 @auth.route('/register', methods=['GET', 'POST'])
 def register():

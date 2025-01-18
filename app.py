@@ -1,38 +1,60 @@
-"""Main application configuration and initialization"""
+
 import os
 import logging
-from flask import Flask
+from flask import Flask, render_template, request
 from flask_migrate import Migrate
 from flask_login import LoginManager
 from models import db, User
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
-# Initialize Flask extensions
+# Initialize Flask extensions 
 migrate = Migrate()
 login_manager = LoginManager()
 
 def create_app():
-    """Create and configure the Flask application"""
+    """Create and configure Flask application with enhanced logging"""
+    logger.info("Starting application creation...")
     app = Flask(__name__)
+    
+    # Basic configuration with logging
+    logger.info("Configuring application with database connection...")
+    
+    # Database configuration with retries
+    max_retries = 5
+    retry_count = 0
+    while retry_count < max_retries:
+        try:
+            db_url = os.environ.get('DEV_DATABASE_URL', 'sqlite:///app.db')
+            app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+            app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+            app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32))
+            
+            # Test database connection
+            db.init_app(app)
+            with app.app_context():
+                db.engine.connect()
+            logger.info("Database connection verified")
+            break
+            
+        except Exception as e:
+            retry_count += 1
+            logger.warning(f"Database connection attempt {retry_count} failed: {str(e)}")
+            if retry_count == max_retries:
+                logger.error(f"Database connection failed after {max_retries} attempts: {str(e)}")
+                logger.error("Failed to establish database connection")
+                raise
 
-    # Basic configuration
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32))
-
-    # Database configuration with fallback
-    db_url = os.environ.get('DATABASE_URL', 'sqlite:///fallback.db')
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-    app.config['SQLALCHEMY_POOL_SIZE'] = 5
-    app.config['SQLALCHEMY_MAX_OVERFLOW'] = 10
-    app.config['SQLALCHEMY_POOL_TIMEOUT'] = 30
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-    # Initialize extensions
-    db.init_app(app)
+    # Initialize other extensions
     migrate.init_app(app, db)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
@@ -45,33 +67,28 @@ def create_app():
             logger.error(f"Error loading user {user_id}: {str(e)}")
             return None
 
-    # Register blueprints
+    # Register blueprints with error handling
     from auth.routes import auth
     from main.routes import main
+    
     app.register_blueprint(auth)
     app.register_blueprint(main)
 
+    logger.info("All blueprints registered successfully")
+    
+    # Verify database tables
+    with app.app_context():
+        try:
+            db.create_all()
+            logger.info("Database tables verified")
+        except Exception as e:
+            logger.error(f"Error verifying database tables: {str(e)}")
+            raise
+
+    logger.info("Flask application created successfully")
     return app
 
 if __name__ == '__main__':
     app = create_app()
-
-    # Initialize database and create admin user
-    with app.app_context():
-        try:
-            # Create all database tables
-            db.create_all()
-            logger.info("Database tables created successfully")
-
-            # Create admin user
-            from auth.routes import create_admin_if_not_exists
-            if create_admin_if_not_exists():
-                logger.info("Admin user setup completed")
-
-        except Exception as e:
-            logger.error(f"Database initialization error: {str(e)}")
-            raise
-
-    # Run the application on port 8080
-    port = int(os.environ.get('PORT', 80))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    logger.info("Starting Flask server on port 5000")
+    app.run(host='0.0.0.0', port=5000)
