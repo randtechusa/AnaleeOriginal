@@ -1,9 +1,11 @@
+
+import asyncio
 from decimal import Decimal
 from datetime import datetime
 from typing import List, Dict
 from icountant import ICountant
 
-def demo_icountant():
+async def demo_icountant():
     # Sample available accounts
     available_accounts = [
         {'name': 'Sales Revenue', 'category': 'Revenue', 'id': 1},
@@ -59,4 +61,4 @@ def demo_icountant():
             print("\nSkipping invalid transaction")
 
 if __name__ == "__main__":
-    demo_icountant()
+    asyncio.run(demo_icountant())
