@@ -99,3 +99,14 @@ def settings():
 @login_required
 def admin_dashboard():
     return render_template('admin/dashboard.html')
+
+@main.route('/financial_insights')
+@login_required
+def financial_insights():
+    """Financial insights dashboard route"""
+    try:
+        return render_template('financial_insights.html', financial_advice={})
+    except Exception as e:
+        logger.error(f"Error in financial insights route: {str(e)}", exc_info=True)
+        flash('Error accessing Financial Insights', 'error')
+        return redirect(url_for('main.dashboard'))
