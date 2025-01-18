@@ -23,9 +23,8 @@ def main():
         if not app:
             raise ValueError("Application creation failed")
         logger.info("Application created successfully")
-
-        # Get port from environment or default to 5000
-        port = int(os.environ.get('PORT', 5000))
+        
+        port = int(os.environ.get('PORT', 3000))
         logger.info(f"Using port: {port}")
 
         # Start the Flask development server
