@@ -2,7 +2,7 @@
 import os
 import logging
 from datetime import datetime
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from flask_migrate import Migrate
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
@@ -30,16 +30,6 @@ logger.setLevel(logging.DEBUG)
 
 # Initialize Flask extensions
 login_manager = LoginManager()
-
-def create_app(config_name='development'):
-    app = Flask(__name__, instance_relative_config=True)
-    
-    # Add route debugging
-    @app.before_request
-    def log_request_info():
-        logger.debug('Headers: %s', dict(request.headers))
-        logger.debug('Body: %s', request.get_data())
-        logger.debug('Route: %s %s', request.method, request.url)
 csrf = CSRFProtect()
 
 def create_app(config_name='development'):
@@ -106,6 +96,7 @@ def create_app(config_name='development'):
             try:
                 app.register_blueprint(blueprint)
                 logger.info(f"Registered {name} blueprint")
+                logger.debug(f"Available routes in {name}: {[str(p) for p in blueprint.url_map._rules]}")
             except Exception as e:
                 logger.error(f"Failed to register {name} blueprint: {str(e)}")
                 raise

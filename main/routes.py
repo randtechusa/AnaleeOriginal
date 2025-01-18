@@ -100,6 +100,18 @@ def settings():
 def admin_dashboard():
     return render_template('admin/dashboard.html')
 
+@main.route('/company_settings')
+@login_required
+def company_settings():
+    """Company settings route"""
+    try:
+        logger.debug("Accessing company settings route")
+        return render_template('company_settings.html')
+    except Exception as e:
+        logger.error(f"Error in company settings route: {str(e)}", exc_info=True)
+        flash('Error accessing company settings', 'error')
+        return redirect(url_for('main.dashboard'))
+
 @main.route('/financial_insights')
 @login_required
 def financial_insights():
