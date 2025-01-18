@@ -160,8 +160,52 @@ logger.setLevel(logging.DEBUG)
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
-    Account Suggestion Feature (ASF): AI-powered account suggestions based on transaction description
+    Account Suggestion Feature (ASF): Enhanced AI-powered account suggestions
     """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if not description or not available_accounts:
+            return []
+
+        client = get_openai_client()
+        if not client:
+            logger.warning("OpenAI client unavailable, using fallback matching")
+            return []
+
+        # Format account information
+        account_info = "\n".join([
+            f"- {acc['name']} ({acc['category']}): {acc.get('description', 'No description')}"
+            for acc in available_accounts
+        ])
+
+        prompt = f"""
+Analyze this transaction and suggest the most appropriate account classification:
+Transaction Description: {description}
+Additional Context: {explanation}
+
+Available Accounts:
+{account_info}
+
+Provide up to 3 suggestions in JSON format:
+[{{"account": "exact_name", "confidence": 0.0-1.0, "reasoning": "explanation"}}]
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a financial account classification expert."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+
+        suggestions = json.loads(response.choices[0].message.content)
+        return suggestions[:3]  # Return top 3 suggestions
+
+    except Exception as e:
+        logger.error(f"Error in account suggestion: {str(e)}")
+        return []
     try:
         if not description or not available_accounts:
             logger.error("Missing required parameters for account prediction")
@@ -926,9 +970,48 @@ def find_similar_transactions(transaction_description: str, transactions: list) 
 
 def suggest_explanation(description: str, similar_transactions: list = None) -> dict:
     """
-    ESF (Explanation Suggestion Feature): 
-    Proactively generates explanation suggestions based on transaction description
+    ESF (Explanation Suggestion Feature): Enhanced explanation generator
     """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        client = get_openai_client()
+        if not client:
+            logger.warning("OpenAI client unavailable, using pattern matching")
+            return {'explanation': '', 'confidence': 0}
+
+        # Create context from similar transactions
+        context = ""
+        if similar_transactions:
+            context = "\nSimilar transactions:\n" + "\n".join([
+                f"- {t.description}: {t.explanation}"
+                for t in similar_transactions[:3] if hasattr(t, 'explanation')
+            ])
+
+        prompt = f"""
+Analyze this financial transaction and provide a clear explanation:
+Description: {description}
+{context}
+
+Provide a JSON response:
+{{"explanation": "clear_professional_explanation", "confidence": 0.0-1.0}}
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a financial transaction analyst."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+
+        result = json.loads(response.choices[0].message.content)
+        return result
+
+    except Exception as e:
+        logger.error(f"Error suggesting explanation: {str(e)}")
+        return {'explanation': '', 'confidence': 0}
     logger.info("ESF: Generating explanation suggestion")
     
     # Initialize OpenAI client

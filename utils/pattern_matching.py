@@ -5,6 +5,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime
 import statistics
+from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,9 @@ class PatternMatcher:
         self.fuzzy_matches_cache = {}
         self.keyword_rules = defaultdict(list)
         self.min_similarity_score = 0.85
-        
+        self.min_similarity = 0.8
+        self.patterns = {}
+
     def preprocess_description(self, description: str) -> str:
         """Standardize transaction description for matching"""
         if not description:
@@ -775,7 +778,7 @@ class PatternMatcher:
 
             # Calculate basic statistics
             mean_amount = sum(amounts) / len(amounts)
-            sorted_amounts = sorted(amounts)
+            sorted_amounts= sorted(amounts)
             median_amount = sorted_amounts[len(amounts) // 2]
 
             # Calculate variance and standard deviation
@@ -1131,3 +1134,48 @@ class PatternMatcher:
                 'pattern_metrics': {},
                 'sample_size': 0
             }
+    def find_similar_explanations(self, description: str, explanations: List[Dict]) -> List[Dict]:
+        """Enhanced Explanation Recognition Feature"""
+        matches = []
+        try:
+            if not description or not explanations:
+                return matches
+
+            # Normalize description
+            desc_normalized = self._normalize_text(description)
+
+            for exp in explanations:
+                if not exp.get('description'):
+                    continue
+
+                exp_normalized = self._normalize_text(exp['description'])
+                similarity = self._calculate_similarity(desc_normalized, exp_normalized)
+
+                if similarity >= self.min_similarity:
+                    matches.append({
+                        'explanation': exp.get('explanation', ''),
+                        'similarity': similarity,
+                        'original_description': exp.get('description', '')
+                    })
+
+            # Sort by similarity score
+            matches.sort(key=lambda x: x['similarity'], reverse=True)
+            return matches[:5]  # Return top 5 matches
+
+        except Exception as e:
+            logger.error(f"Error finding similar explanations: {str(e)}")
+            return []
+
+    def _normalize_text(self, text: str) -> str:
+        """Normalize text for comparison"""
+        if not text:
+            return ""
+        # Convert to lowercase and remove special characters
+        text = re.sub(r'[^\w\s]', '', text.lower())
+        return text.strip()
+
+    def _calculate_similarity(self, text1: str, text2: str) -> float:
+        """Calculate text similarity using SequenceMatcher"""
+        if not text1 or not text2:
+            return 0.0
+        return SequenceMatcher(None, text1, text2).ratio()
