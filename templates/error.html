@@ -1,0 +1,16 @@
+
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="alert alert-danger" role="alert">
+        <h4 class="alert-heading">An Error Occurred</h4>
+        <p>The server encountered an error while processing your request.</p>
+        {% if error %}
+        <hr>
+        <p class="mb-0">Details: {{ error }}</p>
+        {% endif %}
+    </div>
+    <a href="{{ url_for('main.index') }}" class="btn btn-primary">Return to Home</a>
+</div>
+{% endblock %}

@@ -42,7 +42,12 @@ def create_app():
             # Test database connection
             db.init_app(app)
             with app.app_context():
-                db.engine.connect()
+                try:
+                    db.engine.connect()
+                    db.engine.dispose()
+                except Exception as e:
+                    logger.error(f"Database connection error: {str(e)}")
+                    raise
             logger.info("Database connection verified")
             break
             
@@ -84,6 +89,19 @@ def create_app():
         except Exception as e:
             logger.error(f"Error verifying database tables: {str(e)}")
             raise
+
+    # Register error handlers
+    @app.errorhandler(500)
+    def internal_error(error):
+        db.session.rollback()  # Roll back any failed database transactions
+        logger.error(f"Internal Server Error: {str(error)}")
+        return render_template('error.html', error=error), 500
+
+    @app.errorhandler(Exception)
+    def handle_exception(error):
+        db.session.rollback()
+        logger.error(f"Unhandled Exception: {str(error)}")
+        return render_template('error.html', error=error), 500
 
     logger.info("Flask application created successfully")
     return app
