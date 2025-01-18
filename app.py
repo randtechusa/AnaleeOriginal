@@ -1,9 +1,9 @@
-
 import os
 import logging
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, session
 from flask_migrate import Migrate
 from flask_login import LoginManager
+from flask_wtf.csrf import CSRFProtect
 from models import db, User
 
 # Configure logging
@@ -20,15 +20,16 @@ logger = logging.getLogger(__name__)
 # Initialize Flask extensions 
 migrate = Migrate()
 login_manager = LoginManager()
+csrf = CSRFProtect() # Added CSRF protection
 
 def create_app():
     """Create and configure Flask application with enhanced logging"""
     logger.info("Starting application creation...")
     app = Flask(__name__)
-    
+
     # Basic configuration with logging
     logger.info("Configuring application with database connection...")
-    
+
     # Database configuration with retries
     max_retries = 5
     retry_count = 0
@@ -38,7 +39,10 @@ def create_app():
             app.config['SQLALCHEMY_DATABASE_URI'] = db_url
             app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
             app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32))
-            
+            app.config['WTF_CSRF_ENABLED'] = True # Added CSRF config
+            app.config['SESSION_COOKIE_SECURE'] = True # Added session config
+            app.config['SESSION_COOKIE_HTTPONLY'] = True # Added session config
+
             # Test database connection
             db.init_app(app)
             with app.app_context():
@@ -50,7 +54,7 @@ def create_app():
                     raise
             logger.info("Database connection verified")
             break
-            
+
         except Exception as e:
             retry_count += 1
             logger.warning(f"Database connection attempt {retry_count} failed: {str(e)}")
@@ -63,6 +67,7 @@ def create_app():
     migrate.init_app(app, db)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
+    csrf.init_app(app) # Initialize CSRF protection
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -75,12 +80,12 @@ def create_app():
     # Register blueprints with error handling
     from auth.routes import auth
     from main.routes import main
-    
+
     app.register_blueprint(auth)
     app.register_blueprint(main)
 
     logger.info("All blueprints registered successfully")
-    
+
     # Verify database tables
     with app.app_context():
         try:

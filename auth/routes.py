@@ -125,3 +125,15 @@ def create_admin_if_not_exists():
         logger.error(f"Error creating admin user: {str(e)}")
         db.session.rollback()
         return False
+from functools import wraps
+from flask import flash, redirect, url_for
+from flask_login import current_user
+
+def login_required_for_module(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            flash('Please log in to access this feature.', 'warning')
+            return redirect(url_for('auth.login'))
+        return f(*args, **kwargs)
+    return decorated_function
