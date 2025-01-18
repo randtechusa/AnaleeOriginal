@@ -116,5 +116,6 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
-    logger.info("Starting Flask server on port 5000")
-    app.run(host='0.0.0.0', port=5000)
+    port = 8080
+    logger.info(f"Starting Flask server on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=True)
