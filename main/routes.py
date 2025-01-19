@@ -122,18 +122,63 @@ def icountant_interface():
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required 
 def upload():
-    """Route for uploading data"""
+    """Route for uploading data with improved error handling"""
     try:
         from .forms import UploadForm
         form = UploadForm()
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
 
-        if request.method == 'POST' and form.validate_on_submit():
+        if request.method == 'POST':
+            if not form.validate_on_submit():
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'error': 'Form validation failed'}), 400
+                flash('Please ensure all fields are filled correctly', 'error')
+                return render_template('upload.html', form=form, files=files)
+
             if not form.file.data:
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'error': 'No file selected'}), 400
                 flash('Please select a file to upload', 'error')
+                return render_template('upload.html', form=form, files=files)
+
+            try:
+                file = form.file.data
+                filename = secure_filename(file.filename)
+                upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], str(current_user.id))
+                os.makedirs(upload_path, exist_ok=True)
+                file_path = os.path.join(upload_path, filename)
+                
+                # Save file with timeout handling
+                file.save(file_path)
+                
+                upload = UploadedFile(
+                    filename=filename,
+                    filepath=file_path,
+                    user_id=current_user.id
+                )
+                db.session.add(upload)
+                db.session.commit()
+
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': True})
+                flash('File uploaded successfully', 'success')
                 return redirect(url_for('main.upload'))
 
-            file = form.file.data
-            filename = secure_filename(file.filename)
+            except Exception as e:
+                logger.error(f"Upload error: {str(e)}")
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'error': f'Upload failed: {str(e)}'}), 500
+                flash(f'Upload failed: {str(e)}', 'error')
+                return render_template('upload.html', form=form, files=files)
+
+        return render_template('upload.html', form=form, files=files)
+
+    except Exception as e:
+        logger.error(f"Unexpected error in upload route: {str(e)}")
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
+        flash('An unexpected error occurred', 'error')
+        return render_template('upload.html', form=form, files=[])
             upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], str(current_user.id))
             os.makedirs(upload_path, exist_ok=True)
             file_path = os.path.join(upload_path, filename)

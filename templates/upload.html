@@ -119,7 +119,15 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             if (!response.ok) {
-                throw new Error(`Upload failed: ${response.status}`);
+                const errorText = await response.text();
+                let errorMessage;
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    errorMessage = errorJson.error || `Upload failed: ${response.status}`;
+                } catch {
+                    errorMessage = `Upload failed: ${response.status}`;
+                }
+                throw new Error(errorMessage);
             }
 
             const result = await response.json();
