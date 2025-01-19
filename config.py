@@ -10,6 +10,7 @@ class Config:
     TEMPLATES_AUTO_RELOAD = True
     PROTECT_PRODUCTION = True
     PROTECT_CORE_FEATURES = True
+    UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 
     # Database configuration - Use PostgreSQL by default
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')

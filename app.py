@@ -15,9 +15,16 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
         logging.FileHandler('app.log'),
+        logging.FileHandler('upload_debug.log'),
         logging.StreamHandler()
     ]
 )
+# Add specific upload logger
+upload_logger = logging.getLogger('upload')
+upload_logger.setLevel(logging.DEBUG)
+fh = logging.FileHandler('upload_debug.log')
+fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'))
+upload_logger.addHandler(fh)
 logger = logging.getLogger(__name__)
 
 # Initialize Flask extensions
