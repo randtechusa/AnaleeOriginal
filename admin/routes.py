@@ -12,7 +12,7 @@ import os
 from . import admin, admin_required
 from models import (db, User, AdminChartOfAccounts, Account, Transaction, 
                          CompanySettings, UploadedFile, BankStatementUpload,
-                         FinancialGoal)
+                         FinancialGoal, AlertConfiguration, AlertHistory)
 from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm, CompanySettingsForm
 
 @admin.route('/charts-of-accounts', methods=['GET'])
