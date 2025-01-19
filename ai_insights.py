@@ -47,7 +47,7 @@ class FinancialInsightsGenerator:
             error_log = ErrorLog(
                 timestamp=datetime.utcnow(),
                 error_type=error_type,
-                message=message
+                error_message=message
             )
             db.session.add(error_log)
             db.session.commit()

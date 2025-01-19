@@ -54,23 +54,8 @@ def get_openai_client() -> Optional[OpenAI]:
             logger.error("OpenAI API key not found")
             return None
 
-        _openai_client = OpenAI(api_key=api_key)
-
-        # Check if we need to wait before retrying
-        if _last_client_error and _client_error_count >= MAX_ERROR_COUNT:
-            if _last_client_init:
-                wait_time = CLIENT_RETRY_INTERVAL - (time.time() - _last_client_init)
-                if wait_time > 0:
-                    logger.warning(f"Rate limit cooldown: waiting {wait_time:.0f}s")
-                    return None
-
-        api_key = os.environ.get('OPENAI_API_KEY')
-        if not api_key:
-            logger.error("OpenAI API key not found")
-            return None
-
-        # Initialize client with required configuration
-        _openai_client = OpenAI(api_key=api_key)
+        # Initialize client with required configuration and max retries
+        _openai_client = OpenAI(api_key=api_key, max_retries=3)
         _last_client_init = time.time()
         _client_error_count = 0  # Reset error count on successful initialization
         logger.info("OpenAI client initialized successfully")
