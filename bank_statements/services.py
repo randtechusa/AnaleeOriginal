@@ -20,6 +20,26 @@ class BankStatementService:
         self.excel_reader = BankStatementExcelReader()
         self.errors = []
 
+    def process_upload(self, file, account_id, user_id):
+        """Process the uploaded bank statement"""
+        try:
+            # Save file temporarily
+            filename = secure_filename(file.filename)
+            temp_path = os.path.join('uploads', str(user_id), filename)
+            os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+            file.save(temp_path)
+            
+            # Process the file
+            df = self.excel_reader.read_excel(temp_path)
+            if df is None:
+                return False, {"error": "Failed to read bank statement file", "details": self.excel_reader.get_errors()}
+                
+            return True, {"message": "File processed successfully", "rows": len(df)}
+            
+        except Exception as e:
+            logger.error(f"Error processing upload: {str(e)}")
+            return False, {"error": "Error processing file", "details": [str(e)]}
+
     def get_friendly_error_message(self, error_type: str, details: str = None) -> str:
         """
         Convert technical errors into user-friendly messages

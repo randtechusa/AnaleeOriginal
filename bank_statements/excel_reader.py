@@ -24,7 +24,12 @@ class BankStatementExcelReader:
         try:
             # Read Excel file with explicit engine
             logger.info(f"Attempting to read Excel file: {file_path}")
-            df = pd.read_excel(file_path, engine='openpyxl')
+            try:
+                df = pd.read_excel(file_path, engine='openpyxl')
+            except Exception as e:
+                logger.error(f"Error reading with openpyxl: {str(e)}")
+                # Try alternate engine
+                df = pd.read_excel(file_path, engine='xlrd')
 
             # Log the columns found
             logger.info(f"Found columns: {df.columns.tolist()}")
