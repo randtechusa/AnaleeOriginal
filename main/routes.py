@@ -1,8 +1,11 @@
 """Main routes for the application"""
 import logging
+import os
+from werkzeug.utils import secure_filename
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
-from models import db, Account, AdminChartOfAccounts, Transaction
+from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile # Added UploadedFile model import
+
 
 main = Blueprint('main', __name__)
 
@@ -60,7 +63,7 @@ def dashboard():
     try:
         # Get transactions and calculate totals
         transactions = Transaction.query.filter_by(user_id=current_user.id).all()
-        
+
         total_income = 0
         total_expenses = 0
         for transaction in transactions:
@@ -123,24 +126,34 @@ def upload():
     try:
         from .forms import UploadForm
         form = UploadForm()
-        
+
         if request.method == 'POST' and form.validate_on_submit():
             if not form.file.data:
                 flash('Please select a file to upload', 'error')
                 return redirect(url_for('main.upload'))
-                
+
             file = form.file.data
-            account_id = form.account.data
-            
-            # Process file upload
-            # Add your file processing logic here
-            
-            flash('File uploaded successfully', 'success')
-            return redirect(url_for('main.dashboard'))
-            
-        # Get list of previously uploaded files
-        files = [] # Replace with actual file query from database
-        
+            filename = secure_filename(file.filename)
+            upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], str(current_user.id))
+            os.makedirs(upload_path, exist_ok=True)
+            file_path = os.path.join(upload_path, filename)
+            file.save(file_path)
+
+            # Create upload record
+            upload = UploadedFile(
+                filename=filename,
+                filepath=file_path,
+                user_id=current_user.id
+            )
+            db.session.add(upload)
+            db.session.commit()
+
+            return jsonify({'success': True})
+        except Exception as e:
+            current_app.logger.error(f"Upload error: {str(e)}")
+            return jsonify({'success': False, 'error': str(e)})
+
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
         return render_template('upload.html', form=form, files=files)
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}", exc_info=True)
