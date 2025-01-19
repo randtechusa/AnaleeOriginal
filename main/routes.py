@@ -1,3 +1,28 @@
+
+@main.route('/edit_account/<int:account_id>', methods=['GET', 'POST'])
+@login_required
+def edit_account(account_id):
+    """Edit an existing account"""
+    account = Account.query.get_or_404(account_id)
+    
+    if account.user_id != current_user.id:
+        abort(403)
+        
+    if request.method == 'POST':
+        account.name = request.form.get('name')
+        account.category = request.form.get('category')
+        account.sub_category = request.form.get('sub_category')
+        
+        try:
+            db.session.commit()
+            flash('Account updated successfully', 'success')
+            return redirect(url_for('main.settings'))
+        except Exception as e:
+            db.session.rollback()
+            flash('Error updating account', 'error')
+            
+    return render_template('edit_account.html', account=account)
+
 """Main routes for the application"""
 import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
@@ -126,10 +151,24 @@ def upload():
 def settings():
     """Protected Chart of Accounts management"""
     try:
-        # Verify user has active subscription
-        if not current_user.subscription_status == 'active':
-            flash('Please activate your subscription to access Chart of Accounts', 'warning')
-            return redirect(url_for('main.dashboard'))
+        if not current_user.is_authenticated:
+            flash('Please log in to access Chart of Accounts', 'warning')
+            return redirect(url_for('auth.login'))
+
+        # Get user accounts and system accounts
+        user_accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).order_by(Account.category, Account.name).all()
+
+        system_accounts = AdminChartOfAccounts.query.order_by(
+            AdminChartOfAccounts.category,
+            AdminChartOfAccounts.name
+        ).all()
+
+        return render_template('settings.html',
+                             accounts=user_accounts,
+                             system_accounts=system_accounts)
 
         if request.method == 'POST':
             if not request.form.get('name') or not request.form.get('category'):
