@@ -126,17 +126,16 @@ def upload():
     from .forms import UploadForm
 
     try:
-        # Ensure upload directory exists with proper permissions
-        upload_folder = os.path.abspath(current_app.config['UPLOAD_FOLDER'])
+        # Set up upload directories with absolute paths
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        upload_folder = os.path.join(base_dir, '..', current_app.config['UPLOAD_FOLDER'])
         user_upload_folder = os.path.join(upload_folder, str(current_user.id))
-        
+
         # Create directories with proper permissions
-        os.makedirs(upload_folder, mode=0o755, exist_ok=True)
-        os.makedirs(user_upload_folder, mode=0o755, exist_ok=True)
-        
-        # Verify directory permissions
-        os.chmod(upload_folder, 0o755)
-        os.chmod(user_upload_folder, 0o755)
+        for directory in [upload_folder, user_upload_folder]:
+            if not os.path.exists(directory):
+                os.makedirs(directory, mode=0o755)
+            os.chmod(directory, 0o755)
             
         logger.debug(f'Using upload folder: {user_upload_folder}')
         logger.info('Upload folder verified/created successfully')
@@ -200,9 +199,20 @@ def handle_file_upload(file, account_id):
 def settings():
     """Protected Chart of Accounts management"""
     try:
-        if not current_user.is_authenticated:
-            flash('Please log in to access Chart of Accounts', 'warning')
-            return redirect(url_for('auth.login'))
+        # Already authenticated due to @login_required
+        user_accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).order_by(Account.category, Account.name).all()
+        
+        system_accounts = AdminChartOfAccounts.query.order_by(
+            AdminChartOfAccounts.category,
+            AdminChartOfAccounts.name
+        ).all()
+        
+        return render_template('settings.html',
+                             accounts=user_accounts,
+                             system_accounts=system_accounts)
 
         # Get user accounts and system accounts
         user_accounts = Account.query.filter_by(
