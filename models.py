@@ -69,6 +69,12 @@ class User(UserMixin, db.Model):
         """Check if user is active for Flask-Login"""
         return not self.is_deleted and self.subscription_status in ['active', 'pending']
 
+    def soft_delete(self):
+        """Mark user as deleted and update subscription status"""
+        self.is_deleted = True
+        self.subscription_status = 'deactivated'
+        self.updated_at = datetime.utcnow()
+        
     def __repr__(self):
         return f'<User {self.username}>'
 
