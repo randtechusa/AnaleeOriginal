@@ -126,15 +126,26 @@ def upload():
     from .forms import UploadForm
 
     try:
-        # Ensure upload folder exists with proper permissions
-        upload_folder = current_app.config['UPLOAD_FOLDER']
-        user_upload_folder = os.path.join(upload_folder, str(current_user.id))
-        logger.debug(f'Using upload folder: {user_upload_folder}')
+        # Create base upload directory if it doesn't exist
+        upload_folder = os.path.abspath(current_app.config['UPLOAD_FOLDER'])
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder, mode=0o755)
         
-        os.makedirs(user_upload_folder, mode=0o755, exist_ok=True)
+        # Create user-specific upload directory
+        user_upload_folder = os.path.join(upload_folder, str(current_user.id))
+        if not os.path.exists(user_upload_folder):
+            os.makedirs(user_upload_folder, mode=0o755)
+            
+        logger.debug(f'Using upload folder: {user_upload_folder}')
         logger.info('Upload folder verified/created successfully')
-
+        
         form = UploadForm()
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+        
+        if request.method == 'POST' and form.validate_on_submit():
+            return handle_file_upload(form.file.data)
+            
+        return render_template('upload.html', form=form, files=files)
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
 
         if request.method == 'POST' and form.validate_on_submit():
