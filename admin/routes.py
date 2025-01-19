@@ -10,7 +10,9 @@ import pandas as pd
 import os
 
 from . import admin, admin_required
-from models import db, User, AdminChartOfAccounts, Account, Transaction, CompanySettings, UploadedFile, BankStatementUpload
+from models import (db, User, AdminChartOfAccounts, Account, Transaction, 
+                         CompanySettings, UploadedFile, BankStatementUpload,
+                         FinancialGoal)
 from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm, CompanySettingsForm
 
 @admin.route('/charts-of-accounts', methods=['GET'])
