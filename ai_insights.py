@@ -32,10 +32,17 @@ class FinancialInsightsGenerator:
         """Initialize OpenAI client with proper error handling"""
         try:
             logger.debug("Starting OpenAI client initialization in FinancialInsightsGenerator")
+            logger.debug(f"Previous client state: {self.client is not None}")
+            logger.debug(f"Previous error state: {self.client_error}")
+            
             self.client = get_openai_client()
+            logger.debug(f"Client initialization result: {self.client is not None}")
             
             if self.client is None:
                 logger.error("get_openai_client() returned None")
+                logger.debug("Checking service status metrics")
+                logger.debug(f"Error count: {self.service_status.error_count}")
+                logger.debug(f"Consecutive failures: {self.service_status.consecutive_failures}")
                 raise ValueError("Failed to initialize OpenAI client")
                 
             self.client_error = None

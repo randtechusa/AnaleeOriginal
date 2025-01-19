@@ -46,6 +46,7 @@ def get_openai_client() -> Optional[OpenAI]:
 
     try:
         logger.debug("Entering get_openai_client()")
+        logger.debug(f"Current client state - exists: {_openai_client is not None}")
         
         if _openai_client is not None:
             logger.debug("Returning existing OpenAI client instance")
@@ -57,17 +58,22 @@ def get_openai_client() -> Optional[OpenAI]:
             logger.error("OpenAI API key not found in environment variables")
             return None
 
-        logger.debug("Attempting to initialize OpenAI client")
+        logger.debug("Attempting to initialize OpenAI client with minimal config")
         try:
             _openai_client = OpenAI(
                 api_key=api_key,
-                max_retries=3,
             )
-            logger.debug("OpenAI client initialization successful")
-        except TypeError as e:
-            logger.error(f"TypeError during client initialization: {str(e)}")
-            logger.debug(f"OpenAI initialization parameters: api_key=<redacted>, max_retries=3")
-            raise
+            logger.debug("OpenAI client basic initialization successful")
+            
+            # Test the client with a simple API call
+            try:
+                logger.debug("Testing client with models.list")
+                _openai_client.models.list(limit=1)
+                logger.info("OpenAI client fully verified and working")
+            except Exception as test_error:
+                logger.error(f"Client verification failed: {str(test_error)}")
+                _openai_client = None
+                raise
             
         _last_client_init = time.time()
         _client_error_count = 0
