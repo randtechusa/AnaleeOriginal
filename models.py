@@ -250,6 +250,7 @@ class UploadedFile(db.Model):
 
     id = Column(Integer, primary_key=True)
     filename = Column(String(255), nullable=False)
+    filepath = Column(String(512), nullable=False)
     upload_date = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
     transactions = relationship('Transaction', back_populates='file')
