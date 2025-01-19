@@ -130,6 +130,11 @@ def upload():
         logger.debug(f'Using upload folder: {upload_folder}')
         os.makedirs(upload_folder, exist_ok=True)
         logger.info('Upload folder verified/created successfully')
+    except Exception as e:
+        logger.error(f"Error creating upload folder: {str(e)}")
+        flash('Error setting up upload directory', 'error')
+        return redirect(url_for('main.dashboard'))
+
     try:
         from .forms import UploadForm
         form = UploadForm()
