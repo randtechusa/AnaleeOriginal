@@ -416,7 +416,11 @@ def income_statement():
                 expense_accounts.append(account_data)
                 total_expenses += abs(balance) if balance < 0 else 0
 
-        return render_template('reports/income_statement.html',
+        # Initialize totals
+            total_income = sum(account['balance'] for account in income_accounts)
+            total_expenses = sum(account['balance'] for account in expense_accounts)
+
+            return render_template('reports/income_statement.html',
                             start_date=from_date,
                             end_date=to_date,
                             min_date=min_date,
