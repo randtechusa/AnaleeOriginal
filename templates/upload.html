@@ -115,7 +115,10 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const response = await fetch('/upload', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
             });
 
             if (!response.ok) {
@@ -125,7 +128,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     const errorJson = JSON.parse(errorText);
                     errorMessage = errorJson.error || `Upload failed: ${response.status}`;
                 } catch {
-                    errorMessage = `Upload failed: ${response.status}`;
+                    errorMessage = `Upload failed: ${errorText.substring(0, 100)}...`;
                 }
                 throw new Error(errorMessage);
             }

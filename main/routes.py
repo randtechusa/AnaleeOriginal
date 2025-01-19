@@ -166,9 +166,13 @@ def upload():
 
             except Exception as e:
                 logger.error(f"Upload error: {str(e)}")
+                error_message = str(e)
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return jsonify({'success': False, 'error': f'Upload failed: {str(e)}'}), 500
-                flash(f'Upload failed: {str(e)}', 'error')
+                    return jsonify({
+                        'success': False,
+                        'error': error_message
+                    }), 500
+                flash(error_message, 'error')
                 return render_template('upload.html', form=form, files=files)
 
         return render_template('upload.html', form=form, files=files)
