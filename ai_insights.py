@@ -31,14 +31,20 @@ class FinancialInsightsGenerator:
     def _initialize_client(self):
         """Initialize OpenAI client with proper error handling"""
         try:
+            logger.debug("Starting OpenAI client initialization in FinancialInsightsGenerator")
             self.client = get_openai_client()
+            
             if self.client is None:
+                logger.error("get_openai_client() returned None")
                 raise ValueError("Failed to initialize OpenAI client")
+                
             self.client_error = None
-            logger.info("OpenAI client initialized successfully")
+            logger.info("OpenAI client initialized successfully in FinancialInsightsGenerator")
+            
         except Exception as e:
             self.client_error = str(e)
-            logger.error(f"Error initializing OpenAI client: {str(e)}")
+            logger.error(f"Error initializing OpenAI client: {str(e)}", exc_info=True)
+            logger.debug(f"Client initialization error details - Type: {type(e).__name__}, Args: {e.args}")
             self._log_error("OpenAI Client Initialization", str(e))
 
     def _log_error(self, error_type, message):

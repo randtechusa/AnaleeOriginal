@@ -45,20 +45,33 @@ def get_openai_client() -> Optional[OpenAI]:
     global _openai_client, _last_client_error, _last_client_init, _client_error_count
 
     try:
-        # Use existing client if available and working
+        logger.debug("Entering get_openai_client()")
+        
         if _openai_client is not None:
+            logger.debug("Returning existing OpenAI client instance")
             return _openai_client
 
+        logger.debug("Fetching API key from environment")
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
-            logger.error("OpenAI API key not found")
+            logger.error("OpenAI API key not found in environment variables")
             return None
 
-        # Initialize client with required configuration and max retries
-        _openai_client = OpenAI(api_key=api_key, max_retries=3)
+        logger.debug("Attempting to initialize OpenAI client")
+        try:
+            _openai_client = OpenAI(
+                api_key=api_key,
+                max_retries=3,
+            )
+            logger.debug("OpenAI client initialization successful")
+        except TypeError as e:
+            logger.error(f"TypeError during client initialization: {str(e)}")
+            logger.debug(f"OpenAI initialization parameters: api_key=<redacted>, max_retries=3")
+            raise
+            
         _last_client_init = time.time()
-        _client_error_count = 0  # Reset error count on successful initialization
-        logger.info("OpenAI client initialized successfully")
+        _client_error_count = 0
+        logger.info("OpenAI client fully initialized and ready")
 
         return _openai_client
 
