@@ -458,70 +458,44 @@ def subscription_stats():
 def delete_subscriber(user_id):
     """Delete a deactivated subscriber and remove all associated data"""
     try:
-        # Verify system is not in maintenance mode
         if current_app.config.get('MAINTENANCE_MODE', False):
             flash('System is in maintenance mode. Deletions are temporarily disabled.', 'warning')
             return redirect(url_for('admin.deactivated_subscribers'))
 
         user = User.query.get_or_404(user_id)
 
-        # Enhanced safety checks
         if user.is_admin:
-            abort(400)  # Bad Request - Cannot delete admin users
+            abort(400)
 
         if user.subscription_status != 'deactivated':
             flash('Only deactivated users can be deleted', 'error')
             return redirect(url_for('admin.deactivated_subscribers'))
 
-        # Log the deletion attempt
         current_app.logger.info(f"Admin {current_user.username} deleting user {user.username}")
 
-        try:
-            # Mark user as deleted first
-            user.soft_delete()
+        # Handle active sessions
+        if hasattr(current_app, 'session_interface'):
+            current_app.session_interface.delete_user_sessions(user.id)
 
-            # Delete user's data in specific order to handle dependencies
-            BankStatementUpload.query.filter_by(user_id=user.id).delete()
-            db.session.flush()
+        # Mark user as deleted
+        user.soft_delete()
+        
+        # Delete related data using cascade
+        db.session.delete(user)
+        db.session.commit()
 
-            Transaction.query.filter_by(user_id=user.id).delete()
-            db.session.flush()
+        flash(f'User {user.username} has been permanently deleted', 'success')
+        current_app.logger.info(f"User {user.username} deleted successfully by admin {current_user.username}")
 
-            # Delete accounts after transactions are removed
-            Account.query.filter_by(user_id=user.id).delete()
-            db.session.flush()
-
-            # Delete all other user-related data
-            CompanySettings.query.filter_by(user_id=user.id).delete()
-            UploadedFile.query.filter_by(user_id=user.id).delete()
-            FinancialGoal.query.filter_by(user_id=user.id).delete()
-            AlertConfiguration.query.filter_by(user_id=user.id).delete()
-            AlertHistory.query.filter_by(user_id=user.id).delete()
-            HistoricalData.query.filter_by(user_id=user.id).delete()
-            RiskAssessment.query.filter_by(user_id=user.id).delete()
-            FinancialRecommendation.query.filter_by(user_id=user.id).delete()
-            db.session.flush()
-
-            # Force logout if the deleted user has any active sessions
+        # Logout if deleting self
+        if current_user.id == user.id:
             from flask_login import logout_user
-            if current_user.id == user.id:
-                logout_user()
-
-            db.session.commit()
-            flash(f'User {user.username} has been permanently deleted', 'success')
-            current_app.logger.info(f"User {user.username} deleted successfully by admin {current_user.username}")
-
-        except Exception as db_error:
-            db.session.rollback()
-            error_msg = str(db_error)
-            current_app.logger.error(f"Database error while deleting user {user.username}: {error_msg}")
-            flash(f'Database error while deleting user: {error_msg}', 'error')
-            return redirect(url_for('admin.deactivated_subscribers'))
-
+            logout_user()
+            
     except Exception as e:
         db.session.rollback()
         error_msg = str(e)
-        current_app.logger.error(f"Error deleting user: {error_msg}")
+        current_app.logger.error(f"Error deleting user {user.username if user else user_id}: {error_msg}")
         flash(f'Error deleting user: {error_msg}', 'error')
 
     return redirect(url_for('admin.deactivated_subscribers'))
