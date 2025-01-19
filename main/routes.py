@@ -2,7 +2,7 @@
 import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
-from models import db, Account, AdminChartOfAccounts
+from models import db, Account, AdminChartOfAccounts, Transaction
 
 # Placeholder for PredictiveFeatures class - needs to be implemented separately
 class PredictiveFeatures:
