@@ -124,12 +124,12 @@ def icountant_interface():
 def upload():
     logger.info('Starting upload process')
     # Ensure upload directory exists
+    """Route for uploading data with improved error handling"""
     try:
         upload_folder = current_app.config['UPLOAD_FOLDER']
         logger.debug(f'Using upload folder: {upload_folder}')
         os.makedirs(upload_folder, exist_ok=True)
         logger.info('Upload folder verified/created successfully')
-    """Route for uploading data with improved error handling"""
     try:
         from .forms import UploadForm
         form = UploadForm()
