@@ -44,39 +44,44 @@ def get_openai_client() -> Optional[OpenAI]:
     """Get OpenAI client with improved error handling and state tracking"""
     global _openai_client, _last_client_error, _last_client_init, _client_error_count
 
+    logger.debug("Entering get_openai_client()")
+    logger.debug(f"Initial state - Client exists: {_openai_client is not None}, Error count: {_client_error_count}")
+
     try:
-        logger.debug("Entering get_openai_client()")
-        logger.debug(f"Current client state - exists: {_openai_client is not None}")
-        
         if _openai_client is not None:
             logger.debug("Returning existing OpenAI client instance")
             return _openai_client
 
-        logger.debug("Fetching API key from environment")
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
             logger.error("OpenAI API key not found in environment variables")
             return None
 
-        logger.debug("Attempting to initialize OpenAI client with minimal config")
+        logger.debug("Attempting OpenAI client initialization")
         try:
-            _openai_client = OpenAI(
-                api_key=api_key,
-            )
-            logger.debug("OpenAI client basic initialization successful")
-            
-            # Test the client with a simple API call
-            try:
-                logger.debug("Testing client with models.list")
-                _openai_client.models.list(limit=1)
-                logger.info("OpenAI client fully verified and working")
-            except Exception as test_error:
-                logger.error(f"Client verification failed: {str(test_error)}")
-                _openai_client = None
-                raise
-            
-        _last_client_init = time.time()
-        _client_error_count = 0
+            _openai_client = OpenAI(api_key=api_key)
+            logger.debug("Basic client initialization successful")
+
+            # Verify client with API call
+            logger.debug("Verifying client with test API call")
+            _openai_client.models.list(limit=1)
+            logger.info("Client verification successful")
+
+            _last_client_init = time.time()
+            _client_error_count = 0
+            logger.debug(f"Client initialized at: {_last_client_init}")
+            return _openai_client
+
+        except Exception as e:
+            logger.error(f"Client initialization/verification failed: {str(e)}")
+            _client_error_count += 1
+            _last_client_error = str(e)
+            _openai_client = None
+            return None
+
+    except Exception as outer_e:
+        logger.error(f"Unexpected error in get_openai_client: {str(outer_e)}")
+        return None
         logger.info("OpenAI client fully initialized and ready")
 
         return _openai_client
