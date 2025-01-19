@@ -86,7 +86,7 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python app.py"
-waitForPort = 8080
+waitForPort = 3000
 
 [[workflows.workflow]]
 name = "System Restore"

@@ -11,6 +11,11 @@ class Config:
     PROTECT_PRODUCTION = True
     PROTECT_CORE_FEATURES = True
 
+    # Database configuration - Use PostgreSQL by default
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
+        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+
     PROTECTED_MODULES = [
         'upload_data',
         'analyze_data',
@@ -34,16 +39,12 @@ class DevelopmentConfig(Config):
     TESTING = False
     ENV = 'development'
 
-    # Database configuration
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
-
-    # Development-specific database settings
+    # Development database settings
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 2,
+        'pool_size': 5,
         'pool_timeout': 30,
         'pool_recycle': 300,
-        'pool_pre_ping': True,
-        'connect_args': {'check_same_thread': False}
+        'pool_pre_ping': True
     }
 
 class ProductionConfig(Config):
@@ -52,14 +53,9 @@ class ProductionConfig(Config):
     TESTING = False
     ENV = 'production'
 
-    # Database configuration
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
-    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
-
     # Production database settings
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 5,
+        'pool_size': 10,
         'pool_timeout': 30,
         'pool_recycle': 300,
         'pool_pre_ping': True,

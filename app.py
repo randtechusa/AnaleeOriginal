@@ -19,14 +19,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
-file_handler = logging.FileHandler('app.log')
-console_handler = logging.StreamHandler()
-file_handler.setFormatter(formatter)
-console_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
-logger.setLevel(logging.DEBUG)
 
 # Initialize Flask extensions
 login_manager = LoginManager()
@@ -64,9 +56,9 @@ def create_app(config_name='development'):
 
     @login_manager.user_loader
     def load_user(user_id):
-        """Load user by ID"""
+        """Load user by ID using updated SQLAlchemy method"""
         try:
-            return User.query.get(int(user_id))
+            return db.session.get(User, int(user_id))
         except Exception as e:
             logger.error(f"Error loading user {user_id}: {str(e)}")
             return None
@@ -81,7 +73,7 @@ def create_app(config_name='development'):
         from reports import reports
         from chat import chat
         from errors import errors
-        from admin import admin #Import admin blueprint
+        from admin import admin
 
         blueprints = [
             (auth, "Authentication"),
@@ -90,7 +82,7 @@ def create_app(config_name='development'):
             (bank_statements, "Bank Statements"),
             (reports, "Reports"),
             (chat, "Chat"),
-            (admin, "Admin"), # Added admin blueprint
+            (admin, "Admin"),
             (errors, "Error Handling")
         ]
 
@@ -124,10 +116,15 @@ def create_app(config_name='development'):
         logger.error(f"Unhandled Exception: {str(error)}", exc_info=True)
         return render_template('error.html', error=error), 500
 
+    # Basic route for testing
+    @app.route('/')
+    def index():
+        return 'Application is running'
+
     logger.info("Application creation completed successfully")
     return app
 
 if __name__ == '__main__':
     app = create_app(os.getenv('FLASK_ENV', 'development'))
     port = int(os.environ.get('PORT', 3000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port)
