@@ -1,18 +1,25 @@
+"""Main routes for the application"""
+import logging
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
+from flask_login import login_required, current_user
+from models import db, Account, AdminChartOfAccounts, Transaction
+
+main = Blueprint('main', __name__)
 
 @main.route('/edit_account/<int:account_id>', methods=['GET', 'POST'])
 @login_required
 def edit_account(account_id):
     """Edit an existing account"""
     account = Account.query.get_or_404(account_id)
-    
+
     if account.user_id != current_user.id:
         abort(403)
-        
+
     if request.method == 'POST':
         account.name = request.form.get('name')
         account.category = request.form.get('category')
         account.sub_category = request.form.get('sub_category')
-        
+
         try:
             db.session.commit()
             flash('Account updated successfully', 'success')
@@ -20,14 +27,8 @@ def edit_account(account_id):
         except Exception as e:
             db.session.rollback()
             flash('Error updating account', 'error')
-            
-    return render_template('edit_account.html', account=account)
 
-"""Main routes for the application"""
-import logging
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
-from flask_login import login_required, current_user
-from models import db, Account, AdminChartOfAccounts, Transaction
+    return render_template('edit_account.html', account=account)
 
 # Placeholder for PredictiveFeatures class - needs to be implemented separately
 class PredictiveFeatures:
@@ -38,7 +39,7 @@ class PredictiveFeatures:
         return suggestions
 
 logger = logging.getLogger(__name__)
-main = Blueprint('main', __name__)
+
 
 @main.route('/')
 @main.route('/index')
@@ -261,3 +262,4 @@ def suggest_account():
     except Exception as e:
         logger.error(f"Error in suggest_account route: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
+from flask import abort
