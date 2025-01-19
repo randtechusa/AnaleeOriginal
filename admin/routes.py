@@ -473,9 +473,9 @@ def delete_subscriber(user_id):
 
         current_app.logger.info(f"Admin {current_user.username} deleting user {user.username}")
 
-        # Handle active sessions
-        if hasattr(current_app, 'session_interface'):
-            current_app.session_interface.delete_user_sessions(user.id)
+        # Clear any active sessions for the user
+        from flask import session
+        session.clear()
 
         # Mark user as deleted
         user.soft_delete()
