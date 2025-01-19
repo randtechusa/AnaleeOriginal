@@ -95,8 +95,27 @@ def icountant_interface():
 def upload():
     """Route for uploading data"""
     try:
-        logger.debug("Accessing upload route")
-        return render_template('upload.html')
+        from .forms import UploadForm
+        form = UploadForm()
+        
+        if request.method == 'POST' and form.validate_on_submit():
+            if not form.file.data:
+                flash('Please select a file to upload', 'error')
+                return redirect(url_for('main.upload'))
+                
+            file = form.file.data
+            account_id = form.account.data
+            
+            # Process file upload
+            # Add your file processing logic here
+            
+            flash('File uploaded successfully', 'success')
+            return redirect(url_for('main.dashboard'))
+            
+        # Get list of previously uploaded files
+        files = [] # Replace with actual file query from database
+        
+        return render_template('upload.html', form=form, files=files)
     except Exception as e:
         logger.error(f"Error in upload route: {str(e)}", exc_info=True)
         flash('Error accessing upload page', 'error')
