@@ -31,7 +31,41 @@ def analyze_list():
 @login_required 
 def dashboard():
     """Main dashboard route"""
-    return render_template('dashboard.html')
+    try:
+        # Get transactions and calculate totals
+        transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+        
+        total_income = 0
+        total_expenses = 0
+        for transaction in transactions:
+            if transaction.amount > 0:
+                total_income += transaction.amount
+            else:
+                total_expenses += abs(transaction.amount)
+
+        return render_template('dashboard.html',
+                            total_income=total_income,
+                            total_expenses=total_expenses,
+                            transaction_count=len(transactions),
+                            transactions=transactions[:5],  # Latest 5 transactions
+                            monthly_labels=[],  # Add chart data as needed
+                            monthly_income=[],
+                            monthly_expenses=[],
+                            category_labels=[],
+                            category_amounts=[])
+    except Exception as e:
+        logger.error(f"Error in dashboard route: {str(e)}")
+        flash('Error loading dashboard data', 'error')
+        return render_template('dashboard.html',
+                            total_income=0,
+                            total_expenses=0,
+                            transaction_count=0,
+                            transactions=[],
+                            monthly_labels=[],
+                            monthly_income=[],
+                            monthly_expenses=[],
+                            category_labels=[],
+                            category_amounts=[])
 
 @main.route('/icountant', methods=['GET', 'POST'])
 @login_required
