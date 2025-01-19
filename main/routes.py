@@ -122,14 +122,21 @@ def icountant_interface():
 @main.route('/upload', methods=['GET', 'POST'])
 @login_required 
 def upload():
-    logger.info('Starting upload process')
-    # Ensure upload directory exists
     """Route for uploading data with improved error handling"""
+    logger.info('Starting upload process')
     try:
+        # Ensure upload folder exists
         upload_folder = current_app.config['UPLOAD_FOLDER']
         logger.debug(f'Using upload folder: {upload_folder}')
         os.makedirs(upload_folder, exist_ok=True)
         logger.info('Upload folder verified/created successfully')
+        
+        # Initialize form
+        form = UploadForm()
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+        
+        if not files:
+            flash('No files uploaded yet. Please select a file to upload.', 'info')
     except Exception as e:
         logger.error(f"Error creating upload folder: {str(e)}")
         flash('Error setting up upload directory', 'error')
