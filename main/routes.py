@@ -126,9 +126,18 @@ def upload():
 def settings():
     """Protected Chart of Accounts management"""
     try:
+        # Verify user has active subscription
+        if not current_user.subscription_status == 'active':
+            flash('Please activate your subscription to access Chart of Accounts', 'warning')
+            return redirect(url_for('main.dashboard'))
+
         if request.method == 'POST':
+            if not request.form.get('name') or not request.form.get('category'):
+                flash('Account name and category are required', 'error')
+                return redirect(url_for('main.settings'))
+
             account = Account(
-                link=request.form['link'],
+                link=request.form.get('link', request.form['name']),
                 name=request.form['name'],
                 category=request.form['category'],
                 sub_category=request.form.get('sub_category', ''),
@@ -143,10 +152,13 @@ def settings():
         accounts = Account.query.filter_by(
             user_id=current_user.id,
             is_active=True
-        ).all()
+        ).order_by(Account.category, Account.name).all()
 
         # Get system-wide Chart of Accounts for reference
-        system_accounts = AdminChartOfAccounts.query.all()
+        system_accounts = AdminChartOfAccounts.query.order_by(
+            AdminChartOfAccounts.category, 
+            AdminChartOfAccounts.name
+        ).all()
 
         return render_template(
             'settings.html',
@@ -155,7 +167,8 @@ def settings():
         )
     except Exception as e:
         db.session.rollback()
-        flash('Error accessing Chart of Accounts', 'error')
+        current_app.logger.error(f"Settings access error: {str(e)}")
+        flash('Error accessing Chart of Accounts. Please try again.', 'error')
         return redirect(url_for('main.dashboard'))
 
 @main.route('/admin_dashboard')
