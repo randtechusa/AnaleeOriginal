@@ -147,10 +147,10 @@ def upload():
                 upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], str(current_user.id))
                 os.makedirs(upload_path, exist_ok=True)
                 file_path = os.path.join(upload_path, filename)
-                
+
                 # Save file with timeout handling
                 file.save(file_path)
-                
+
                 upload = UploadedFile(
                     filename=filename,
                     filepath=file_path,
@@ -179,31 +179,6 @@ def upload():
             return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
         flash('An unexpected error occurred', 'error')
         return render_template('upload.html', form=form, files=[])
-            upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], str(current_user.id))
-            os.makedirs(upload_path, exist_ok=True)
-            file_path = os.path.join(upload_path, filename)
-            file.save(file_path)
-
-            # Create upload record
-            upload = UploadedFile(
-                filename=filename,
-                filepath=file_path,
-                user_id=current_user.id
-            )
-            db.session.add(upload)
-            db.session.commit()
-
-            return jsonify({'success': True})
-        except Exception as e:
-            current_app.logger.error(f"Upload error: {str(e)}")
-            return jsonify({'success': False, 'error': str(e)})
-
-        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-        return render_template('upload.html', form=form, files=files)
-    except Exception as e:
-        logger.error(f"Error in upload route: {str(e)}", exc_info=True)
-        flash('Error accessing upload page', 'error')
-        return redirect(url_for('main.dashboard'))
 
 @main.route('/settings', methods=['GET', 'POST'])
 @login_required
