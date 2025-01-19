@@ -78,6 +78,28 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return f'<User {self.username}>'
 
+    @staticmethod
+    def create_default_accounts(user_id):
+        """Create default accounts for new user from AdminChartOfAccounts"""
+        try:
+            admin_accounts = AdminChartOfAccounts.query.all()
+            for admin_account in admin_accounts:
+                account = Account(
+                    user_id=user_id,
+                    link=admin_account.link,
+                    category=admin_account.category,
+                    sub_category=admin_account.sub_category,
+                    account_code=admin_account.code,
+                    name=admin_account.name
+                )
+                db.session.add(account)
+            db.session.commit()
+            return True
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error creating default accounts: {str(e)}")
+            return False
+
 class FinancialGoal(db.Model):
     """Model for financial goals"""
     __tablename__ = 'financial_goal'

@@ -38,7 +38,7 @@ def login():
 def register():
     """Handle user registration with enhanced logging"""
     logger.debug("Entering registration route")
-    
+
     if current_user.is_authenticated:
         logger.debug(f"Already authenticated user {current_user.id} attempting to access registration")
         return redirect(url_for('main.index'))
@@ -46,7 +46,7 @@ def register():
     try:
         form = RegistrationForm()
         logger.debug("Registration form instantiated")
-        
+
         if form.validate_on_submit():
             try:
                 user = User(
@@ -57,6 +57,10 @@ def register():
                 user.set_password(form.password.data)
                 db.session.add(user)
                 db.session.commit()
+
+                # Create default accounts for the new user
+                User.create_default_accounts(user.id)
+
                 logger.info(f"New user registered successfully: {form.email.data}")
                 flash('Registration successful! Please login.', 'success')
                 return redirect(url_for('auth.login'))
@@ -64,57 +68,12 @@ def register():
                 logger.error(f"Error registering user: {str(e)}")
                 db.session.rollback()
                 flash('Registration failed. Please try again.', 'error')
-                
+
         return render_template('auth/register.html', form=form)
     except Exception as e:
         logger.error(f"Registration route error: {str(e)}")
         flash('An error occurred during registration', 'error')
         return render_template('auth/register.html', form=form)
-        try:
-            user = User(
-                email=form.email.data.lower(),
-                username=form.username.data,
-                is_admin=False
-            )
-            user.set_password(form.password.data)
-            db.session.add(user)
-            db.session.commit()
-            logger.info(f"New user registered successfully: {form.email.data}")
-            flash('Registration successful! Please login.', 'success')
-            return redirect(url_for('auth.login'))
-        except Exception as e:
-            logger.error(f"Error registering user: {str(e)}")
-            db.session.rollback()
-            flash('Registration failed. Please try again.', 'error')
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '')
-
-        if not email or not username or not password:
-            flash('Please fill in all fields.', 'error')
-            return render_template('auth/register.html')
-
-        if User.query.filter_by(email=email).first():
-            flash('Email already registered.', 'error')
-            return render_template('auth/register.html')
-
-        try:
-            user = User(
-                email=email,
-                username=username,
-                is_admin=False
-            )
-            user.set_password(password)
-            db.session.add(user)
-            db.session.commit()
-            logger.info(f"New user registered successfully: {email}")
-            flash('Registration successful! Please login.', 'success')
-            return redirect(url_for('auth.login'))
-        except Exception as e:
-            logger.error(f"Error registering user: {str(e)}")
-            db.session.rollback()
-            flash('Registration failed. Please try again.', 'error')
-
-    return render_template('auth/register.html')
 
 @auth.route('/logout')
 @login_required
