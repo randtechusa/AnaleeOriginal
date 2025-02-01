@@ -14,11 +14,8 @@ class Config:
 
     # Database configuration
     SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/app.db'
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 5,
-        'pool_timeout': 30,
-        'pool_recycle': 300
-    }
+    SQLALCHEMY_ENGINE_OPTIONS = {}  # Remove pooling for SQLite
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     PROTECTED_MODULES = [

@@ -26,11 +26,15 @@ def create_app(config_name='development'):
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(config[config_name])
     
+    # Ensure instance directory exists
+    os.makedirs(app.instance_path, exist_ok=True)
+    
     # Initialize extensions
     _init_extensions(app)
-    _create_instance_path(app)
-    _setup_development_db(app)
     _register_blueprints(app)
+    
+    with app.app_context():
+        db.create_all()
     _register_error_handlers(app)
     
     return app
