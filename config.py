@@ -13,21 +13,18 @@ class Config:
 
     # Database Configuration
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Enhanced database connection settings with better timeout handling
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 5,
-        'pool_timeout': 30,
-        'pool_recycle': 300,
+        'pool_size': 2,  # Reduced pool size for development
+        'pool_timeout': 30,  # Increased timeout
+        'pool_recycle': 1800,  # Recycle connections every 30 minutes
         'pool_pre_ping': True,
         'connect_args': {
-            'connect_timeout': 10
+            'connect_timeout': 30,  # Increased connection timeout
+            'application_name': 'flask_app'
         }
     }
-
-    # Format database URL
-    db_url = os.environ.get('DATABASE_URL')
-    if db_url and db_url.startswith('postgres://'):
-        db_url = db_url.replace('postgres://', 'postgresql://', 1)
-    SQLALCHEMY_DATABASE_URI = db_url
 
 class DevelopmentConfig(Config):
     """Development configuration"""
@@ -35,21 +32,19 @@ class DevelopmentConfig(Config):
     TESTING = False
     ENV = 'development'
 
+    # Get database URL from environment
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url and database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
+    SQLALCHEMY_DATABASE_URI = database_url
+
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
     TESTING = False
     ENV = 'production'
-
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 10,
-        'pool_timeout': 30,
-        'pool_recycle': 300,
-        'pool_pre_ping': True,
-        'connect_args': {
-            'connect_timeout': 10
-        }
-    }
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
 
 class TestingConfig(Config):
     """Testing configuration"""
