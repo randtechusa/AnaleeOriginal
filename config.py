@@ -64,7 +64,6 @@ class ProductionConfig(Config):
         'pool_recycle': 300,
         'pool_pre_ping': True,
         'connect_args': {
-            'connect_timeout': 10,
             'application_name': 'financial_app_prod'
         }
     }

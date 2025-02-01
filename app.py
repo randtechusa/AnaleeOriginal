@@ -26,8 +26,11 @@ def create_app(config_name='development'):
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(config[config_name])
     
-    # Ensure instance directory exists
-    os.makedirs(app.instance_path, exist_ok=True)
+    # Ensure instance directory exists with proper permissions
+    instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
+    os.makedirs(instance_path, exist_ok=True)
+    os.chmod(instance_path, 0o777)  # Ensure write permissions
+    app.instance_path = instance_path
     
     # Initialize extensions
     _init_extensions(app)
@@ -102,12 +105,7 @@ def load_user(user_id):
 
 if __name__ == '__main__':
     app = create_app('production')
-    port = int(os.environ.get('PORT', 8080))
-    
-    # Ensure instance directory exists and is writable
-    instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
-    os.makedirs(instance_path, exist_ok=True)
-    
+    port = int(os.environ.get('PORT', 80))
     app.run(
         host='0.0.0.0',
         port=port,
