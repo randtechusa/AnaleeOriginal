@@ -12,10 +12,11 @@ class Config:
     PROTECT_CORE_FEATURES = True
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 
-    # Database configuration - Use PostgreSQL by default
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
-    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+    # Database configuration - Use Replit PostgreSQL
+    if 'REPLIT_DB_URL' in os.environ:
+        SQLALCHEMY_DATABASE_URI = os.environ.get('REPLIT_DB_URL')
+    else:
+        SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/app.db'  # Fallback for development
 
     PROTECTED_MODULES = [
         'upload_data',
