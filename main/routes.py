@@ -2,7 +2,7 @@
 import logging
 import os
 from werkzeug.utils import secure_filename
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app, abort
 from flask_login import login_required, current_user
 from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile # Added UploadedFile model import
 
@@ -57,7 +57,7 @@ def analyze_list():
     return render_template('analyze_list.html')
 
 @main.route('/dashboard')
-@login_required 
+@login_required
 def dashboard():
     """Main dashboard route"""
     try:
@@ -120,7 +120,7 @@ def icountant_interface():
         return redirect(url_for('main.dashboard'))
 
 @main.route('/upload', methods=['GET', 'POST'])
-@login_required 
+@login_required
 def upload():
     """Route for uploading data with improved error handling"""
     from .forms import UploadForm
@@ -143,12 +143,6 @@ def upload():
         form = UploadForm()
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
         
-        if request.method == 'POST' and form.validate_on_submit():
-            return handle_file_upload(form.file.data)
-            
-        return render_template('upload.html', form=form, files=files)
-        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-
         if request.method == 'POST' and form.validate_on_submit():
             if form.file.data:
                 return handle_file_upload(form.file.data, form.account.data)
@@ -320,4 +314,20 @@ def suggest_account():
     except Exception as e:
         logger.error(f"Error in suggest_account route: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
-from flask import abort
+
+@main.route('/analyze/<int:file_id>')
+@login_required
+def analyze(file_id):
+    """Analyze a specific uploaded file"""
+    try:
+        file = UploadedFile.query.get_or_404(file_id)
+
+        # Verify file belongs to current user
+        if file.user_id != current_user.id:
+            abort(403)
+
+        return render_template('analyze.html', file=file)
+    except Exception as e:
+        logger.error(f"Error in analyze route: {str(e)}")
+        flash('Error accessing file for analysis', 'error')
+        return redirect(url_for('main.analyze_list'))
