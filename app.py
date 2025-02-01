@@ -15,16 +15,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
         logging.FileHandler('app.log'),
-        logging.FileHandler('upload_debug.log'),
         logging.StreamHandler()
     ]
 )
-# Add specific upload logger
-upload_logger = logging.getLogger('upload')
-upload_logger.setLevel(logging.DEBUG)
-fh = logging.FileHandler('upload_debug.log')
-fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'))
-upload_logger.addHandler(fh)
 logger = logging.getLogger(__name__)
 
 # Initialize Flask extensions
@@ -32,47 +25,32 @@ login_manager = LoginManager()
 csrf = CSRFProtect()
 
 def create_app(config_name='development'):
-    """Create and configure Flask application with enhanced logging"""
+    """Create and configure Flask application"""
     app = Flask(__name__, instance_relative_config=True)
 
     # Load configuration
-    logger.info(f"Starting application with {config_name} configuration...")
     app.config.from_object(config[config_name])
 
-    # Ensure instance folder exists
-    try:
-        os.makedirs(app.instance_path, exist_ok=True)
-        logger.info(f"Instance folder created at {app.instance_path}")
-    except Exception as e:
-        logger.error(f"Failed to create instance folder: {str(e)}")
-        raise
-
-    # Update SQLite database path for development
-    if app.config['ENV'] == 'development':
-        db_path = os.path.join(app.instance_path, 'dev.db')
-        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-        logger.info(f"Using SQLite database at: {db_path}")
-
     # Initialize extensions
-    logger.info("Initializing Flask extensions...")
     db.init_app(app)
     migrate = Migrate(app, db)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
     csrf.init_app(app)
 
+    # Create instance folder
+    os.makedirs(app.instance_path, exist_ok=True)
+
+    # Configure database for development
+    if app.config['ENV'] == 'development':
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(app.instance_path, "dev.db")}'
+
     @login_manager.user_loader
     def load_user(user_id):
-        """Load user by ID using updated SQLAlchemy method"""
-        try:
-            return db.session.get(User, int(user_id))
-        except Exception as e:
-            logger.error(f"Error loading user {user_id}: {str(e)}")
-            return None
+        return db.session.get(User, int(user_id))
 
     # Register blueprints
     with app.app_context():
-        logger.info("Registering blueprints...")
         from auth.routes import auth
         from main.routes import main
         from historical_data import historical_data
@@ -94,41 +72,22 @@ def create_app(config_name='development'):
         ]
 
         for blueprint, name in blueprints:
-            try:
-                app.register_blueprint(blueprint)
-                logger.info(f"Registered {name} blueprint")
-            except Exception as e:
-                logger.error(f"Failed to register {name} blueprint: {str(e)}")
-                raise
+            app.register_blueprint(blueprint)
 
         # Initialize database
-        try:
-            logger.info("Initializing database...")
-            db.create_all()
-            logger.info("Database initialized successfully")
-        except Exception as e:
-            logger.error(f"Database initialization failed: {str(e)}")
-            raise
+        db.create_all()
 
     # Error handlers
     @app.errorhandler(500)
     def internal_error(error):
         db.session.rollback()
-        logger.error(f"Internal Server Error: {str(error)}")
         return render_template('error.html', error=error), 500
 
     @app.errorhandler(Exception)
     def handle_exception(error):
         db.session.rollback()
-        logger.error(f"Unhandled Exception: {str(error)}", exc_info=True)
         return render_template('error.html', error=error), 500
 
-    # Basic route for testing
-    @app.route('/')
-    def index():
-        return 'Application is running'
-
-    logger.info("Application creation completed successfully")
     return app
 
 if __name__ == '__main__':
