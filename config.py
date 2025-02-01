@@ -14,7 +14,7 @@ class Config:
 
     # Database configuration
     SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/app.db'
-    SQLALCHEMY_ENGINE_OPTIONS = {}  # Remove pooling for SQLite
+    SQLALCHEMY_ENGINE_OPTIONS = {'connect_args': {'check_same_thread': False}}
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

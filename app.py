@@ -102,10 +102,11 @@ def load_user(user_id):
 
 if __name__ == '__main__':
     app = create_app('production')
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ.get('PORT', 80))
     
-    # Ensure instance directory exists
-    os.makedirs('instance', exist_ok=True)
+    # Ensure instance directory exists and is writable
+    instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
+    os.makedirs(instance_path, exist_ok=True)
     
     app.run(
         host='0.0.0.0',
