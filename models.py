@@ -160,3 +160,18 @@ class ErrorLog(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
     user = db.relationship('User', backref=db.backref('error_logs', lazy=True))
+
+class AlertHistory(db.Model):
+    """Model for tracking alert history"""
+    __tablename__ = 'alert_history'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    alert_config_id = db.Column(db.Integer, db.ForeignKey('alert_configuration.id'), nullable=False)
+    alert_message = db.Column(db.String(255), nullable=False)
+    severity = db.Column(db.String(50), default='info')
+    status = db.Column(db.String(50), default='active')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved_at = db.Column(db.DateTime)
+
+    user = db.relationship('User', backref=db.backref('alert_history', lazy=True))
+    alert_config = db.relationship('AlertConfiguration', backref=db.backref('alert_history', lazy=True))
