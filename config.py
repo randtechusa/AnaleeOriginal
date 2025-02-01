@@ -13,7 +13,7 @@ class Config:
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 
     # Database configuration
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/app.db'
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///app.db'
 
     PROTECTED_MODULES = [
         'upload_data',
