@@ -53,6 +53,8 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
     ENV = 'production'
+    PREFERRED_URL_SCHEME = 'https'
+    SESSION_COOKIE_SECURE = True
 
     # Production database settings
     SQLALCHEMY_ENGINE_OPTIONS = {
