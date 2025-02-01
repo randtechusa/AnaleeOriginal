@@ -1,26 +1,80 @@
-"""
-Financial Alert System Module
-Handles anomaly detection and alert generation without modifying core functionalities
-"""
-
-import logging
+"""Alert system for monitoring and detecting anomalies"""
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-from sqlalchemy import func
-from models import db, AlertConfiguration, AlertHistory, Transaction, Account
-
-# Configure logging
-logger = logging.getLogger(__name__)
+from typing import List, Dict
+import logging
+from models import Transaction, db, AlertConfiguration, AlertHistory, Account
 
 class AlertSystem:
-    """
-    Handles financial anomaly detection and alert management
-    Maintains isolation from core system components
-    """
-    
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
+    def _check_pattern_anomalies(self, config) -> List[Dict]:
+        """Check for pattern-based anomalies in recent transactions"""
+        try:
+            recent_transactions = self._get_recent_transactions(config.user_id)
+            return self._analyze_patterns(recent_transactions)
+        except Exception as e:
+            self.logger.error(f"Error checking pattern anomalies: {str(e)}")
+            return []
+
+    def _check_transaction_anomalies(self, config) -> List[Dict]:
+        """Check for transaction amount anomalies"""
+        try:
+            recent_transactions = self._get_recent_transactions(config.user_id, days=30)
+            return self._analyze_transactions(recent_transactions, config)
+        except Exception as e:
+            self.logger.error(f"Error checking transaction anomalies: {str(e)}")
+            return []
+
+    def _get_recent_transactions(self, user_id: int, days: int = 90) -> List[Transaction]:
+        """Get recent transactions for analysis"""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        return Transaction.query.filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= cutoff_date
+        ).order_by(Transaction.date).all()
+
+    def _analyze_patterns(self, transactions: List[Transaction]) -> List[Dict]:
+        """Analyze transactions for unusual patterns"""
+        anomalies = []
+        if len(transactions) >= 3:
+            for i in range(2, len(transactions)):
+                if self._is_unusual_pattern(transactions[i-2:i+1]):
+                    anomalies.append(self._create_pattern_anomaly(transactions[i]))
+        return anomalies
+
+    def _analyze_transactions(self, transactions: List[Transaction], config) -> List[Dict]:
+        """Analyze transactions for amount-based anomalies"""
+        return [
+            self._create_amount_anomaly(transaction, config)
+            for transaction in transactions
+            if abs(transaction.amount) > config.threshold_value
+        ]
+
+    def _is_unusual_pattern(self, transaction_window: List[Transaction]) -> bool:
+        """Check if a transaction window contains an unusual pattern"""
+        current, prev1, prev2 = [t.amount for t in transaction_window]
+        return abs(current) > abs(prev1) * 3 and abs(current) > abs(prev2) * 3
+
+    def _create_pattern_anomaly(self, transaction: Transaction) -> Dict:
+        """Create a pattern-based anomaly record"""
+        return {
+            'type': 'pattern',
+            'severity': 'medium',
+            'message': 'Unusual transaction pattern detected',
+            'transaction_id': transaction.id
+        }
+
+    def _create_amount_anomaly(self, transaction: Transaction, config) -> Dict:
+        """Create an amount-based anomaly record"""
+        severity = 'high' if abs(transaction.amount) > config.threshold_value * 1.5 else 'medium'
+        return {
+            'type': 'transaction',
+            'severity': severity,
+            'message': f'Large transaction detected: ${abs(transaction.amount):,.2f}',
+            'transaction_id': transaction.id
+        }
+    
     def check_anomalies(self, user_id: int) -> List[Dict]:
         """
         Check for financial anomalies based on user configurations
@@ -75,29 +129,6 @@ class AlertSystem:
             self.logger.error(f"Error processing alert configuration {config.id}: {str(e)}")
             return []
 
-    def _check_transaction_anomalies(self, config: AlertConfiguration) -> List[Dict]:
-        """Check for transaction-based anomalies"""
-        try:
-            recent_transactions = Transaction.query.filter(
-                Transaction.user_id == config.user_id,
-                Transaction.date >= datetime.utcnow() - timedelta(days=30)
-            ).all()
-            
-            anomalies = []
-            for transaction in recent_transactions:
-                if config.threshold_type == 'amount' and abs(transaction.amount) > config.threshold_value:
-                    anomalies.append({
-                        'type': 'transaction',
-                        'severity': 'high' if abs(transaction.amount) > config.threshold_value * 1.5 else 'medium',
-                        'message': f'Large transaction detected: ${abs(transaction.amount):,.2f}',
-                        'transaction_id': transaction.id
-                    })
-                    
-            return anomalies
-            
-        except Exception as e:
-            self.logger.error(f"Error checking transaction anomalies: {str(e)}")
-            return []
 
     def _check_balance_anomalies(self, config: AlertConfiguration) -> List[Dict]:
         """Check for balance-based anomalies"""
@@ -121,38 +152,6 @@ class AlertSystem:
             
         except Exception as e:
             self.logger.error(f"Error checking balance anomalies: {str(e)}")
-            return []
-
-    def _check_pattern_anomalies(self, config: AlertConfiguration) -> List[Dict]:
-        """Check for pattern-based anomalies"""
-        try:
-            # Get recent transactions for pattern analysis
-            recent_transactions = Transaction.query.filter(
-                Transaction.user_id == config.user_id,
-                Transaction.date >= datetime.utcnow() - timedelta(days=90)
-            ).order_by(Transaction.date).all()
-            
-            anomalies = []
-            if len(recent_transactions) >= 3:
-                # Check for unusual patterns
-                for i in range(2, len(recent_transactions)):
-                    current = recent_transactions[i].amount
-                    prev1 = recent_transactions[i-1].amount
-                    prev2 = recent_transactions[i-2].amount
-                    
-                    # Detect sudden changes in transaction patterns
-                    if abs(current) > abs(prev1) * 3 and abs(current) > abs(prev2) * 3:
-                        anomalies.append({
-                            'type': 'pattern',
-                            'severity': 'medium',
-                            'message': 'Unusual transaction pattern detected',
-                            'transaction_id': recent_transactions[i].id
-                        })
-                        
-            return anomalies
-            
-        except Exception as e:
-            self.logger.error(f"Error checking pattern anomalies: {str(e)}")
             return []
 
     def create_alert(self, user_id: int, anomaly: Dict, config_id: int) -> Optional[AlertHistory]:

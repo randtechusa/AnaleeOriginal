@@ -1,3 +1,4 @@
+
 """Main application factory with enhanced logging and protection"""
 import os
 import logging
@@ -13,43 +14,46 @@ from config import config
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.FileHandler('app.log'), logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Flask extensions
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
 def create_app(config_name='development'):
     """Create and configure Flask application"""
     app = Flask(__name__, instance_relative_config=True)
-
-    # Load configuration
     app.config.from_object(config[config_name])
-
+    
     # Initialize extensions
+    _init_extensions(app)
+    _create_instance_path(app)
+    _setup_development_db(app)
+    _register_blueprints(app)
+    _register_error_handlers(app)
+    
+    return app
+
+def _init_extensions(app):
+    """Initialize Flask extensions"""
     db.init_app(app)
-    migrate = Migrate(app, db)
+    Migrate(app, db)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
     csrf.init_app(app)
 
-    # Create instance folder
+def _create_instance_path(app):
+    """Create instance folder"""
     os.makedirs(app.instance_path, exist_ok=True)
 
-    # Configure database for development
+def _setup_development_db(app):
+    """Configure database for development"""
     if app.config['ENV'] == 'development':
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(app.instance_path, "dev.db")}'
 
-    @login_manager.user_loader
-    def load_user(user_id):
-        return db.session.get(User, int(user_id))
-
-    # Register blueprints
+def _register_blueprints(app):
+    """Register application blueprints"""
     with app.app_context():
         from auth.routes import auth
         from main.routes import main
@@ -71,13 +75,13 @@ def create_app(config_name='development'):
             (errors, "Error Handling")
         ]
 
-        for blueprint, name in blueprints:
+        for blueprint, _ in blueprints:
             app.register_blueprint(blueprint)
 
-        # Initialize database
         db.create_all()
 
-    # Error handlers
+def _register_error_handlers(app):
+    """Register error handlers"""
     @app.errorhandler(500)
     def internal_error(error):
         db.session.rollback()
@@ -88,7 +92,9 @@ def create_app(config_name='development'):
         db.session.rollback()
         return render_template('error.html', error=error), 500
 
-    return app
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
 
 if __name__ == '__main__':
     app = create_app(os.getenv('FLASK_ENV', 'development'))
