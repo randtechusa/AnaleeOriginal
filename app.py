@@ -97,6 +97,6 @@ def load_user(user_id):
     return db.session.get(User, int(user_id))
 
 if __name__ == '__main__':
-    app = create_app(os.getenv('FLASK_ENV', 'development'))
+    app = create_app(os.getenv('FLASK_ENV', 'production'))
     port = int(os.environ.get('PORT', 80))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False)
