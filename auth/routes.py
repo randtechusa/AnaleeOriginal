@@ -23,8 +23,17 @@ def login():
         if form.validate_on_submit():
             try:
                 user = User.query.filter_by(email=form.email.data.lower()).first()
-                if user and user.check_password(form.password.data):
-                    if not user.is_active:
+                if user is None:
+                    flash('Invalid email or password', 'error')
+                    logger.warning(f"Login attempt with non-existent email: {form.email.data}")
+                    return render_template('auth/login.html', form=form)
+                
+                if not user.check_password(form.password.data):
+                    flash('Invalid email or password', 'error')
+                    logger.warning(f"Failed login attempt for user: {user.email}")
+                    return render_template('auth/login.html', form=form)
+                    
+                if not user.is_active:
                         flash('Account is deactivated. Please contact support.', 'error')
                         logger.warning(f"Login attempt on inactive account: {form.email.data}")
                         return render_template('auth/login.html', form=form)
