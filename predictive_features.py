@@ -31,6 +31,27 @@ class PredictiveFeatures:
         try:
             if not description and not explanation:
                 return {'success': False, 'error': 'Description or explanation required', 'similar_transactions': []}
+
+            logger.info(f"ERF: Finding similar transactions for '{description}'")
+            
+            # First try exact matches for efficiency
+            exact_matches = Transaction.query.filter(
+                Transaction.explanation.isnot(None),
+                (Transaction.description.ilike(f"%{description}%")) |
+                (Transaction.explanation.ilike(f"%{description}%") if explanation else False)
+            ).all()
+
+            if exact_matches:
+                return {
+                    'success': True, 
+                    'similar_transactions': [{
+                        'id': t.id,
+                        'description': t.description,
+                        'explanation': t.explanation,
+                        'confidence': 1.0,
+                        'match_type': 'exact'
+                    } for t in exact_matches]
+                }
                 
             # Exact matches phase
             exact_matches = Transaction.query.filter(

@@ -26,6 +26,30 @@ class ICountant:
 
     async def get_transaction_insights(self, transaction: Dict) -> Dict:
         """Generate AI-powered insights with enhanced explanation recognition"""
+        try:
+            if not transaction:
+                logger.error("Empty transaction provided")
+                return {}
+
+            predictor = PredictiveFeatures()
+            
+            # Get similar transactions with explanations
+            similar_result = predictor.find_similar_transactions(
+                description=transaction.get('description', ''),
+                explanation=transaction.get('explanation', '')
+            )
+
+            if similar_result.get('success'):
+                best_matches = similar_result.get('similar_transactions', [])
+                if best_matches:
+                    best_match = max(best_matches, key=lambda x: x.get('confidence', 0))
+                    if best_match.get('confidence', 0) > 0.8:
+                        return {
+                            'explanation': best_match.get('explanation'),
+                            'confidence': best_match.get('confidence'),
+                            'source': 'pattern_match',
+                            'similar_transactions': best_matches[:3]
+                        }
         """Generate AI-powered insights with enhanced suggestion and explanation recognition features"""
         try:
             if not transaction:
