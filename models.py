@@ -37,14 +37,19 @@ class Account(db.Model):
     user = db.relationship('User', backref=db.backref('accounts', lazy=True))
 
 class Transaction(db.Model):
-    """Financial transaction model"""
+    """Financial transaction model with enhanced explanation support"""
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     date = db.Column(db.DateTime, nullable=False)
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     description = db.Column(db.String(200))
     explanation = db.Column(db.String(500))
+    explanation_confidence = db.Column(db.Float, default=0.0)
+    explanation_source = db.Column(db.String(50))  # 'ai', 'pattern_match', 'user', 'similar'
+    similar_transaction_id = db.Column(db.Integer, db.ForeignKey('transaction.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    similar_transaction = db.relationship('Transaction', remote_side=[id])
 
     user = db.relationship('User', backref=db.backref('transactions', lazy=True))
 

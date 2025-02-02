@@ -27,10 +27,28 @@ class PredictiveFeatures:
             self.client = None
 
     def find_similar_transactions(self, description: str, explanation: str = None) -> Dict:
-        """Enhanced explanation recognition with semantic search"""
+        """Enhanced explanation recognition with semantic and pattern matching"""
         try:
             if not description and not explanation:
                 return {'success': False, 'error': 'Description or explanation required', 'similar_transactions': []}
+
+            # First try exact matches
+            exact_matches = Transaction.query.filter(
+                (Transaction.description.ilike(f"%{description}%")) |
+                (Transaction.explanation.isnot(None) & Transaction.explanation.ilike(f"%{description}%"))
+            ).all()
+
+            if exact_matches:
+                return {
+                    'success': True,
+                    'similar_transactions': [{
+                        'id': t.id,
+                        'description': t.description,
+                        'explanation': t.explanation,
+                        'confidence': 1.0,
+                        'match_type': 'exact'
+                    } for t in exact_matches]
+                }
 
             base_query = Transaction.query.filter(Transaction.explanation.isnot(None))
             if description:
