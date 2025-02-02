@@ -4,7 +4,7 @@ modules = ["postgresql-16", "python-3.11"]
 channel = "stable-24_05"
 
 [workflows]
-runButton = "Project"
+runButton = "Flask Server"
 
 [[workflows.workflow]]
 name = "Project"
@@ -81,12 +81,8 @@ author = "agent"
 agentRequireRestartOnSave = false
 
 [[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python app.py"
-waitForPort = 5000
 
 [[workflows.workflow]]
 name = "System Restore"
@@ -108,6 +104,10 @@ run = ["sh", "-c", "python app.py"]
 [[ports]]
 localPort = 80
 externalPort = 80
+
+[[ports]]
+localPort = 3000
+externalPort = 3000
 
 [[ports]]
 localPort = 5000
