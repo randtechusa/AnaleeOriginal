@@ -8,7 +8,7 @@ db = SQLAlchemy()
 
 class User(UserMixin, db.Model):
     """User authentication and profile model"""
-    __tablename__ = 'users'  # Explicitly set table name
+    __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -34,10 +34,9 @@ class User(UserMixin, db.Model):
     def get_id(self):
         return str(self.id)
 
-# Financial Models
 class Account(db.Model):
     """Financial account model"""
-    __tablename__ = 'accounts'  # Explicitly set table name
+    __tablename__ = 'accounts'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     type = db.Column(db.String(50), nullable=False)
@@ -45,26 +44,26 @@ class Account(db.Model):
     description = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # Fixed foreign key reference
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
     user = db.relationship('User', backref=db.backref('accounts', lazy=True))
 
 class Transaction(db.Model):
     """Financial transaction model with enhanced explanation support"""
+    __tablename__ = 'transactions'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     date = db.Column(db.DateTime, nullable=False)
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     description = db.Column(db.String(200))
     explanation = db.Column(db.String(500))
     explanation_confidence = db.Column(db.Float, default=0.0)
-    explanation_source = db.Column(db.String(50))  # 'ai', 'pattern_match', 'user', 'similar'
-    similar_transaction_id = db.Column(db.Integer, db.ForeignKey('transaction.id'), nullable=True)
+    explanation_source = db.Column(db.String(50))
+    similar_transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    similar_transaction = db.relationship('Transaction', remote_side=[id])
-
     user = db.relationship('User', backref=db.backref('transactions', lazy=True))
+    similar_transaction = db.relationship('Transaction', remote_side=[id])
 
 # Settings and Configuration Models
 class CompanySettings(db.Model):
@@ -79,7 +78,7 @@ class CompanySettings(db.Model):
     phone = db.Column(db.String(20))
     address = db.Column(db.Text)
     logo_path = db.Column(db.String(500))
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -88,7 +87,7 @@ class CompanySettings(db.Model):
 class FinancialGoal(db.Model):
     """Model for tracking user financial goals"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
     target_amount = db.Column(db.Numeric(10, 2), nullable=False)
@@ -118,7 +117,7 @@ class UploadedFile(db.Model):
     filename = db.Column(db.String(255), nullable=False)
     file_path = db.Column(db.String(500), nullable=False)
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     status = db.Column(db.String(50), default='pending')  # pending, processed, failed
 
     user = db.relationship('User', backref=db.backref('uploads', lazy=True))
@@ -126,8 +125,8 @@ class UploadedFile(db.Model):
 class HistoricalData(db.Model):
     """Model for historical financial data"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=False)
     date = db.Column(db.DateTime, nullable=False)
     balance = db.Column(db.Numeric(10, 2), nullable=False)
     transaction_count = db.Column(db.Integer, default=0)
@@ -139,7 +138,7 @@ class HistoricalData(db.Model):
 class BankStatementUpload(db.Model):
     """Model for tracking bank statement uploads and processing"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     filename = db.Column(db.String(255), nullable=False)
     file_path = db.Column(db.String(500), nullable=False)
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)
@@ -157,7 +156,7 @@ class BankStatementUpload(db.Model):
 class AlertConfiguration(db.Model):
     """Model for managing alert settings and notifications"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     alert_type = db.Column(db.String(50), nullable=False)  # balance, transaction, goal, anomaly
     threshold = db.Column(db.Numeric(10, 2))  # Amount threshold if applicable
     condition = db.Column(db.String(50))  # above, below, equals
@@ -177,7 +176,7 @@ class ErrorLog(db.Model):
     error_type = db.Column(db.String(50))
     error_message = db.Column(db.Text)
     stack_trace = db.Column(db.Text)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
     user = db.relationship('User', backref=db.backref('error_logs', lazy=True))
 
@@ -185,7 +184,7 @@ class AlertHistory(db.Model):
     """Model for tracking alert history"""
     __tablename__ = 'alert_history'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     alert_config_id = db.Column(db.Integer, db.ForeignKey('alert_configuration.id'), nullable=False)
     alert_message = db.Column(db.String(255), nullable=False)
     severity = db.Column(db.String(50), default='info')
