@@ -93,7 +93,7 @@
         width: 100%;
         margin-bottom: 1rem;
     }
-    
+
     .explanation-input {
         transition: all 0.3s ease;
         background-color: #ffffff;
@@ -106,20 +106,20 @@
         resize: vertical;
         max-height: 200px;
     }
-    
+
     .explanation-input:focus,
     .explanation-input.explanation-focused {
         border-color: var(--bs-primary);
         box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.25);
         background-color: #ffffff;
     }
-    
+
     .explanation-input.has-content {
         border-left: 4px solid var(--bs-info);
         background-color: #ffffff;
         color: #333333;
     }
-    
+
     .explanation-input:hover {
         border-color: var(--bs-primary);
         background-color: #ffffff;
@@ -289,7 +289,7 @@
                         {% endfor %}
                     </ul>
                 {% endif %}
-                
+
                 {% if anomalies.pattern_insights %}
                     <h5>Pattern Insights:</h5>
                     <div class="row">
@@ -303,7 +303,7 @@
                                 </ul>
                             </div>
                         {% endif %}
-                        
+
                         {% if anomalies.pattern_insights.unusual_deviations %}
                             <div class="col-md-6">
                                 <h6>Unusual Deviations:</h6>
@@ -371,11 +371,22 @@
                                         data-description="{{ transaction.description }}"
                                     >{{ transaction.explanation or '' }}</textarea>
                                     <div class="similar-transactions mt-2" id="similar-transactions-{{ transaction.id }}" style="display: none;">
-                                        <h6 class="text-muted">Similar Transactions</h6>
-                                        <div class="list-group">
-                                            <!-- Similar transactions will be populated here -->
-                                        </div>
-                                    </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="text-muted mb-0">Similar Transactions</h6>
+                            <span class="badge bg-info" data-bs-toggle="tooltip" title="Recognition confidence">
+                                <i class="fas fa-brain"></i> ERF Active
+                            </span>
+                        </div>
+                        <div class="list-group similar-transactions-list">
+                            <!-- Similar transactions will be populated here -->
+                        </div>
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle"></i> 
+                                Showing transactions with >= 70% similarity
+                            </small>
+                        </div>
+                    </div>
                                 </div>
                             </td>
                             <td>
@@ -420,7 +431,7 @@
             No transactions found in this file.
         </div>
         {% endif %}
-        
+
         {% if transactions %}
         <form method="POST" id="analyzeForm">
             <div class="table-responsive">
@@ -505,7 +516,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('analyzeForm');
     const explanationInputs = document.querySelectorAll('.explanation-input');
     const analysisSelects = document.querySelectorAll('.analysis-select');
-    
+
     // Handle explanation changes and enhance textarea behavior
     explanationInputs.forEach(textarea => {
         const container = textarea.closest('.position-relative');
@@ -523,7 +534,7 @@ document.addEventListener('DOMContentLoaded', function() {
             el.style.height = 'auto';
             el.style.height = Math.min(200, Math.max(80, el.scrollHeight)) + 'px';
         };
-        
+
         // Update character count
         const updateCharCount = (text) => {
             charCount.textContent = `${text.length}/500`;
@@ -533,7 +544,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const checkSimilarDescriptions = (currentDescription) => {
             const descriptions = document.querySelectorAll('[data-description]');
             similarDescriptions.clear();
-            
+
             descriptions.forEach(desc => {
                 if (desc.dataset.description.toLowerCase() === currentDescription.toLowerCase()) {
                     similarDescriptions.add(desc.dataset.transactionId);
@@ -549,7 +560,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (textarea.value.trim()) {
             textarea.classList.add('has-content');
         }
-        
+
         // Handle input events
         textarea.addEventListener('input', function() {
                     const transactionId = this.dataset.transactionId;
@@ -560,7 +571,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     } else {
                         this.classList.remove('has-content');
                     }
-                    
+
                     // Save explanation asynchronously
                     clearTimeout(timeoutId);
                     timeoutId = setTimeout(async () => {
@@ -577,15 +588,15 @@ document.addEventListener('DOMContentLoaded', function() {
                                     description: description
                                 })
                             });
-                            
+
 
                             if (!response.ok) {
                                 throw new Error('Failed to save explanation');
                             }
-                            
+
 
                             const result = await response.json();
-                            
+
 
                             // Handle similar transactions
                             if (result.similar_transactions && result.similar_transactions.length > 0) {
@@ -593,14 +604,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                 const shouldApplyToAll = confirm(
                                     `Found ${similarCount} similar transaction(s) with 70% or higher description similarity. Would you like to apply this explanation to them as well?`
                                 );
-                                
+
                                 if (shouldApplyToAll) {
                                     for (const similar of result.similar_transactions) {
                                         const similarTextarea = document.querySelector(`textarea[name="explanation_${similar.id}"]`);
                                         if (similarTextarea) {
                                             similarTextarea.value = this.value;
                                             similarTextarea.classList.add('has-content');
-                                            
+
                                             await fetch('/update_explanation', {
                                                 method: 'POST',
                                                 headers: {
@@ -616,12 +627,12 @@ document.addEventListener('DOMContentLoaded', function() {
                                     }
                                 }
                             }
-                            
+
 
                             if (!response.ok) {
                                 throw new Error('Failed to save explanation');
                             }
-                            
+
 
                             // Update any similar transactions if user confirms
                             const description = this.closest('tr').querySelector('[data-description]').dataset.description;
@@ -629,7 +640,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 const shouldApplyToAll = confirm(
                                     'Similar transactions found. Would you like to apply this explanation to all transactions with the same description?'
                                 );
-                                
+
                                 if (shouldApplyToAll) {
                                     similarDescriptions.forEach(async (similarId) => {
                                         if (similarId !== transactionId) {
@@ -637,7 +648,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                             if (similarTextarea) {
                                                 similarTextarea.value = this.value;
                                                 similarTextarea.classList.add('has-content');
-                                                
+
                                                 await fetch('/update_explanation', {
                                                     method: 'POST',
                                                     headers: {
@@ -658,7 +669,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     }, 1000);
                 });
-        
+
 
         // Focus events
         textarea.addEventListener('focus', function() {
@@ -666,7 +677,7 @@ document.addEventListener('DOMContentLoaded', function() {
             helpText.style.display = 'block';
             charCount.style.opacity = '1';
         });
-        
+
 
         // Blur events
         textarea.addEventListener('blur', function() {
@@ -679,7 +690,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.classList.remove('has-content');
             }
         });
-        
+
 
         // Enter key handling
         textarea.addEventListener('keydown', function(e) {
@@ -689,7 +700,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-    
+
 
     // Handle analysis changes
     analysisSelects.forEach(select => {
@@ -736,7 +747,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const explanation = this.dataset.explanation;
             const suggestionsDiv = document.getElementById(`suggestions-${transactionId}`);
             const select = document.getElementById(`select-${transactionId}`);
-            
+
             // Show loading state
             this.disabled = true;
             this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
@@ -758,28 +769,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
 
                 const suggestions = await response.json();
-                
+
 
                 if (suggestions.error) {
                     throw new Error(suggestions.error);
                 }
-                
+
 
                 // Clear previous suggestions
                 suggestionsDiv.innerHTML = '';
-                
+
 
                 if (suggestions && suggestions.length > 0) {
                     const suggestionsList = document.createElement('div');
                     suggestionsList.className = 'list-group suggestions';
-                    
+
                     suggestions.forEach(suggestion => {
                         const confidenceLevel = suggestion.confidence >= 0.8 ? 'success' : 
                                                  suggestion.confidence >= 0.6 ? 'info' : 'warning';
-                        
+
                         const item = document.createElement('button');
                         item.type = 'button';
                         item.className = 'list-group-item list-group-item-action suggestion-item';
@@ -794,23 +805,23 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </span>
                             </div>
                         `;
-                        
+
                         item.addEventListener('click', function() {
                             // Find and select the matching option
                             const options = Array.from(select.options);
                             const matchingOption = options.find(option => 
                                 option.text.includes(suggestion.account.name)
                             );
-                            
+
                             if (matchingOption) {
                                 select.value = matchingOption.value;
                                 form.submit();
                             }
                         });
-                        
+
                         suggestionsList.appendChild(item);
                     });
-                    
+
                     suggestionsDiv.appendChild(suggestionsList);
                 } else {
                     suggestionsDiv.innerHTML = `
@@ -820,7 +831,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     `;
                 }
-                
+
 
             } catch (error) {
                 console.error('Error:', error);
@@ -891,10 +902,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             </button>
                         `).join('');
 
-                        similarTransactionsDiv.querySelector('.list-group').innerHTML = similarList;
+                        similarTransactionsDiv.querySelector('.similar-transactions-list').innerHTML = similarList;
                         similarTransactionsDiv.style.display = 'block';
                     } else {
-                        similarTransactionsDiv.style.display = 'none';
+                                                similarTransactionsDiv.style.display = 'none';
                     }
                 } catch (error) {
                     console.error('Error finding similar transactions:', error);

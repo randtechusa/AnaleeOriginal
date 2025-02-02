@@ -42,20 +42,31 @@ class PredictiveFeatures:
 
             matches = []
             for match in pattern_matches:
-                text_similarity = SequenceMatcher(
-                    None, 
-                    description.lower(), 
-                    match.description.lower()
-                ).ratio()
+                # Enhanced text similarity with weighted token matching
+                desc_words1 = set(description.lower().split())
+                desc_words2 = set(match.description.lower().split())
+                word_overlap = len(desc_words1.intersection(desc_words2)) / max(len(desc_words1), len(desc_words2))
                 
-                # Calculate semantic similarity if explanation exists
+                text_similarity = (
+                    SequenceMatcher(None, description.lower(), match.description.lower()).ratio() * 0.6 +
+                    word_overlap * 0.4
+                )
+                
+                # Enhanced semantic similarity with contextual matching
                 semantic_similarity = 0.0
                 if explanation and match.explanation:
-                    semantic_similarity = SequenceMatcher(
+                    base_similarity = SequenceMatcher(
                         None,
                         explanation.lower(),
                         match.explanation.lower()
                     ).ratio()
+                    
+                    # Context matching
+                    exp_words1 = set(explanation.lower().split())
+                    exp_words2 = set(match.explanation.lower().split())
+                    context_overlap = len(exp_words1.intersection(exp_words2)) / max(len(exp_words1), len(exp_words2))
+                    
+                    semantic_similarity = base_similarity * 0.7 + context_overlap * 0.3
 
                 confidence = (text_similarity + semantic_similarity) / (2 if explanation else 1)
                 
