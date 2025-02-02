@@ -90,6 +90,22 @@ class ICountant:
             description = transaction.get('description', '')
             amount = self._validate_and_convert_amount(transaction.get('amount'))
 
+            # Try ERF first
+            predictor = PredictiveFeatures()
+            similar_result = predictor.find_similar_transactions(description)
+            
+            if similar_result.get('success') and similar_result.get('similar_transactions'):
+                matches = similar_result['similar_transactions']
+                best_match = max(matches, key=lambda x: x.get('confidence', 0))
+                
+                if best_match.get('confidence', 0) > 0.8:
+                    return {
+                        'explanation': best_match['explanation'],
+                        'confidence': best_match['confidence'],
+                        'source': 'ERF',
+                        'similar_matches': len(matches)
+                    }
+
             # First try pattern matching
             predictor = PredictiveFeatures()
             similar_result = predictor.find_similar_transactions(description)

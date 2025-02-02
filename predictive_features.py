@@ -31,6 +31,26 @@ class PredictiveFeatures:
         try:
             if not description and not explanation:
                 return {'success': False, 'error': 'Description or explanation required', 'similar_transactions': []}
+                
+            # First try exact matches for efficiency
+            exact_matches = Transaction.query.filter(
+                Transaction.explanation.isnot(None)
+            ).filter(
+                (Transaction.description == description) |
+                (Transaction.explanation == explanation if explanation else False)
+            ).all()
+
+            if exact_matches:
+                return {
+                    'success': True,
+                    'similar_transactions': [{
+                        'id': t.id,
+                        'description': t.description,
+                        'explanation': t.explanation,
+                        'confidence': 1.0,
+                        'match_type': 'exact'
+                    } for t in exact_matches]
+                }
 
             # Pattern matching phase
             pattern_matches = Transaction.query.filter(
