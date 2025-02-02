@@ -7,7 +7,8 @@ from alembic import op
 import sqlalchemy as sa
 
 def upgrade():
-    op.add_column('user', sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'))
+    # Add is_active column with default value True
+    op.add_column('user', sa.Column('is_active', sa.Boolean(), nullable=False, server_default='1'))
 
 def downgrade():
     op.drop_column('user', 'is_active')
