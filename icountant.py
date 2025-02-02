@@ -84,11 +84,28 @@ class ICountant:
         from difflib import SequenceMatcher
         return SequenceMatcher(None, desc1.lower(), desc2.lower()).ratio() > 0.6
 
-    def _generate_explanation(self, transaction: Dict) -> str:
-        """Generate AI-powered explanation with enhanced recognition"""
+    def _generate_explanation(self, transaction: Dict) -> Dict:
+        """Generate AI-powered explanation with enhanced recognition and confidence scoring"""
         try:
             description = transaction.get('description', '')
             amount = self._validate_and_convert_amount(transaction.get('amount'))
+            
+            # First try pattern matching
+            predictor = PredictiveFeatures()
+            similar_result = predictor.find_similar_transactions(description)
+            
+            if similar_result.get('success') and similar_result.get('similar_transactions'):
+                best_match = max(
+                    similar_result['similar_transactions'],
+                    key=lambda x: x['confidence']
+                )
+                
+                if best_match['confidence'] > 0.8:
+                    return {
+                        'explanation': best_match['explanation'],
+                        'confidence': best_match['confidence'],
+                        'source': 'pattern_match'
+                    }
             
             # First try to find exact pattern matches
             similar_transactions = self._find_similar_explanations(transaction)

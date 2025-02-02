@@ -27,10 +27,47 @@ class PredictiveFeatures:
             self.client = None
 
     def find_similar_transactions(self, description: str, explanation: str = None) -> Dict:
-        """Enhanced explanation recognition with semantic and pattern matching"""
+        """Enhanced explanation recognition with hybrid matching system"""
         try:
             if not description and not explanation:
                 return {'success': False, 'error': 'Description or explanation required', 'similar_transactions': []}
+
+            # Pattern matching phase
+            pattern_matches = Transaction.query.filter(
+                Transaction.explanation.isnot(None)
+            ).filter(
+                (Transaction.description.ilike(f"%{description}%")) |
+                (Transaction.explanation.ilike(f"%{description}%"))
+            ).all()
+
+            matches = []
+            for match in pattern_matches:
+                text_similarity = SequenceMatcher(
+                    None, 
+                    description.lower(), 
+                    match.description.lower()
+                ).ratio()
+                
+                # Calculate semantic similarity if explanation exists
+                semantic_similarity = 0.0
+                if explanation and match.explanation:
+                    semantic_similarity = SequenceMatcher(
+                        None,
+                        explanation.lower(),
+                        match.explanation.lower()
+                    ).ratio()
+
+                confidence = (text_similarity + semantic_similarity) / (2 if explanation else 1)
+                
+                if confidence >= self.text_similarity_threshold:
+                    matches.append({
+                        'id': match.id,
+                        'description': match.description,
+                        'explanation': match.explanation,
+                        'confidence': confidence,
+                        'text_similarity': text_similarity,
+                        'semantic_similarity': semantic_similarity
+                    })
 
             # First try exact matches
             exact_matches = Transaction.query.filter(
