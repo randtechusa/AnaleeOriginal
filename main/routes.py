@@ -41,6 +41,18 @@ class PredictiveFeatures:
         suggestions = [{'account': 'Asset', 'confidence': 0.8}, {'account': 'Liability', 'confidence': 0.2}]
         return suggestions
 
+    def find_similar_transactions(self, description):
+        #  Implementation to find similar transactions based on description.
+        # This is a placeholder, replace with your actual implementation.  Should return a dictionary
+        # Example: {'success': True, 'similar_transactions': [{'explanation': 'Example explanation', 'confidence': 0.9}]}
+        # or {'success': False, 'error': 'No similar transactions found'}
+
+        # Replace this with your actual logic
+        similar_transactions = [{'explanation': 'This is a similar transaction', 'confidence': 0.95}]
+        return {'success': True, 'similar_transactions': similar_transactions}
+
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -136,13 +148,13 @@ def upload():
             if not os.path.exists(directory):
                 os.makedirs(directory, mode=0o755)
             os.chmod(directory, 0o755)
-            
+
         logger.debug(f'Using upload folder: {user_upload_folder}')
         logger.info('Upload folder verified/created successfully')
-        
+
         form = UploadForm()
         files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-        
+
         if request.method == 'POST' and form.validate_on_submit():
             if form.file.data:
                 return handle_file_upload(form.file.data, form.account.data)
@@ -198,12 +210,12 @@ def settings():
             user_id=current_user.id,
             is_active=True
         ).order_by(Account.category, Account.name).all()
-        
+
         system_accounts = AdminChartOfAccounts.query.order_by(
             AdminChartOfAccounts.category,
             AdminChartOfAccounts.name
         ).all()
-        
+
         return render_template('settings.html',
                              accounts=user_accounts,
                              system_accounts=system_accounts)
@@ -331,3 +343,23 @@ def analyze(file_id):
         logger.error(f"Error in analyze route: {str(e)}")
         flash('Error accessing file for analysis', 'error')
         return redirect(url_for('main.analyze_list'))
+
+@main.route('/analyze_data', methods=['GET', 'POST'])
+@login_required
+def analyze_data():
+    predictor = PredictiveFeatures()
+    transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+
+    for transaction in transactions:
+        if not transaction.explanation:
+            similar = predictor.find_similar_transactions(transaction.description)
+            if similar.get('success') and similar.get('similar_transactions'):
+                best_match = max(similar['similar_transactions'], 
+                               key=lambda x: x.get('confidence', 0))
+                if best_match.get('confidence', 0) > 0.85:
+                    transaction.explanation = best_match['explanation']
+                    transaction.explanation_confidence = best_match['confidence']
+                    db.session.add(transaction)
+
+    db.session.commit()
+    return render_template('analyze.html', transactions=transactions)
