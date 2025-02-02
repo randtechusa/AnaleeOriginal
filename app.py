@@ -30,7 +30,8 @@ def test_db_connection(app, max_retries=3, retry_delay=1):
     for retry in range(max_retries):
         try:
             with app.app_context():
-                db.engine.connect().execute("SELECT 1")
+                with db.engine.connect() as connection:
+                    connection.execute(db.text("SELECT 1"))
                 logger.info("Database connection successful")
                 return True
         except (OperationalError, SQLAlchemyError) as e:
