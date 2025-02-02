@@ -27,29 +27,22 @@ def login():
                     flash('Invalid email or password', 'error')
                     logger.warning(f"Login attempt with non-existent email: {form.email.data}")
                     return render_template('auth/login.html', form=form)
-                
+
                 if not user.check_password(form.password.data):
                     flash('Invalid email or password', 'error')
                     logger.warning(f"Failed login attempt for user: {user.email}")
                     return render_template('auth/login.html', form=form)
-                    
+
                 if not user.is_active:
-                        flash('Account is deactivated. Please contact support.', 'error')
-                        logger.warning(f"Login attempt on inactive account: {form.email.data}")
-                        return render_template('auth/login.html', form=form)
-                    
-                    login_user(user, remember=form.remember_me.data)
-                    logger.info(f"User {user.email} logged in successfully")
-                    return redirect(url_for('main.dashboard'))
-                else:
-                    flash('Invalid email or password. Please try again.', 'error')
-                    logger.warning(f"Failed login attempt for email: {form.email.data}")
+                    flash('Account is deactivated. Please contact support.', 'error')
+                    logger.warning(f"Login attempt on inactive account: {form.email.data}")
                     return render_template('auth/login.html', form=form)
-                
+
+                # All checks passed, log the user in
                 login_user(user, remember=form.remember_me.data)
                 logger.info(f"User {user.email} logged in successfully")
                 return redirect(url_for('main.dashboard'))
-                
+
             except AttributeError as ae:
                 logger.error(f"User model error: {str(ae)}")
                 flash('System error during login. Please contact support.', 'error')
@@ -145,6 +138,7 @@ def create_admin_if_not_exists():
         logger.error(f"Error creating admin user: {str(e)}")
         db.session.rollback()
         return False
+
 from functools import wraps
 from flask import flash, redirect, url_for
 from flask_login import current_user
