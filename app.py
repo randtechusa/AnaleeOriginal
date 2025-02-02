@@ -43,7 +43,10 @@ def test_db_connection(app, max_retries=3, retry_delay=1):
     return False
 
 def init_csrf(app):
+    csrf = CSRFProtect()
     csrf.init_app(app)
+    app.config['WTF_CSRF_ENABLED'] = True
+    app.config['WTF_CSRF_SECRET_KEY'] = os.urandom(32)
     return csrf
 
 def create_app(config_name='development'):
