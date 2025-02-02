@@ -25,30 +25,6 @@ logger = logging.getLogger(__name__)
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
-def test_db_connection(app, max_retries=3, retry_delay=1):
-    """Test database connection with retry logic"""
-    for retry in range(max_retries):
-        try:
-            with app.app_context():
-                with db.engine.connect() as connection:
-                    connection.execute(db.text("SELECT 1"))
-                logger.info("Database connection successful")
-                return True
-        except (OperationalError, SQLAlchemyError) as e:
-            logger.warning(f"Database connection attempt {retry + 1} failed: {str(e)}")
-            if retry < max_retries - 1:
-                time.sleep(retry_delay)
-
-    logger.error(f"Database connection failed after {max_retries} attempts")
-    return False
-
-def init_csrf(app):
-    csrf = CSRFProtect()
-    csrf.init_app(app)
-    app.config['WTF_CSRF_ENABLED'] = True
-    app.config['WTF_CSRF_SECRET_KEY'] = os.urandom(32)
-    return csrf
-
 def create_app(config_name='development'):
     """Create and configure Flask application"""
     try:
@@ -57,14 +33,11 @@ def create_app(config_name='development'):
 
         # Initialize core extensions
         db.init_app(app)
+        migrate = Migrate(app, db)  # Initialize Flask-Migrate
 
-        if not test_db_connection(app):
-            raise Exception("Failed to establish database connection")
-
-        Migrate(app, db)
         login_manager.init_app(app)
         login_manager.login_view = 'auth.login'
-        init_csrf(app)
+        csrf.init_app(app)
 
         # Register blueprints
         with app.app_context():
@@ -85,7 +58,10 @@ def create_app(config_name='development'):
             for blueprint in blueprints:
                 app.register_blueprint(blueprint)
 
-            db.create_all()
+            try:
+                db.create_all()
+            except Exception as e:
+                logger.error(f"Error creating database tables: {str(e)}")
 
         return app
 
@@ -105,11 +81,8 @@ def load_user(user_id):
 def main():
     """Main entry point for the application"""
     try:
-        # Create the application instance
         app = create_app('development')
-
         if app:
-            # Run the application with production settings
             port = int(os.environ.get('PORT', 8080))
             app.run(
                 host='0.0.0.0',
