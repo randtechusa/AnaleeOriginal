@@ -21,17 +21,28 @@ def login():
 
         form = LoginForm()
         if form.validate_on_submit():
-            user = User.query.filter_by(email=form.email.data).first()
+            user = User.query.filter_by(email=form.email.data.lower()).first()
+            if user is None:
+                flash('Email not found. Please check your email address.')
+                logger.warning(f"Login attempt with non-existent email: {form.email.data}")
+                return render_template('auth/login.html', form=form)
+            
+            if not user.is_active:
+                flash('Account is deactivated. Please contact support.')
+                logger.warning(f"Login attempt on inactive account: {form.email.data}")
+                return render_template('auth/login.html', form=form)
+                
             if user and user.check_password(form.password.data):
                 login_user(user)
                 logger.info(f"User {user.email} logged in successfully")
                 return redirect(url_for('main.dashboard'))
-            flash('Invalid email or password')
+                
+            flash('Invalid password')
             logger.warning(f"Failed login attempt for email: {form.email.data}")
         return render_template('auth/login.html', form=form)
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
-        flash('An error occurred during login')
+        flash('An error occurred during login. Please try again.')
         return render_template('auth/login.html', form=form)
 
 @auth.route('/register', methods=['GET', 'POST'])
