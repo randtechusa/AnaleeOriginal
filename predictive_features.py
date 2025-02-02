@@ -39,7 +39,73 @@ class PredictiveFeatures:
             self.client = None
 
     def find_similar_transactions(self, description: str, explanation: str = None) -> Dict:
-        """ERF: Enhanced transaction similarity detection"""
+        """ERF: Enhanced transaction similarity detection with explanation recognition"""
+        if not description and not explanation:
+            logger.warning("Neither description nor explanation provided")
+            return {'success': False, 'error': 'Description or explanation required', 'similar_transactions': []}
+
+        try:
+            # Query with explanation if provided
+            base_query = Transaction.query.filter(Transaction.explanation.isnot(None))
+            
+            if description:
+                base_query = base_query.filter(Transaction.description.ilike(f"%{description}%"))
+            
+            transactions = base_query.all()
+            similar_transactions = []
+
+            # Get current embedding if explanation provided
+            current_embedding = None
+            if self.client and explanation:
+                try:
+                    response = self.client.embeddings.create(
+                        model="text-embedding-ada-002",
+                        input=clean_text(explanation)
+                    )
+                    current_embedding = response.data[0].embedding
+                except Exception as e:
+                    logger.error(f"Error generating embedding: {str(e)}")
+
+            for transaction in transactions:
+                text_ratio = 0.0
+                if description:
+                    text_ratio = SequenceMatcher(
+                        None, 
+                        description.lower(), 
+                        transaction.description.lower()
+                    ).ratio()
+
+                semantic_ratio = 1.0
+                if current_embedding and transaction.explanation:
+                    try:
+                        response = self.client.embeddings.create(
+                            model="text-embedding-ada-002",
+                            input=clean_text(transaction.explanation)
+                        )
+                        tx_embedding = response.data[0].embedding
+                        semantic_ratio = float(np.dot(current_embedding, tx_embedding))
+                    except Exception as e:
+                        logger.error(f"Error calculating semantic similarity: {str(e)}")
+
+                # Adjust thresholds based on whether we're matching description, explanation, or both
+                if ((description and text_ratio >= self.text_similarity_threshold) or 
+                    (explanation and semantic_ratio >= self.semantic_similarity_threshold)):
+                    similar_transactions.append({
+                        'id': transaction.id,
+                        'description': transaction.description,
+                        'explanation': transaction.explanation,
+                        'text_similarity': text_ratio,
+                        'semantic_similarity': semantic_ratio
+                    })
+
+            return {
+                'success': True,
+                'similar_transactions': sorted(
+                    similar_transactions,
+                    key=lambda x: (x['semantic_similarity'], x['text_similarity']),
+                    reverse=True
+                )[:5]  # Return top 5 matches
+            }
         try:
             logger.debug(f"Finding similar transactions for: {description}")
             

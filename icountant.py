@@ -25,7 +25,54 @@ class ICountant:
         self.insights_generator = FinancialInsightsGenerator()
 
     async def get_transaction_insights(self, transaction: Dict) -> Dict:
-        """Generate AI-powered insights with enhanced suggestion features"""
+        """Generate AI-powered insights with enhanced suggestion and explanation recognition features"""
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # Find similar transactions with explanations
+            predictor = PredictiveFeatures()
+            similar_result = predictor.find_similar_transactions(
+                description=transaction.get('description', ''),
+                explanation=transaction.get('explanation', '')
+            )
+            
+            # Get base insights
+            if not transaction:
+                return {}
+
+            # Validate transaction amount
+            amount = self._validate_and_convert_amount(transaction.get('amount'))
+            if amount is None:
+                logger.error("Invalid transaction amount for insights generation")
+                return {}
+
+            # Account Suggestion Feature
+            suggested_accounts = self._suggest_accounts(transaction)
+
+            # Get insights
+            transaction_insights = await self.insights_generator.generate_transaction_insights(transaction)
+
+            # Add recognized explanations
+            recognized_explanations = []
+            if similar_result['success']:
+                recognized_explanations = [
+                    {
+                        'explanation': t['explanation'],
+                        'confidence': (t['semantic_similarity'] + t['text_similarity']) / 2,
+                        'source_transaction': t['description']
+                    }
+                    for t in similar_result['similar_transactions']
+                ]
+
+            return {
+                'similar_transactions': similar_result.get('similar_transactions', []),
+                'recognized_explanations': recognized_explanations,
+                'ai_insights': transaction_insights.get('insights', ''),
+                'suggested_accounts': suggested_accounts,
+                'transaction_type': 'credit' if amount < 0 else 'debit',
+                'amount_formatted': self.format_amount(amount),
+                'confidence_score': self._calculate_confidence_score(transaction)
+            }
         try:
             # Validate transaction amount before processing
             amount = self._validate_and_convert_amount(transaction.get('amount'))
