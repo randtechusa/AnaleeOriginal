@@ -26,17 +26,7 @@ class ICountant:
 
     async def get_transaction_insights(self, transaction: Dict) -> Dict:
         """Generate AI-powered insights with enhanced suggestion and explanation recognition features"""
-        logger = logging.getLogger(__name__)
-        
         try:
-            # Find similar transactions with explanations
-            predictor = PredictiveFeatures()
-            similar_result = predictor.find_similar_transactions(
-                description=transaction.get('description', ''),
-                explanation=transaction.get('explanation', '')
-            )
-            
-            # Get base insights
             if not transaction:
                 return {}
 
@@ -46,60 +36,35 @@ class ICountant:
                 logger.error("Invalid transaction amount for insights generation")
                 return {}
 
-            # Account Suggestion Feature
+            # Get similar transactions and explanations
+            predictor = PredictiveFeatures()
+            similar_result = predictor.find_similar_transactions(
+                description=transaction.get('description', ''),
+                explanation=transaction.get('explanation', '')
+            )
+
+            # Get account suggestions
             suggested_accounts = self._suggest_accounts(transaction)
 
-            # Get insights
+            # Get base insights
             transaction_insights = await self.insights_generator.generate_transaction_insights(transaction)
 
-            # Add recognized explanations
-            recognized_explanations = []
-            if similar_result['success']:
-                recognized_explanations = [
+            # Generate explanation
+            suggested_explanation = self._generate_explanation(transaction)
+
+            # Find similar explanations
+            similar_explanations = self._find_similar_explanations(transaction)
+
+            return {
+                'similar_transactions': similar_result.get('similar_transactions', []),
+                'recognized_explanations': [
                     {
                         'explanation': t['explanation'],
                         'confidence': (t['semantic_similarity'] + t['text_similarity']) / 2,
                         'source_transaction': t['description']
                     }
-                    for t in similar_result['similar_transactions']
-                ]
-
-            return {
-                'similar_transactions': similar_result.get('similar_transactions', []),
-                'recognized_explanations': recognized_explanations,
-                'ai_insights': transaction_insights.get('insights', ''),
-                'suggested_accounts': suggested_accounts,
-                'transaction_type': 'credit' if amount < 0 else 'debit',
-                'amount_formatted': self.format_amount(amount),
-                'confidence_score': self._calculate_confidence_score(transaction)
-            }
-        try:
-            # Validate transaction amount before processing
-            amount = self._validate_and_convert_amount(transaction.get('amount'))
-            if amount is None:
-                logger.error("Invalid transaction amount for insights generation")
-                return {}
-
-            # Account Suggestion Feature
-            suggested_accounts = self._suggest_accounts(transaction)
-
-            # Get insights
-            transaction_insights = await self.insights_generator.generate_transaction_insights(transaction)
-
-            # Explanation Suggestion Feature
-            suggested_explanation = self._generate_explanation(transaction)
-
-            # Explanation Recognition Feature
-            similar_explanations = self._find_similar_explanations(transaction)
-
-            # Get similar transactions from history with enhanced pattern matching
-            similar_transactions = [t for t in self.processed_transactions 
-                                if abs(t['entries'][0]['debit'] - abs(amount)) < 100 and
-                                self._description_similarity(t['description'], transaction.get('description', ''))]
-
-
-            return {
-                'similar_transactions': similar_transactions[:3],
+                    for t in similar_result.get('similar_transactions', [])
+                ],
                 'ai_insights': transaction_insights.get('insights', ''),
                 'suggested_accounts': suggested_accounts,
                 'suggested_explanation': suggested_explanation,
@@ -108,6 +73,7 @@ class ICountant:
                 'amount_formatted': self.format_amount(amount),
                 'confidence_score': self._calculate_confidence_score(transaction)
             }
+
         except Exception as e:
             logger.error(f"Error generating transaction insights: {str(e)}")
             return {}
@@ -122,11 +88,8 @@ class ICountant:
         try:
             description = transaction.get('description', '')
             amount = self._validate_and_convert_amount(transaction.get('amount'))
-
-            # Use categorization to enhance explanation
             category, confidence, base_explanation = categorize_transaction(description)
 
-            # Build comprehensive explanation
             explanation = f"{base_explanation} - "
             if amount and amount > 0:
                 explanation += f"Revenue recognized from {description}"
@@ -141,15 +104,15 @@ class ICountant:
     def _find_similar_explanations(self, transaction: Dict) -> List[str]:
         """Find similar explanations from historical transactions"""
         try:
-            similar_explanations = []
             current_desc = transaction.get('description', '').lower()
+            similar_explanations = []
 
             for past_transaction in self.processed_transactions:
-                if 'explanation' in past_transaction:
-                    if self._description_similarity(current_desc, past_transaction['description'].lower()):
-                        similar_explanations.append(past_transaction['explanation'])
+                if ('explanation' in past_transaction and 
+                    self._description_similarity(current_desc, past_transaction['description'].lower())):
+                    similar_explanations.append(past_transaction['explanation'])
 
-            return list(set(similar_explanations))[:3]  # Return unique top 3
+            return list(set(similar_explanations))[:3]
         except Exception as e:
             logger.error(f"Error finding similar explanations: {str(e)}")
             return []
@@ -160,9 +123,7 @@ class ICountant:
             if amount is None:
                 return None
             decimal_amount = Decimal(str(amount))
-            if decimal_amount == 0:
-                return None
-            return decimal_amount
+            return None if decimal_amount == 0 else decimal_amount
         except (InvalidOperation, TypeError, ValueError):
             return None
 
@@ -178,15 +139,14 @@ class ICountant:
             suggested = []
 
             for account in self.available_accounts:
-                # For positive amounts (income), suggest revenue accounts
-                if is_income and account['category'].lower() in ['revenue', 'income', 'sales']:
+                category = account['category'].lower()
+                if is_income and category in ['revenue', 'income', 'sales']:
                     suggested.append({
                         'account': account,
                         'confidence': 0.8,
                         'reason': 'Common income account'
                     })
-                # For negative amounts (expenses), suggest expense accounts
-                elif not is_income and account['category'].lower() in ['expense', 'expenses', 'cost']:
+                elif not is_income and category in ['expense', 'expenses', 'cost']:
                     suggested.append({
                         'account': account,
                         'confidence': 0.8,
@@ -194,7 +154,6 @@ class ICountant:
                     })
 
             return sorted(suggested, key=lambda x: x['confidence'], reverse=True)[:3]
-
         except Exception as e:
             logger.error(f"Error suggesting accounts: {str(e)}")
             return []
@@ -221,6 +180,10 @@ class ICountant:
             for i, acc in enumerate(self.available_accounts)
         ])
 
+    def _calculate_confidence_score(self, transaction: Dict) -> float:
+        """Calculate a confidence score for the transaction processing"""
+        return 0.9  # Default confidence score for now
+    
     async def process_transaction(self, transaction: Dict) -> Tuple[str, Optional[Dict]]:
         """
         Process a single transaction and guide the user through account selection
@@ -285,7 +248,7 @@ class ICountant:
         except Exception as e:
             logger.error(f"Error processing transaction: {str(e)}")
             return f"Error processing transaction: {str(e)}", None
-
+    
     def complete_transaction(self, selected_account_index: int) -> Tuple[bool, str, Optional[Dict]]:
         """Complete the transaction with the selected account"""
         if not self.current_transaction:
@@ -341,8 +304,3 @@ class ICountant:
         except Exception as e:
             logger.error(f"Error completing transaction: {str(e)}")
             return False, f"Error processing transaction: {str(e)}", None
-
-    def _calculate_confidence_score(self, transaction: Dict) -> float:
-        """Calculate a confidence score for the transaction processing"""
-        #  A placeholder for a more sophisticated confidence score calculation
-        return 0.9  # Default confidence
