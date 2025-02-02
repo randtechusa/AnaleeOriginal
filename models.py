@@ -37,6 +37,7 @@ class User(UserMixin, db.Model):
 # Financial Models
 class Account(db.Model):
     """Financial account model"""
+    __tablename__ = 'accounts'  # Explicitly set table name
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     type = db.Column(db.String(50), nullable=False)
@@ -44,7 +45,7 @@ class Account(db.Model):
     description = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # Fixed foreign key reference
 
     user = db.relationship('User', backref=db.backref('accounts', lazy=True))
 
