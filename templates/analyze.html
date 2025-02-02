@@ -372,10 +372,20 @@
                                     >{{ transaction.explanation or '' }}</textarea>
                                     <div class="similar-transactions mt-2" id="similar-transactions-{{ transaction.id }}" style="display: none;">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="text-muted mb-0">Similar Transactions</h6>
-                            <span class="badge bg-info" data-bs-toggle="tooltip" title="Recognition confidence">
-                                <i class="fas fa-brain"></i> ERF Active
-                            </span>
+                            <h6 class="text-muted mb-0">
+                                <i class="fas fa-lightbulb me-2"></i>Similar Transactions Found
+                            </h6>
+                            <div>
+                                <span class="badge bg-success me-2" data-bs-toggle="tooltip" title="Text similarity">
+                                    <i class="fas fa-font"></i> Text Match
+                                </span>
+                                <span class="badge bg-info" data-bs-toggle="tooltip" title="Semantic similarity">
+                                    <i class="fas fa-brain"></i> Context Match
+                                </span>
+                            </div>
+                        </div>
+                        <div class="alert alert-info mb-2">
+                            <small><i class="fas fa-info-circle me-1"></i>Click on a similar transaction to apply its explanation</small>
                         </div>
                         <div class="list-group similar-transactions-list">
                             <!-- Similar transactions will be populated here -->
