@@ -14,8 +14,11 @@ from config import config
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-    handlers=[logging.FileHandler('app.log'), logging.StreamHandler()]
+    format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -23,44 +26,33 @@ login_manager = LoginManager()
 csrf = CSRFProtect()
 
 def test_db_connection(app, max_retries=5, retry_delay=3):
-    """Test database connection with enhanced retry logic"""
-    retry_count = 0
-    while retry_count < max_retries:
+    """Test database connection with retry logic"""
+    for retry in range(max_retries):
         try:
             with app.app_context():
-                # Test connection with timeout
-                with db.engine.connect() as connection:
-                    connection.execute("SELECT 1")
+                db.engine.connect().execute("SELECT 1")
                 logger.info("Database connection successful")
                 return True
         except (OperationalError, SQLAlchemyError) as e:
-            retry_count += 1
-            logger.warning(f"Database connection attempt {retry_count} failed: {str(e)}")
-            if retry_count < max_retries:
-                time.sleep(retry_delay)  # Wait before retrying
-            else:
-                logger.error(f"Database connection failed after {max_retries} attempts")
-                return False
+            logger.warning(f"Database connection attempt {retry + 1} failed: {str(e)}")
+            if retry < max_retries - 1:
+                time.sleep(retry_delay)
+
+    logger.error(f"Database connection failed after {max_retries} attempts")
     return False
 
 def create_app(config_name='development'):
-    """Create and configure Flask application with improved error handling"""
+    """Create and configure Flask application"""
     try:
         app = Flask(__name__)
-
-        # Load configuration
-        logger.info(f"Loading configuration for environment: {config_name}")
         app.config.from_object(config[config_name])
 
-        # Initialize extensions
-        logger.info("Initializing Flask extensions")
+        # Initialize core extensions
         db.init_app(app)
 
-        # Test database connection before proceeding
         if not test_db_connection(app):
-            raise Exception("Could not establish database connection after multiple attempts")
+            raise Exception("Failed to establish database connection")
 
-        # Complete initialization after successful database connection
         Migrate(app, db)
         login_manager.init_app(app)
         login_manager.login_view = 'auth.login'
@@ -68,7 +60,6 @@ def create_app(config_name='development'):
 
         # Register blueprints
         with app.app_context():
-            logger.info("Registering blueprints")
             from auth.routes import auth
             from main.routes import main
             from historical_data import historical_data
@@ -78,31 +69,25 @@ def create_app(config_name='development'):
             from errors import errors
             from admin import admin
 
-            app.register_blueprint(auth)
-            app.register_blueprint(main)
-            app.register_blueprint(historical_data)
-            app.register_blueprint(bank_statements)
-            app.register_blueprint(reports)
-            app.register_blueprint(chat)
-            app.register_blueprint(admin)
-            app.register_blueprint(errors)
+            blueprints = [
+                auth, main, historical_data, bank_statements,
+                reports, chat, admin, errors
+            ]
 
-            # Initialize database
-            try:
-                db.create_all()
-                logger.info("Database tables created successfully")
-            except Exception as e:
-                logger.error(f"Error creating database tables: {str(e)}")
-                raise
+            for blueprint in blueprints:
+                app.register_blueprint(blueprint)
+
+            db.create_all()
 
         return app
 
     except Exception as e:
-        logger.error(f"Error creating application: {str(e)}")
+        logger.error(f"Application creation failed: {str(e)}")
         raise
 
 @login_manager.user_loader
 def load_user(user_id):
+    """Load user by ID for Flask-Login"""
     try:
         return db.session.get(User, int(user_id))
     except Exception as e:

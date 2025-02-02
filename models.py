@@ -7,7 +7,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 db = SQLAlchemy()
 
 class User(UserMixin, db.Model):
-    """User model for authentication and profile management"""
+    """User authentication and profile model"""
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -22,8 +22,35 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
+# Financial Models
+class Account(db.Model):
+    """Financial account model"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    type = db.Column(db.String(50), nullable=False)
+    code = db.Column(db.String(20), unique=True, nullable=False)
+    description = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    user = db.relationship('User', backref=db.backref('accounts', lazy=True))
+
+class Transaction(db.Model):
+    """Financial transaction model"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    date = db.Column(db.DateTime, nullable=False)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    description = db.Column(db.String(200))
+    explanation = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('transactions', lazy=True))
+
+# Settings and Configuration Models
 class CompanySettings(db.Model):
-    """Model for company-specific settings and configurations"""
+    """Company configuration model"""
     id = db.Column(db.Integer, primary_key=True)
     company_name = db.Column(db.String(200), nullable=False)
     business_type = db.Column(db.String(100))
@@ -34,9 +61,9 @@ class CompanySettings(db.Model):
     phone = db.Column(db.String(20))
     address = db.Column(db.Text)
     logo_path = db.Column(db.String(500))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
     user = db.relationship('User', backref=db.backref('company_settings', lazy=True))
 
@@ -57,19 +84,6 @@ class FinancialGoal(db.Model):
 
     user = db.relationship('User', backref=db.backref('financial_goals', lazy=True))
 
-class Account(db.Model):
-    """Account model for financial accounts"""
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    type = db.Column(db.String(50), nullable=False)  # Asset, Liability, Equity, Revenue, Expense
-    code = db.Column(db.String(20), unique=True, nullable=False)
-    description = db.Column(db.String(200))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    is_active = db.Column(db.Boolean, default=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-
-    user = db.relationship('User', backref=db.backref('accounts', lazy=True))
-
 class AdminChartOfAccounts(db.Model):
     """Standard chart of accounts managed by admin"""
     id = db.Column(db.Integer, primary_key=True)
@@ -79,18 +93,6 @@ class AdminChartOfAccounts(db.Model):
     description = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
-
-class Transaction(db.Model):
-    """Transaction model for financial records"""
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    date = db.Column(db.DateTime, nullable=False)
-    amount = db.Column(db.Numeric(10, 2), nullable=False)
-    description = db.Column(db.String(200))
-    explanation = db.Column(db.String(500))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    user = db.relationship('User', backref=db.backref('transactions', lazy=True))
 
 class UploadedFile(db.Model):
     """Model for tracking uploaded files"""
