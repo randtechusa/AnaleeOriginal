@@ -24,7 +24,7 @@ def login():
             try:
                 user = User.query.filter_by(email=form.email.data.lower()).first()
                 if user is None:
-                    flash('Email not found. Please check your email address.', 'error')
+                    flash('Invalid email or password. Please try again.', 'error')
                     logger.warning(f"Login attempt with non-existent email: {form.email.data}")
                     return render_template('auth/login.html', form=form)
                 
@@ -68,10 +68,16 @@ def register():
 
         if form.validate_on_submit():
             try:
+                existing_user = User.query.filter_by(email=form.email.data.lower()).first()
+                if existing_user:
+                    flash('Email already registered. Please use a different email.', 'error')
+                    return render_template('auth/register.html', form=form)
+
                 user = User(
                     email=form.email.data.lower(),
                     username=form.username.data,
-                    is_admin=False
+                    is_admin=False,
+                    is_active=True
                 )
                 user.set_password(form.password.data)
                 db.session.add(user)
