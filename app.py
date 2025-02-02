@@ -42,6 +42,10 @@ def test_db_connection(app, max_retries=3, retry_delay=1):
     logger.error(f"Database connection failed after {max_retries} attempts")
     return False
 
+def init_csrf(app):
+    csrf.init_app(app)
+    return csrf
+
 def create_app(config_name='development'):
     """Create and configure Flask application"""
     try:
@@ -57,7 +61,7 @@ def create_app(config_name='development'):
         Migrate(app, db)
         login_manager.init_app(app)
         login_manager.login_view = 'auth.login'
-        csrf.init_app(app)
+        init_csrf(app)
 
         # Register blueprints
         with app.app_context():
