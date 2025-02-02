@@ -16,13 +16,10 @@ class Config:
 
     # Enhanced database connection settings with better timeout handling
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 2,  # Reduced pool size for development
-        'pool_timeout': 30,  # Increased timeout
-        'pool_recycle': 1800,  # Recycle connections every 30 minutes
-        'pool_pre_ping': True,
-        'connect_args': {
-            'application_name': 'flask_app'
-        }
+        'pool_size': 2,
+        'pool_timeout': 30,
+        'pool_recycle': 1800,
+        'pool_pre_ping': True
     }
 
 class DevelopmentConfig(Config):

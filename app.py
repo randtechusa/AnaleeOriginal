@@ -102,10 +102,9 @@ def main():
 
         if app:
             # Run the application
-            port = int(os.environ.get('PORT', 5000))
             app.run(
                 host='0.0.0.0',
-                port=port,
+                port=3000,
                 debug=True
             )
     except Exception as e:
