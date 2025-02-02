@@ -20,6 +20,14 @@ class ServiceStatus:
         self.error_count = 0
         self.last_success = None
         self.last_error = None
+        
+    @classmethod
+    def get_openai_client(cls):
+        try:
+            return openai.Client(api_key=os.getenv('OPENAI_API_KEY'))
+        except Exception as e:
+            logger.error(f"Error initializing OpenAI client: {str(e)}")
+            return None
 
 class FinancialInsightsGenerator:
     def __init__(self):

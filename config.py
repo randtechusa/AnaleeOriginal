@@ -33,7 +33,7 @@ class DevelopmentConfig(Config):
     if database_url and database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
 
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///dev.db')
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/dev.db'
 
 class ProductionConfig(Config):
     """Production configuration"""
