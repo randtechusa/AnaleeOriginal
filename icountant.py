@@ -25,6 +25,7 @@ class ICountant:
         self.insights_generator = FinancialInsightsGenerator()
 
     async def get_transaction_insights(self, transaction: Dict) -> Dict:
+        """Generate AI-powered insights with enhanced explanation recognition"""
         """Generate AI-powered insights with enhanced suggestion and explanation recognition features"""
         try:
             if not transaction:
@@ -84,12 +85,24 @@ class ICountant:
         return SequenceMatcher(None, desc1.lower(), desc2.lower()).ratio() > 0.6
 
     def _generate_explanation(self, transaction: Dict) -> str:
-        """Generate AI-powered explanation for the transaction"""
+        """Generate AI-powered explanation with pattern recognition"""
         try:
             description = transaction.get('description', '')
             amount = self._validate_and_convert_amount(transaction.get('amount'))
+            
+            # First try to find similar transactions
+            predictor = PredictiveFeatures()
+            similar_transactions = predictor.find_similar_transactions(description)
+            
+            if similar_transactions['success'] and similar_transactions['similar_transactions']:
+                best_match = similar_transactions['similar_transactions'][0]
+                if best_match['confidence'] > 0.8:
+                    return best_match['explanation']
+            
+            # Fallback to AI-powered categorization
             category, confidence, base_explanation = categorize_transaction(description)
-
+            
+            # Enhance explanation based on transaction type
             explanation = f"{base_explanation} - "
             if amount and amount > 0:
                 explanation += f"Revenue recognized from {description}"
@@ -97,6 +110,7 @@ class ICountant:
                 explanation += f"Expense recorded for {description}"
 
             return explanation
+            
         except Exception as e:
             logger.error(f"Error generating explanation: {str(e)}")
             return "Transaction recorded - details in description"
