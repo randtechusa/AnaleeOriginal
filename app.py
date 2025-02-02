@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
-def test_db_connection(app, max_retries=5, retry_delay=3):
+def test_db_connection(app, max_retries=3, retry_delay=1):
     """Test database connection with retry logic"""
     for retry in range(max_retries):
         try:
