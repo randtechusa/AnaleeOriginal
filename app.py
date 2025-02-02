@@ -102,12 +102,13 @@ def main():
         app = create_app('development')
 
         if app:
-            # Run the application
+            # Run the application with production settings
             port = int(os.environ.get('PORT', 8080))
             app.run(
                 host='0.0.0.0',
                 port=port,
-                debug=False
+                debug=False,
+                threaded=True
             )
     except Exception as e:
         logger.error(f"Error running application: {str(e)}")
