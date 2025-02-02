@@ -57,7 +57,7 @@ class PredictiveFeatures:
 
             logger.info(f"ERF: Finding similar transactions for '{description}'")
             
-            # First try exact matches for efficiency
+            # Enhanced exact and pattern matching
             exact_matches = Transaction.query.filter(
                 Transaction.explanation.isnot(None),
                 (Transaction.description.ilike(f"%{description}%")) |
@@ -65,15 +65,25 @@ class PredictiveFeatures:
             ).all()
 
             if exact_matches:
+                matches = []
+                for match in exact_matches:
+                    text_sim = SequenceMatcher(None, description.lower(), match.description.lower()).ratio()
+                    semantic_sim = 1.0 if description.lower() in match.description.lower() else 0.8
+                    confidence = (text_sim + semantic_sim) / 2
+                    
+                    matches.append({
+                        'id': match.id,
+                        'description': match.description,
+                        'explanation': match.explanation,
+                        'confidence': confidence,
+                        'text_similarity': text_sim,
+                        'semantic_similarity': semantic_sim,
+                        'match_type': 'exact' if confidence > 0.9 else 'partial'
+                    })
+                
                 return {
-                    'success': True, 
-                    'similar_transactions': [{
-                        'id': t.id,
-                        'description': t.description,
-                        'explanation': t.explanation,
-                        'confidence': 1.0,
-                        'match_type': 'exact'
-                    } for t in exact_matches]
+                    'success': True,
+                    'similar_transactions': sorted(matches, key=lambda x: x['confidence'], reverse=True)[:5]
                 }
                 
             # Exact matches phase

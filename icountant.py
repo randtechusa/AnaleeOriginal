@@ -56,11 +56,29 @@ class ICountant:
 
             predictor = PredictiveFeatures()
             
-            # Get similar transactions with explanations
+            # Enhanced ERF integration
             similar_result = predictor.find_similar_transactions(
                 description=transaction.get('description', ''),
                 explanation=transaction.get('explanation', '')
             )
+
+            if similar_result.get('success'):
+                matches = similar_result.get('similar_transactions', [])
+                high_confidence_matches = [
+                    m for m in matches 
+                    if m.get('confidence', 0) > 0.8 and m.get('text_similarity', 0) > 0.7
+                ]
+
+                if high_confidence_matches:
+                    best_match = max(high_confidence_matches, key=lambda x: x.get('confidence', 0))
+                    return {
+                        'explanation': best_match.get('explanation'),
+                        'confidence': best_match.get('confidence'),
+                        'source': 'ERF',
+                        'similar_transactions': high_confidence_matches[:3],
+                        'text_similarity': best_match.get('text_similarity'),
+                        'semantic_similarity': best_match.get('semantic_similarity')
+                    }
 
             if similar_result.get('success'):
                 best_matches = similar_result.get('similar_transactions', [])
