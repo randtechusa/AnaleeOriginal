@@ -18,10 +18,10 @@ class LoginForm(FlaskForm):
     submit = SubmitField('Login')
 
     def validate_email(self, field):
-        """Check if email exists and account status"""
+        """Check if email exists"""
         user = User.query.filter_by(email=field.data.lower()).first()
-        if user and user.is_deleted:
-            raise ValidationError('This account has been deleted. Please register a new account or contact support for account restoration.')
+        if not user:
+            raise ValidationError('Invalid email or password')
 
 class RegistrationForm(FlaskForm):
     """Form for new user registration"""
@@ -48,9 +48,8 @@ class RegistrationForm(FlaskForm):
         """Check if email is available for registration"""
         user = User.query.filter_by(email=email.data.lower()).first()
         if user:
-            if user.is_deleted:
+            if hasattr(user, 'is_deleted') and user.is_deleted:
                 # If the account is deleted, allow re-registration
-                user.restore_account()
                 db.session.delete(user)
                 db.session.commit()
             else:
