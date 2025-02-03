@@ -1,6 +1,6 @@
 """Initial migration for admin chart of accounts
 
-Revision ID: init_admin_accounts
+Revision ID: f4383320bdef
 Revises: 
 Create Date: 2025-02-03 00:45:00.000000
 
@@ -9,12 +9,13 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = 'init_admin_accounts'
+revision = 'f4383320bdef'
 down_revision = None
 branch_labels = None
 depends_on = None
 
 def upgrade():
+    # Create admin_chart_of_accounts table
     op.create_table('admin_chart_of_accounts',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('name', sa.String(length=100), nullable=False),

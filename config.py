@@ -28,25 +28,31 @@ class DevelopmentConfig(Config):
     TESTING = False
     ENV = 'development'
 
-    # Get database URL from environment
+    # Use PostgreSQL database URL
     database_url = os.environ.get('DATABASE_URL')
     if database_url and database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
 
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
+    SQLALCHEMY_DATABASE_URI = database_url
 
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
     TESTING = False
     ENV = 'production'
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+
+    # Use PostgreSQL database URL
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url and database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
+    SQLALCHEMY_DATABASE_URI = database_url
 
 class TestingConfig(Config):
     """Testing configuration"""
     TESTING = True
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    SQLALCHEMY_DATABASE_URI = 'postgresql://postgres:test@localhost/test'
 
 config = {
     'development': DevelopmentConfig,
