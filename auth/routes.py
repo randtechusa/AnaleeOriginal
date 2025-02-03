@@ -82,14 +82,17 @@ def register():
                 )
                 user.set_password(form.password.data)
                 db.session.add(user)
-                db.session.commit()
+                try:
+                    db.session.commit()
+                    logger.info(f"New user registered successfully: {form.email.data}")
+                    flash('Registration successful! Please login.', 'success')
+                    return redirect(url_for('auth.login'))
+                except Exception as dbe:
+                    logger.error(f"Database error during user registration: {str(dbe)}")
+                    db.session.rollback()
+                    flash('Registration failed. Please try again.', 'error')
+                    return render_template('auth/register.html', form=form)
 
-                # Create default accounts for the new user
-                User.create_default_accounts(user.id)
-
-                logger.info(f"New user registered successfully: {form.email.data}")
-                flash('Registration successful! Please login.', 'success')
-                return redirect(url_for('auth.login'))
             except Exception as e:
                 logger.error(f"Error registering user: {str(e)}")
                 db.session.rollback()
