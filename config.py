@@ -9,7 +9,7 @@ class Config:
 
     # Database Configuration
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///dev.db')
 
     # Essential database connection settings
     SQLALCHEMY_ENGINE_OPTIONS = {

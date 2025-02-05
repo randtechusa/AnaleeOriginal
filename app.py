@@ -35,11 +35,9 @@ def create_app(config_name='development'):
         app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-        # Get database URL from environment
-        db_url = os.environ.get('DATABASE_URL')
-        if not db_url:
-            raise ValueError("DATABASE_URL environment variable is not set")
-
+        # Get database URL from environment or use SQLite
+        db_url = os.environ.get('DATABASE_URL', 'sqlite:///dev.db')
+        
         # Convert postgres:// to postgresql:// if needed
         if db_url.startswith('postgres://'):
             db_url = db_url.replace('postgres://', 'postgresql://', 1)
