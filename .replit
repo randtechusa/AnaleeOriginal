@@ -131,3 +131,4 @@ run = ["sh", "-c", "python main.py"]
 [[ports]]
 localPort = 80
 externalPort = 80
+host = "0.0.0.0"
