@@ -60,19 +60,37 @@ def create_app(config_name='development'):
                 with app.app_context():
                     logger.info("Attempting database connection...")
                     
-                    # Basic connectivity test
-                    db.session.execute(text("SELECT 1")).scalar()
-                    logger.info("Basic connectivity test passed")
-                    
-                    # Simple status check
-                    status = db.session.execute(text("""
-                        SELECT current_database(), current_timestamp, version()
-                    """)).first()
-                    
-                    if status:
-                        logger.info(f"Connected to database: {status[0]}")
-                        logger.info(f"Server time: {status[1]}")
+                    try:
+                        # Basic connectivity test with timeout
+                        conn = db.engine.connect()
+                        conn.execute(text("SELECT 1")).scalar()
+                        logger.info("Basic connectivity test passed")
+                        
+                        # Get connection details
+                        status = conn.execute(text("""
+                            SELECT 
+                                current_database(),
+                                current_timestamp,
+                                version(),
+                                inet_server_addr() as server_ip,
+                                inet_server_port() as server_port
+                        """)).first()
+                        
+                        logger.info("Database connection details:")
+                        logger.info(f"Database: {status[0]}")
+                        logger.info(f"Server Time: {status[1]}")
                         logger.info(f"Version: {status[2]}")
+                        logger.info(f"Server IP: {status[3]}")
+                        logger.info(f"Server Port: {status[4]}")
+                        
+                        conn.close()
+                        return True
+                        
+                    except Exception as e:
+                        logger.error(f"Detailed connection error: {str(e)}")
+                        if hasattr(e, 'orig'):
+                            logger.error(f"Original error: {str(e.orig)}")
+                        return False
                     
                     if status:
                         logger.info("Database connection details:")

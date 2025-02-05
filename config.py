@@ -19,14 +19,18 @@ class Config:
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
 
-    # Simplified database configuration with required SSL
+    # Simplified database configuration
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
-        'pool_size': 5,
-        'max_overflow': 2,
+        'pool_size': 3,
+        'max_overflow': 1,
         'connect_args': {
-            'connect_timeout': 10,
-            'sslmode': 'require'
+            'connect_timeout': 30,
+            'application_name': 'icountant',
+            'keepalives': 1,
+            'keepalives_idle': 30,
+            'keepalives_interval': 10,
+            'keepalives_count': 5
         }
     }
 
