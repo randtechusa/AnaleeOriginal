@@ -60,19 +60,18 @@ def create_app(config_name='development'):
                 with app.app_context():
                     logger.info("Attempting database connection...")
                     db_url = app.config.get('SQLALCHEMY_DATABASE_URI', '')
-                    logger.info(f"Database host: {db_url.split('@')[-1].split('/')[0]}")
+                    safe_url = db_url.split('@')[-1] if '@' in db_url else 'unknown'
+                    logger.info(f"Connecting to database at: {safe_url}")
                     
                     try:
-                        # Test connection with health check
+                        # Simple connection test
                         conn = db.engine.connect()
-                        conn.execute(text("""
-                            SELECT 
-                                current_database() as db_name,
-                                current_timestamp as server_time,
-                                pg_is_in_recovery() as is_replica,
-                                current_setting('server_version') as version
-                        """)).first()
-                        logger.info("Database health check passed")
+                        result = conn.execute(text("SELECT 1")).scalar()
+                        if result == 1:
+                            logger.info("Database connection successful")
+                            conn.close()
+                            return True
+                        return False
                         
                         # Get connection details
                         status = conn.execute(text("""
