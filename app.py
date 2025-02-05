@@ -1,7 +1,6 @@
 """Main application factory with enhanced logging and protection"""
 import os
 import logging
-import time
 from datetime import datetime
 from flask import Flask, render_template, request
 from flask_migrate import Migrate
@@ -10,7 +9,6 @@ from flask_wtf.csrf import CSRFProtect
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy import text
 from models import db, User
-from config import config
 
 # Configure logging
 logging.basicConfig(
@@ -28,23 +26,35 @@ csrf = CSRFProtect()
 
 def create_app(config_name='development'):
     """Create and configure Flask application with improved error handling"""
+    app = Flask(__name__)
+
     try:
-        # Create Flask app
-        app = Flask(__name__)
         logger.info(f"Starting application with config: {config_name}")
 
-        # Load configuration
-        if config_name not in config:
-            logger.warning(f"Invalid config_name: {config_name}, using default")
-            config_name = 'default'
+        # Basic Configuration
+        app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
+        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-        app.config.from_object(config[config_name])
+        # Get database URL from environment
+        db_url = os.environ.get('DATABASE_URL')
+        if not db_url:
+            raise ValueError("DATABASE_URL environment variable is not set")
 
-        # Log database URL (without credentials)
-        db_url = app.config.get('SQLALCHEMY_DATABASE_URI', '')
-        if db_url:
-            safe_url = db_url.split('@')[-1] if '@' in db_url else db_url
-            logger.info(f"Using database: {safe_url}")
+        # Convert postgres:// to postgresql:// if needed
+        if db_url.startswith('postgres://'):
+            db_url = db_url.replace('postgres://', 'postgresql://', 1)
+
+        app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+        logger.info(f"Using database URL: {db_url.split('@')[1] if db_url else 'No URL'}")
+
+        # Minimal database configuration
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_pre_ping': True,
+            'pool_size': 1,
+            'max_overflow': 0,
+            'pool_timeout': 30,
+            'pool_recycle': 1800
+        }
 
         # Initialize extensions
         db.init_app(app)
@@ -54,116 +64,31 @@ def create_app(config_name='development'):
 
         login_manager.login_view = 'auth.login'
 
-        def test_db_connection():
-            """Test database connection with enhanced error handling and diagnostics"""
-            try:
-                with app.app_context():
-                    logger.info("Attempting database connection...")
-                    db_url = app.config.get('SQLALCHEMY_DATABASE_URI', '')
-                    safe_url = db_url.split('@')[-1] if '@' in db_url else 'unknown'
-                    logger.info(f"Connecting to database at: {safe_url}")
-                    
-                    try:
-                        # Simple connection test
-                        conn = db.engine.connect()
-                        result = conn.execute(text("SELECT 1")).scalar()
-                        if result == 1:
-                            logger.info("Database connection successful")
-                            conn.close()
-                            return True
-                        return False
-                        
-                        # Get connection details
-                        status = conn.execute(text("""
-                            SELECT 
-                                current_database(),
-                                current_timestamp,
-                                version(),
-                                inet_server_addr() as server_ip,
-                                inet_server_port() as server_port
-                        """)).first()
-                        
-                        logger.info("Database connection details:")
-                        logger.info(f"Database: {status[0]}")
-                        logger.info(f"Server Time: {status[1]}")
-                        logger.info(f"Version: {status[2]}")
-                        logger.info(f"Server IP: {status[3]}")
-                        logger.info(f"Server Port: {status[4]}")
-                        
-                        conn.close()
-                        return True
-                        
-                    except Exception as e:
-                        logger.error(f"Detailed connection error: {str(e)}")
-                        if hasattr(e, 'orig'):
-                            logger.error(f"Original error: {str(e.orig)}")
-                        return False
-                    
-                    if status:
-                        logger.info("Database connection details:")
-                        logger.info(f"Database: {status.db_name}")
-                        logger.info(f"Server Time: {status.server_time}")
-                        logger.info(f"Version: {status.version}")
-                        logger.info(f"Active Connections: {status.active_connections}")
-                    
-                    if status:
-                        logger.info("Database connection details:")
-                        logger.info(f"Database: {status[0]}")
-                        logger.info(f"Timestamp: {status[1]}")
-                        logger.info(f"Version: {status[2]}")
-                    
-                    db.session.commit()
-                    return True
-                    
-                    db.session.commit()
-                    return True
-                    
-            except OperationalError as e:
-                logger.error(f"Database operational error: {str(e)}")
-                if 'endpoint is disabled' in str(e):
-                    logger.error("CRITICAL: Database endpoint is disabled - Please enable it in the Replit Database tool")
-                elif 'connection timed out' in str(e):
-                    logger.error("Connection timeout - Check network connectivity and firewall settings")
-                return False
-            except SQLAlchemyError as e:
-                logger.error(f"Database SQLAlchemy error: {str(e)}")
-                return False
-            except Exception as e:
-                logger.error(f"Unexpected database error: {str(e)}", exc_info=True)
-                return False
-
-        # Attempt database connection with retries
-        max_retries = 3
-        retry_delay = 5
-        connection_successful = False
-
-        for attempt in range(max_retries):
-            if test_db_connection():
-                connection_successful = True
-                break
-
-            if attempt < max_retries - 1:
-                logger.info(f"Retrying database connection ({attempt + 1}/{max_retries}) in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-
-        if not connection_successful:
-            logger.error("All database connection attempts failed")
-            raise Exception("Could not establish database connection after multiple attempts")
-
-        # Create tables if they don't exist
+        # Test database connection
         with app.app_context():
             try:
+                logger.info("Testing database connection...")
+                db.session.execute(text('SELECT 1'))
+                logger.info("Database connection successful")
+
+                logger.info("Creating database tables...")
                 db.create_all()
                 logger.info("Database tables created successfully")
-            except Exception as e:
-                logger.error(f"Error creating database tables: {str(e)}")
+
+            except OperationalError as e:
+                logger.error(f"Database connection error: {str(e)}")
+                logger.error(f"Original error: {getattr(e, 'orig', 'No original error')}")
                 raise
 
-        logger.info("Application created successfully")
+            except Exception as e:
+                logger.error(f"Unexpected database error: {str(e)}")
+                raise
+
         return app
 
     except Exception as e:
         logger.error(f"Application creation failed: {str(e)}")
+        logger.exception("Full error traceback:")
         raise
 
 @login_manager.user_loader
@@ -176,15 +101,6 @@ def load_user(user_id):
         return None
 
 if __name__ == '__main__':
-    try:
-        app = create_app('development')
-        port = int(os.environ.get('PORT', 3000))
-        logger.info(f"Starting Flask server on port {port}")
-        app.run(
-            host='0.0.0.0',
-            port=port,
-            debug=True
-        )
-    except Exception as e:
-        logger.error(f"Error running application: {str(e)}")
-        raise
+    app = create_app('development')
+    port = int(os.environ.get('PORT', 3000))
+    app.run(host='0.0.0.0', port=port, debug=True)

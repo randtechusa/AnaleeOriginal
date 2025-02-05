@@ -13,21 +13,22 @@ class Config:
 
     # Database Configuration
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    
-    # Database URL with SSL mode
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+
+    # Convert postgres:// to postgresql:// for SQLAlchemy
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
 
-    # Simplified database configuration with essential settings
+    # Essential database connection settings with minimal configuration
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
-        'pool_size': 1,
-        'pool_recycle': 3600,
+        'pool_size': 1,  # Minimal pool size
+        'max_overflow': 0,  # No overflow connections
+        'pool_timeout': 10,
+        'pool_recycle': 1800,
         'connect_args': {
-            'connect_timeout': 10,
-            'application_name': 'icountant',
-            'sslmode': 'require'
+            'connect_timeout': 5,
+            'application_name': 'icountant'
         }
     }
 
