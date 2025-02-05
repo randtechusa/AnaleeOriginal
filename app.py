@@ -55,20 +55,37 @@ def create_app(config_name='development'):
         login_manager.login_view = 'auth.login'
 
         def test_db_connection():
-            """Test database connection with enhanced error handling"""
+            """Test database connection with enhanced error handling and diagnostics"""
             try:
                 with app.app_context():
-                    # Test connection with detailed diagnostics
-                    result = db.session.execute(text('SELECT version(), current_database(), current_user'))
-                    row = result.fetchone()
-                    logger.info(f"Database connection successful - Version: {row[0]}")
-                    logger.info(f"Database: {row[1]}, User: {row[2]}")
+                    # Simple connection test first
+                    db.session.execute(text('SELECT 1')).scalar()
+                    
+                    # If basic test passes, get detailed info
+                    result = db.session.execute(text("""
+                        SELECT 
+                            current_database() as db,
+                            current_user as user,
+                            version() as version,
+                            pg_is_in_recovery() as is_replica,
+                            current_setting('server_version') as pg_version
+                    """))
+                    info = result.mappings().first()
+                    
+                    logger.info("Database connection successful:")
+                    logger.info(f"Database: {info['db']}")
+                    logger.info(f"User: {info['user']}")
+                    logger.info(f"Version: {info['pg_version']}")
+                    
                     db.session.commit()
                     return True
+                    
             except OperationalError as e:
                 logger.error(f"Database operational error: {str(e)}")
                 if 'endpoint is disabled' in str(e):
-                    logger.error("Neon database endpoint is disabled - Please enable it in the Neon console")
+                    logger.error("CRITICAL: Database endpoint is disabled - Please enable it in the Replit Database tool")
+                elif 'connection timed out' in str(e):
+                    logger.error("Connection timeout - Check network connectivity and firewall settings")
                 return False
             except SQLAlchemyError as e:
                 logger.error(f"Database SQLAlchemy error: {str(e)}")
