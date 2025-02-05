@@ -14,36 +14,55 @@ class Config:
     # Database Configuration
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # Enhanced database connection settings with better timeout handling
+    # Database URL with SSL mode
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
+        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+
+    # Simplified database connection settings
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 1,
-        'pool_timeout': 30,
+        'pool_size': 3,  # Reduced from 5
+        'max_overflow': 5,  # Reduced from 10
+        'pool_timeout': 20,  # Reduced from 30
         'pool_recycle': 1800,
         'pool_pre_ping': True,
         'connect_args': {
             'connect_timeout': 10,
-            'application_name': 'icountant',
-            'keepalives': 1,
-            'keepalives_idle': 30,
-            'keepalives_interval': 10,
-            'keepalives_count': 5
+            'application_name': 'icountant'
         }
     }
-
-    # Database URL Configuration
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url:
-        if database_url.startswith('postgres://'):
-            database_url = database_url.replace('postgres://', 'postgresql://', 1)
-        SQLALCHEMY_DATABASE_URI = database_url
-    else:
-        raise ValueError("DATABASE_URL environment variable is not set")
 
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
     TESTING = False
     ENV = 'development'
+
+    # Pattern Matching Configuration
+    PATTERN_MATCHING = {
+        'min_similarity_score': 0.85,
+        'max_suggestions': 5,
+        'cache_timeout': timedelta(hours=1),
+        'use_ai_threshold': 0.7
+    }
+
+    # AI Configuration
+    AI_CONFIG = {
+        'max_retries': 3,
+        'timeout': 30,
+        'batch_size': 5,
+        'confidence_threshold': 0.85
+    }
+
+    # Feature Flags
+    FEATURES = {
+        'exact_matching': True,
+        'fuzzy_matching': True,
+        'keyword_rules': True,
+        'historical_patterns': True,
+        'amount_patterns': True,
+        'ai_fallback': True
+    }
 
 class ProductionConfig(Config):
     """Production configuration"""

@@ -8,6 +8,7 @@ from flask_migrate import Migrate
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy import text
 from models import db, User
 from config import config
 
@@ -25,39 +26,25 @@ logger = logging.getLogger(__name__)
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
-def validate_database_url():
-    """Validate database URL format and accessibility"""
-    database_url = os.environ.get('DATABASE_URL')
-    if not database_url:
-        raise ValueError("DATABASE_URL environment variable is not set")
-
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-
-    logger.info("Database URL validated successfully")
-    return database_url
-
 def create_app(config_name='development'):
-    """Create and configure Flask application"""
+    """Create and configure Flask application with improved error handling"""
     try:
         # Create Flask app
         app = Flask(__name__)
+        logger.info(f"Starting application with config: {config_name}")
 
-        # Validate config name
+        # Load configuration
         if config_name not in config:
             logger.warning(f"Invalid config_name: {config_name}, using default")
             config_name = 'default'
 
-        # Load configuration
         app.config.from_object(config[config_name])
 
-        # Validate and update database URL
-        try:
-            database_url = validate_database_url()
-            app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-        except Exception as e:
-            logger.error(f"Database URL validation failed: {str(e)}")
-            raise
+        # Log database URL (without credentials)
+        db_url = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if db_url:
+            safe_url = db_url.split('@')[-1] if '@' in db_url else db_url
+            logger.info(f"Using database: {safe_url}")
 
         # Initialize extensions
         db.init_app(app)
@@ -71,9 +58,9 @@ def create_app(config_name='development'):
             """Test database connection with enhanced error handling"""
             try:
                 with app.app_context():
-                    # Test connection
-                    connection = db.engine.connect()
-                    connection.close()
+                    # Test connection with proper SQL text formatting
+                    db.session.execute(text('SELECT 1'))
+                    db.session.commit()
                     logger.info("Database connection test successful")
                 return True
             except OperationalError as e:
@@ -87,40 +74,25 @@ def create_app(config_name='development'):
                 return False
 
         # Attempt database connection with retries
-        max_retries = 5
-        retry_delay = 2
+        max_retries = 3
+        retry_delay = 5
+        connection_successful = False
 
         for attempt in range(max_retries):
             if test_db_connection():
+                connection_successful = True
                 break
 
             if attempt < max_retries - 1:
                 logger.info(f"Retrying database connection ({attempt + 1}/{max_retries}) in {retry_delay} seconds...")
                 time.sleep(retry_delay)
-            else:
-                logger.error("All database connection attempts failed")
-                raise Exception("Could not establish database connection after multiple attempts")
 
-        # Register blueprints
+        if not connection_successful:
+            logger.error("All database connection attempts failed")
+            raise Exception("Could not establish database connection after multiple attempts")
+
+        # Create tables if they don't exist
         with app.app_context():
-            from auth.routes import auth
-            from main.routes import main
-            from historical_data import historical_data
-            from bank_statements import bank_statements
-            from reports import reports
-            from chat import chat
-            from errors import errors
-            from admin import admin
-
-            blueprints = [
-                auth, main, historical_data, bank_statements,
-                reports, chat, admin, errors
-            ]
-
-            for blueprint in blueprints:
-                app.register_blueprint(blueprint)
-                logger.info(f"Registered blueprint: {blueprint.name}")
-
             try:
                 db.create_all()
                 logger.info("Database tables created successfully")
@@ -147,7 +119,8 @@ def load_user(user_id):
 if __name__ == '__main__':
     try:
         app = create_app('development')
-        port = int(os.environ.get('PORT', 8080))
+        port = int(os.environ.get('PORT', 3000))
+        logger.info(f"Starting Flask server on port {port}")
         app.run(
             host='0.0.0.0',
             port=port,
