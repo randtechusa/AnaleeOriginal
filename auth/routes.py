@@ -29,7 +29,7 @@ def login():
                     return render_template('auth/login.html', form=form)
 
                 if not user.check_password(form.password.data):
-                    flash('Invalid email or password', 'error')
+                    flash('Invalid password. Please try again.', 'error')
                     logger.warning(f"Failed login attempt for user: {user.email}")
                     return render_template('auth/login.html', form=form)
 
