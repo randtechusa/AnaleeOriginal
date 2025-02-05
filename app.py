@@ -3,7 +3,6 @@ import os
 import logging
 import time
 from datetime import datetime
-import time
 from flask import Flask, render_template, request
 from flask_migrate import Migrate
 from flask_login import LoginManager
@@ -31,14 +30,14 @@ def create_app(config_name='development'):
     try:
         app = Flask(__name__)
         app.config.from_object(config[config_name])
-        
+
         db.init_app(app)
         migrate = Migrate(app, db)  # Initialize Flask-Migrate
-        
+
         # Test database connection with retry logic
         max_retries = 3
         retry_delay = 2  # seconds
-        
+
         with app.app_context():
             for attempt in range(max_retries):
                 try:
@@ -48,13 +47,17 @@ def create_app(config_name='development'):
                     if attempt == max_retries - 1:
                         raise
                     time.sleep(retry_delay)
-            except Exception as e:
-                if "endpoint is disabled" in str(e):
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        continue
-                logger.error(f"Database connection failed: {str(e)}")
-                raise
+                    if "endpoint is disabled" in str(e):
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delay)
+                            continue
+                        else:
+                            logger.error(f"Database connection failed: {str(e)}")
+                            raise
+                    else:
+                        logger.error(f"Database connection failed: {str(e)}")
+                        raise
+
 
         login_manager.init_app(app)
         login_manager.login_view = 'auth.login'
