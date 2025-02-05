@@ -86,7 +86,7 @@ agentRequireRestartOnSave = false
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python main.py"
+args = "FLASK_DEBUG=1 python app.py"
 
 [[workflows.workflow]]
 name = "System Restore"
