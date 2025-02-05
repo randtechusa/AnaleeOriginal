@@ -19,18 +19,22 @@ class Config:
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
 
-    # Simplified database configuration
+    # Enhanced database configuration with retry settings
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
-        'pool_size': 3,
+        'pool_size': 2,
+        'pool_recycle': 300,
+        'pool_timeout': 30,
         'max_overflow': 1,
         'connect_args': {
-            'connect_timeout': 30,
+            'connect_timeout': 60,
             'application_name': 'icountant',
             'keepalives': 1,
-            'keepalives_idle': 30,
+            'keepalives_idle': 60,
             'keepalives_interval': 10,
-            'keepalives_count': 5
+            'keepalives_count': 3,
+            'client_encoding': 'utf8',
+            'options': '-c statement_timeout=60000'
         }
     }
 
