@@ -31,18 +31,23 @@ def create_app(config_name='development'):
     try:
         app = Flask(__name__)
         app.config.from_object(config[config_name])
-
-        # Initialize core extensions with retry logic
+        
+        db.init_app(app)
+        migrate = Migrate(app, db)  # Initialize Flask-Migrate
+        
+        # Test database connection with retry logic
         max_retries = 3
         retry_delay = 2  # seconds
         
-        for attempt in range(max_retries):
-            try:
-                db.init_app(app)
-                with app.app_context():
+        with app.app_context():
+            for attempt in range(max_retries):
+                try:
                     db.engine.connect()
-                migrate = Migrate(app, db)  # Initialize Flask-Migrate
-                break
+                    break
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    time.sleep(retry_delay)
             except Exception as e:
                 if "endpoint is disabled" in str(e):
                     if attempt < max_retries - 1:
