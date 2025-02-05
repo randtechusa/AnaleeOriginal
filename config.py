@@ -16,11 +16,28 @@ class Config:
 
     # Enhanced database connection settings with better timeout handling
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 2,
+        'pool_size': 1,
         'pool_timeout': 30,
         'pool_recycle': 1800,
-        'pool_pre_ping': True
+        'pool_pre_ping': True,
+        'connect_args': {
+            'connect_timeout': 10,
+            'application_name': 'icountant',
+            'keepalives': 1,
+            'keepalives_idle': 30,
+            'keepalives_interval': 10,
+            'keepalives_count': 5
+        }
     }
+
+    # Database URL Configuration
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        SQLALCHEMY_DATABASE_URI = database_url
+    else:
+        raise ValueError("DATABASE_URL environment variable is not set")
 
 class DevelopmentConfig(Config):
     """Development configuration"""
@@ -28,25 +45,11 @@ class DevelopmentConfig(Config):
     TESTING = False
     ENV = 'development'
 
-    # Use PostgreSQL database URL
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url and database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-
-    SQLALCHEMY_DATABASE_URI = database_url
-
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
     TESTING = False
     ENV = 'production'
-
-    # Use PostgreSQL database URL
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url and database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-
-    SQLALCHEMY_DATABASE_URI = database_url
 
 class TestingConfig(Config):
     """Testing configuration"""

@@ -4,7 +4,7 @@ modules = ["postgresql-16", "python-3.11"]
 channel = "stable-24_05"
 
 [workflows]
-runButton = "Flask Server"
+runButton = "Project"
 
 [[workflows.workflow]]
 name = "Project"
@@ -21,19 +21,19 @@ args = "Database Migration"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Database Setup"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Flask Server"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "System Restore"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "Admin Setup"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Database Setup"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Flask Server"
 
 [[workflows.workflow]]
 name = "ICountant Demo"
@@ -62,31 +62,6 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "flask db upgrade"
-
-[[workflows.workflow]]
-name = "Database Setup"
-author = "agent"
-
-[workflows.workflow.metadata]
-agentRequireRestartOnSave = false
-
-[[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "flask db init && flask db migrate -m \"Initial migration\" && flask db upgrade"
-
-[[workflows.workflow]]
-name = "Flask Server"
-author = "agent"
-
-[workflows.workflow.metadata]
-agentRequireRestartOnSave = false
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "FLASK_DEBUG=1 python app.py"
 
 [[workflows.workflow]]
 name = "System Restore"
@@ -120,6 +95,35 @@ agentRequireRestartOnSave = false
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python create_admin.py"
+
+[[workflows.workflow]]
+name = "Database Setup"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python -c 'from app import db; db.create_all()'"
+
+[[workflows.workflow]]
+name = "Flask Server"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python app.py"
+waitForPort = 8080
 
 [deployment]
 run = ["sh", "-c", "python app.py"]
