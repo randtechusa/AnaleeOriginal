@@ -9,7 +9,15 @@ class Config:
 
     # Database Configuration
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///dev.db')
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url:
+        # Convert postgres:// to postgresql:// if needed
+        if db_url.startswith('postgres://'):
+            db_url = db_url.replace('postgres://', 'postgresql://', 1)
+        SQLALCHEMY_DATABASE_URI = db_url
+    else:
+        # Fallback to SQLite
+        SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
 
     # Essential database connection settings
     SQLALCHEMY_ENGINE_OPTIONS = {

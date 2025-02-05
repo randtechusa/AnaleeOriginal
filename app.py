@@ -79,9 +79,20 @@ def create_app(config_name='development'):
                 logger.info("Database tables created successfully")
 
             except OperationalError as e:
-                logger.error(f"Database connection error: {str(e)}")
-                logger.error(f"Original error: {getattr(e, 'orig', 'No original error')}")
-                raise
+                logger.warning(f"Database connection error: {str(e)}")
+                logger.warning("Falling back to SQLite database")
+                # Update connection to SQLite
+                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dev.db'
+                db.get_engine(app).dispose()
+                db.init_app(app)
+                
+                # Try creating tables with SQLite
+                try:
+                    db.create_all()
+                    logger.info("Created tables with SQLite successfully")
+                except Exception as sqlite_err:
+                    logger.error(f"SQLite fallback failed: {str(sqlite_err)}")
+                    raise
 
             except SQLAlchemyError as e:
                 logger.error(f"Database error: {str(e)}")
