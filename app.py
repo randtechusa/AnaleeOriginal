@@ -60,19 +60,19 @@ def create_app(config_name='development'):
                 with app.app_context():
                     logger.info("Attempting database connection...")
                     
-                    # Test connection with timeout
-                    result = db.session.execute(text("SELECT 1")).scalar()
-                    logger.info(f"Basic connectivity test result: {result}")
+                    # Basic connectivity test
+                    db.session.execute(text("SELECT 1")).scalar()
+                    logger.info("Basic connectivity test passed")
                     
-                    # Get detailed connection status
+                    # Simple status check
                     status = db.session.execute(text("""
-                        SELECT 
-                            current_database() as db_name,
-                            current_timestamp as server_time,
-                            version() as version,
-                            pg_is_in_recovery() as is_replica,
-                            (SELECT count(*) FROM pg_stat_activity) as active_connections
+                        SELECT current_database(), current_timestamp, version()
                     """)).first()
+                    
+                    if status:
+                        logger.info(f"Connected to database: {status[0]}")
+                        logger.info(f"Server time: {status[1]}")
+                        logger.info(f"Version: {status[2]}")
                     
                     if status:
                         logger.info("Database connection details:")
