@@ -14,45 +14,24 @@ auth = Blueprint('auth', __name__)
 
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
-    try:
-        if current_user.is_authenticated:
-            logger.info(f"User {current_user.email} redirected to dashboard")
-            return redirect(url_for('main.dashboard'))
-
-        form = LoginForm()
-        if form.validate_on_submit():
-            try:
-                user = User.query.filter_by(email=form.email.data.lower()).first()
-                if user is None:
-                    flash('Invalid email or password', 'error')
-                    logger.warning(f"Login attempt with non-existent email: {form.email.data}")
-                    return render_template('auth/login.html', form=form)
-
-                if not user.check_password(form.password.data):
-                    flash('Invalid password. Please try again.', 'error')
-                    logger.warning(f"Failed login attempt for user: {user.email}")
-                    return render_template('auth/login.html', form=form)
-
-                if not user.is_active:
-                    flash('Account is deactivated. Please contact support.', 'error')
-                    logger.warning(f"Login attempt on inactive account: {form.email.data}")
-                    return render_template('auth/login.html', form=form)
-
-                # All checks passed, log the user in
-                login_user(user, remember=form.remember_me.data)
-                logger.info(f"User {user.email} logged in successfully")
-                return redirect(url_for('main.dashboard'))
-
-            except AttributeError as ae:
-                logger.error(f"User model error: {str(ae)}")
-                flash('System error during login. Please contact support.', 'error')
+    if current_user.is_authenticated:
+        return redirect(url_for('main.dashboard'))
+    
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(email=form.email.data.lower()).first()
+        
+        if user and user.check_password(form.password.data):
+            if not user.is_active:
+                flash('Account is deactivated. Please contact support.', 'error')
                 return render_template('auth/login.html', form=form)
-
-        return render_template('auth/login.html', form=form)
-    except Exception as e:
-        logger.error(f"Login error: {str(e)}", exc_info=True)
-        flash('An error occurred during login. Please try again.', 'error')
-        return render_template('auth/login.html', form=form)
+            
+            login_user(user, remember=form.remember_me.data)
+            flash('Logged in successfully.', 'success')
+            return redirect(url_for('main.dashboard'))
+        
+        flash('Invalid email or password.', 'error')
+    return render_template('auth/login.html', form=form)
 
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
