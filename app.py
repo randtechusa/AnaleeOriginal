@@ -1,6 +1,7 @@
 """Main application factory with enhanced logging and protection"""
 import os
 import logging
+import time
 from datetime import datetime
 import time
 from flask import Flask, render_template, request
@@ -31,9 +32,24 @@ def create_app(config_name='development'):
         app = Flask(__name__)
         app.config.from_object(config[config_name])
 
-        # Initialize core extensions
-        db.init_app(app)
-        migrate = Migrate(app, db)  # Initialize Flask-Migrate
+        # Initialize core extensions with retry logic
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                db.init_app(app)
+                with app.app_context():
+                    db.engine.connect()
+                migrate = Migrate(app, db)  # Initialize Flask-Migrate
+                break
+            except Exception as e:
+                if "endpoint is disabled" in str(e):
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        continue
+                logger.error(f"Database connection failed: {str(e)}")
+                raise
 
         login_manager.init_app(app)
         login_manager.login_view = 'auth.login'
