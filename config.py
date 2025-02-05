@@ -1,29 +1,21 @@
 import os
 from datetime import timedelta
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class Config:
     """Base configuration"""
     # Basic Configuration
     SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24).hex())
     TEMPLATES_AUTO_RELOAD = True
-    UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 
     # Database Configuration
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
 
-    # Convert postgres:// to postgresql:// for SQLAlchemy
-    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
-
-    # Essential database connection settings with minimal configuration
+    # Essential database connection settings
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
-        'pool_size': 1,  # Minimal pool size
-        'max_overflow': 0,  # No overflow connections
+        'pool_size': 1,
+        'max_overflow': 0,
         'pool_timeout': 10,
         'pool_recycle': 1800,
         'connect_args': {
@@ -36,7 +28,6 @@ class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
     TESTING = False
-    ENV = 'development'
 
     # Pattern Matching Configuration
     PATTERN_MATCHING = {
@@ -54,21 +45,10 @@ class DevelopmentConfig(Config):
         'confidence_threshold': 0.85
     }
 
-    # Feature Flags
-    FEATURES = {
-        'exact_matching': True,
-        'fuzzy_matching': True,
-        'keyword_rules': True,
-        'historical_patterns': True,
-        'amount_patterns': True,
-        'ai_fallback': True
-    }
-
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
     TESTING = False
-    ENV = 'production'
 
 class TestingConfig(Config):
     """Testing configuration"""

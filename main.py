@@ -32,21 +32,14 @@ def main():
             logger.error("Application creation failed - app is None")
             raise ValueError("Application creation failed")
 
-        # Use port 80 for production deployment
+        # Use single port configuration
         port = 80
-        logger.info(f"Configured to start server on port {port}")
-
-        # Log environment details
-        logger.info("Environment configuration:")
-        logger.info(f"DATABASE_URL is {'set' if os.environ.get('DATABASE_URL') else 'not set'}")
-        logger.info(f"DEBUG mode is {'enabled' if app.debug else 'disabled'}")
-
-        # Start server
         logger.info(f"Starting Flask server on port {port}")
+
         app.run(
             host='0.0.0.0',
             port=port,
-            debug=False  # Disable debug mode in production
+            debug=False  # Disable debug mode for stability
         )
 
     except Exception as e:
