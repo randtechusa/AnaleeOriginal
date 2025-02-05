@@ -32,8 +32,8 @@ def main():
             logger.error("Application creation failed - app is None")
             raise ValueError("Application creation failed")
 
-        # Use environment port with fallback
-        port = int(os.environ.get('PORT', 3000))
+        # Use port 80 for production deployment
+        port = 80
         logger.info(f"Configured to start server on port {port}")
 
         # Log environment details
@@ -46,8 +46,7 @@ def main():
         app.run(
             host='0.0.0.0',
             port=port,
-            debug=True,
-            use_reloader=False  # Disable reloader to avoid duplicate processes
+            debug=False  # Disable debug mode in production
         )
 
     except Exception as e:

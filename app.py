@@ -45,15 +45,19 @@ def create_app(config_name='development'):
             db_url = db_url.replace('postgres://', 'postgresql://', 1)
 
         app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-        logger.info(f"Using database URL: {db_url.split('@')[1] if db_url else 'No URL'}")
+        logger.info("Database URL configured successfully")
 
         # Minimal database configuration
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
             'pool_pre_ping': True,
             'pool_size': 1,
             'max_overflow': 0,
-            'pool_timeout': 30,
-            'pool_recycle': 1800
+            'pool_timeout': 10,
+            'pool_recycle': 1800,
+            'connect_args': {
+                'connect_timeout': 5,
+                'application_name': 'icountant'
+            }
         }
 
         # Initialize extensions
@@ -68,7 +72,8 @@ def create_app(config_name='development'):
         with app.app_context():
             try:
                 logger.info("Testing database connection...")
-                db.session.execute(text('SELECT 1'))
+                result = db.session.execute(text('SELECT 1'))
+                result.scalar()  # Ensure we can fetch the result
                 logger.info("Database connection successful")
 
                 logger.info("Creating database tables...")
@@ -80,8 +85,12 @@ def create_app(config_name='development'):
                 logger.error(f"Original error: {getattr(e, 'orig', 'No original error')}")
                 raise
 
+            except SQLAlchemyError as e:
+                logger.error(f"Database error: {str(e)}")
+                raise
+
             except Exception as e:
-                logger.error(f"Unexpected database error: {str(e)}")
+                logger.error(f"Unexpected error: {str(e)}")
                 raise
 
         return app
@@ -101,6 +110,5 @@ def load_user(user_id):
         return None
 
 if __name__ == '__main__':
-    app = create_app('development')
-    port = int(os.environ.get('PORT', 3000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app = create_app()
+    app.run(host='0.0.0.0', port=80, debug=False)
