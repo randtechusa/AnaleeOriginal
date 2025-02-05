@@ -4,7 +4,7 @@ modules = ["postgresql-16", "python-3.11"]
 channel = "stable-24_05"
 
 [workflows]
-runButton = "Project"
+runButton = "Flask Server"
 
 [[workflows.workflow]]
 name = "Project"
@@ -104,9 +104,6 @@ author = "agent"
 agentRequireRestartOnSave = false
 
 [[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "flask db init && flask db migrate -m 'Initial migration' && flask db upgrade"
 
@@ -118,12 +115,8 @@ author = "agent"
 agentRequireRestartOnSave = false
 
 [[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python app.py"
-waitForPort = 3000
 
 [deployment]
 run = ["sh", "-c", "python app.py"]
