@@ -58,21 +58,27 @@ def create_app(config_name='development'):
             """Test database connection with enhanced error handling and diagnostics"""
             try:
                 with app.app_context():
-                    # Basic connectivity test
-                    db.session.execute(text("SELECT 1")).scalar()
-                    logger.info("Basic connectivity test passed")
+                    # Simple connection test
+                    logger.info("Attempting database connection...")
+                    result = db.session.execute(text("SELECT 1")).scalar()
+                    logger.info(f"Basic connectivity test result: {result}")
                     
-                    # Get connection info
-                    conn_info = db.session.execute(text("SELECT current_database(), inet_server_addr()::text, inet_server_port()")).first()
-                    if conn_info:
-                        logger.info(f"Database name: {conn_info[0]}")
-                        logger.info(f"Server address: {conn_info[1]}")
-                        logger.info(f"Server port: {conn_info[2]}")
+                    # Get database status
+                    status = db.session.execute(text("""
+                        SELECT 
+                            current_database(),
+                            current_timestamp,
+                            version()
+                    """)).first()
+                    
+                    if status:
+                        logger.info("Database connection details:")
+                        logger.info(f"Database: {status[0]}")
+                        logger.info(f"Timestamp: {status[1]}")
+                        logger.info(f"Version: {status[2]}")
                     
                     db.session.commit()
                     return True
-                    logger.info(f"User: {info['user']}")
-                    logger.info(f"Version: {info['pg_version']}")
                     
                     db.session.commit()
                     return True
