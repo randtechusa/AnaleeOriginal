@@ -85,12 +85,8 @@ author = "agent"
 agentRequireRestartOnSave = false
 
 [[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python app.py"
-waitForPort = 8080
+args = "python main.py"
 
 [[workflows.workflow]]
 name = "System Restore"
