@@ -13,22 +13,25 @@ class Config:
 
     # Database Configuration
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-
+    
     # Database URL with SSL mode
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
 
-    # Simplified database connection settings
+    # Optimized database connection settings
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 3,  # Reduced from 5
-        'max_overflow': 5,  # Reduced from 10
-        'pool_timeout': 20,  # Reduced from 30
-        'pool_recycle': 1800,
+        'pool_size': 1,
+        'max_overflow': 2,
+        'pool_timeout': 30,
         'pool_pre_ping': True,
         'connect_args': {
-            'connect_timeout': 10,
-            'application_name': 'icountant'
+            'connect_timeout': 30,
+            'application_name': 'icountant',
+            'keepalives': 1,
+            'keepalives_idle': 30,
+            'keepalives_interval': 10,
+            'keepalives_count': 5
         }
     }
 

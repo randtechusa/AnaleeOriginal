@@ -58,19 +58,23 @@ def create_app(config_name='development'):
             """Test database connection with enhanced error handling"""
             try:
                 with app.app_context():
-                    # Test connection with proper SQL text formatting
-                    db.session.execute(text('SELECT 1'))
+                    # Test connection with detailed diagnostics
+                    result = db.session.execute(text('SELECT version(), current_database(), current_user'))
+                    row = result.fetchone()
+                    logger.info(f"Database connection successful - Version: {row[0]}")
+                    logger.info(f"Database: {row[1]}, User: {row[2]}")
                     db.session.commit()
-                    logger.info("Database connection test successful")
-                return True
+                    return True
             except OperationalError as e:
                 logger.error(f"Database operational error: {str(e)}")
+                if 'endpoint is disabled' in str(e):
+                    logger.error("Neon database endpoint is disabled - Please enable it in the Neon console")
                 return False
             except SQLAlchemyError as e:
                 logger.error(f"Database SQLAlchemy error: {str(e)}")
                 return False
             except Exception as e:
-                logger.error(f"Unexpected database error: {str(e)}")
+                logger.error(f"Unexpected database error: {str(e)}", exc_info=True)
                 return False
 
         # Attempt database connection with retries
