@@ -115,7 +115,9 @@ class ICountant:
                             'source': 'pattern_match',
                             'similar_transactions': best_matches[:3]
                         }
-        """Generate AI-powered insights with enhanced suggestion and explanation recognition features"""
+        except Exception as e:
+            logger.error(f"Error in transaction analysis: {str(e)}")
+            return {}
         try:
             if not transaction:
                 return {}
