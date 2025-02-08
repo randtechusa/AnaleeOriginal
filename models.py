@@ -65,6 +65,31 @@ class Transaction(db.Model):
     user = db.relationship('User', backref=db.backref('transactions', lazy=True))
     similar_transaction = db.relationship('Transaction', remote_side=[id])
 
+class RiskAssessment(db.Model):
+    """Model for storing risk assessment results"""
+    __tablename__ = 'risk_assessments'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    risk_score = db.Column(db.Float, nullable=False)
+    risk_level = db.Column(db.String(20), nullable=False)  # low, medium, high
+    findings = db.Column(db.Text)
+    recommendations = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('risk_assessments', lazy=True))
+    indicators = db.relationship('RiskIndicator', backref='assessment', lazy=True)
+
+class RiskIndicator(db.Model):
+    """Model for storing individual risk indicators"""
+    __tablename__ = 'risk_indicators'
+    id = db.Column(db.Integer, primary_key=True)
+    assessment_id = db.Column(db.Integer, db.ForeignKey('risk_assessments.id'), nullable=False)
+    name = db.Column(db.String(50), nullable=False)  # liquidity_ratio, debt_ratio, etc.
+    value = db.Column(db.Float, nullable=False)
+    threshold = db.Column(db.Float, nullable=False)
+    is_breach = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 # Settings and Configuration Models
 class CompanySettings(db.Model):
     """Company configuration model"""
@@ -179,6 +204,33 @@ class ErrorLog(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
     user = db.relationship('User', backref=db.backref('error_logs', lazy=True))
+
+class FinancialRecommendation(db.Model):
+    """Model for storing AI-generated financial recommendations"""
+    __tablename__ = 'financial_recommendations'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    category = db.Column(db.String(50), nullable=False)  # cashflow, cost_reduction, revenue, etc.
+    priority = db.Column(db.String(20), nullable=False)  # high, medium, low
+    recommendation = db.Column(db.Text, nullable=False)
+    impact_score = db.Column(db.Float)
+    status = db.Column(db.String(20), default='pending')  # pending, implemented, rejected
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    implemented_at = db.Column(db.DateTime)
+
+    user = db.relationship('User', backref=db.backref('recommendations', lazy=True))
+
+class RecommendationMetrics(db.Model):
+    """Model for tracking recommendation performance metrics"""
+    __tablename__ = 'recommendation_metrics'
+    id = db.Column(db.Integer, primary_key=True)
+    recommendation_id = db.Column(db.Integer, db.ForeignKey('financial_recommendations.id'), nullable=False)
+    metric_name = db.Column(db.String(50), nullable=False)  # accuracy, relevance, implementation_success
+    metric_value = db.Column(db.Float, nullable=False)
+    measurement_date = db.Column(db.DateTime, default=datetime.utcnow)
+
+    recommendation = db.relationship('FinancialRecommendation', 
+                                   backref=db.backref('metrics', lazy=True))
 
 class AlertHistory(db.Model):
     """Model for tracking alert history"""

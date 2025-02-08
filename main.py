@@ -32,8 +32,8 @@ def main():
             logger.error("Application creation failed - app is None")
             raise ValueError("Application creation failed")
 
-        # Use single port configuration
-        port = 80
+        # Use different port to avoid conflicts
+        port = int(os.environ.get('PORT', 3000))
         logger.info(f"Starting Flask server on port {port}")
 
         app.run(
