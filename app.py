@@ -39,12 +39,16 @@ csrf = CSRFProtect()
 def create_app(config_name='development'):
     """Create and configure Flask application with improved error handling"""
     app = Flask(__name__)
-    app.config['DEBUG'] = True  # Enable debug mode for development
+    
+    # Load configuration
+    app.config.from_object(f'config.{config_name.capitalize()}Config')
+    app.config['DEBUG'] = True
     
     @app.errorhandler(500)
     def internal_error(error):
         logger.error(f"Internal Server Error: {error}")
-        return render_template('error.html', error=str(error)), 500
+        db.session.rollback()  # Roll back any failed database transactions
+        return render_template('error.html', error="An internal error occurred. Please try again."), 500
         
     @app.errorhandler(404)
     def not_found_error(error):
