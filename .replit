@@ -4,7 +4,7 @@ modules = ["postgresql-16", "python-3.11"]
 channel = "stable-24_05"
 
 [workflows]
-runButton = "Project"
+runButton = "Run Flask App"
 
 [[workflows.workflow]]
 name = "Project"
@@ -87,6 +87,14 @@ agentRequireRestartOnSave = false
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python create_admin.py"
+
+[[workflows.workflow]]
+name = "Run Flask App"
+author = 37983975
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python main.py"
 
 [deployment]
 run = ["sh", "-c", "python main.py"]
