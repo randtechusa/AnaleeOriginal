@@ -10,14 +10,32 @@ class Config:
     # Database Configuration
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     db_url = os.environ.get('DATABASE_URL')
-    if db_url:
-        # Convert postgres:// to postgresql:// if needed
-        if db_url.startswith('postgres://'):
-            db_url = db_url.replace('postgres://', 'postgresql://', 1)
-        SQLALCHEMY_DATABASE_URI = db_url
-    else:
-        # Fallback to SQLite
+    
+    # Enhanced database connection handling
+    try:
+        if db_url:
+            # Convert postgres:// to postgresql:// if needed
+            if db_url.startswith('postgres://'):
+                db_url = db_url.replace('postgres://', 'postgresql://', 1)
+            SQLALCHEMY_DATABASE_URI = db_url
+        else:
+            # Explicit SQLite fallback
+            SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
+            
+        # Adjust engine options based on database type
+        if SQLALCHEMY_DATABASE_URI.startswith('sqlite'):
+            SQLALCHEMY_ENGINE_OPTIONS = {
+                'pool_pre_ping': True,
+                'pool_recycle': 280,
+                'connect_args': {'timeout': 15}
+            }
+    except Exception as e:
+        # Emergency fallback to SQLite
         SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'pool_pre_ping': True,
+            'connect_args': {'timeout': 15}
+        }
 
     # Essential database connection settings
     SQLALCHEMY_ENGINE_OPTIONS = {

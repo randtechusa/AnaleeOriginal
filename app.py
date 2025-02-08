@@ -1,5 +1,6 @@
 """Main application factory with enhanced logging and protection"""
 import os
+import time
 import logging
 from datetime import datetime
 from flask import Flask, render_template, request
@@ -78,17 +79,30 @@ def create_app(config_name='development'):
         def index():
             return render_template('index.html')
 
-        # Initialize database
+        # Initialize database with enhanced error handling
         with app.app_context():
-            try:
-                logger.debug("Testing database connection...")
-                db.session.execute(text('SELECT 1'))
-                logger.debug("Creating database tables...")
-                db.create_all()
-                logger.info("Database initialized successfully")
-            except Exception as e:
-                logger.error(f"Database initialization error: {str(e)}")
-                raise
+            max_retries = 3
+            retry_count = 0
+            
+            while retry_count < max_retries:
+                try:
+                    logger.debug("Testing database connection...")
+                    db.session.execute(text('SELECT 1'))
+                    logger.debug("Creating database tables...")
+                    db.create_all()
+                    logger.info("Database initialized successfully")
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    logger.warning(f"Database connection attempt {retry_count} failed: {str(e)}")
+                    
+                    if retry_count == max_retries:
+                        logger.warning("Falling back to SQLite database")
+                        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dev.db'
+                        db.create_all()
+                        break
+                    
+                    time.sleep(1)  # Short delay between retries
 
         logger.info("Application initialized successfully")
         return app
