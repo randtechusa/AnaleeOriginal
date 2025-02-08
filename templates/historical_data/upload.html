@@ -6,7 +6,20 @@
 <div class="container mt-4">
     <h2>Upload New Bank Statement</h2>
 
-    <!-- Upload Form -->
+    <!-- Error Alert for Critical Errors -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    <i class="fas fa-{{ 'info-circle' if category == 'info' else 'exclamation-triangle' }} me-2"></i>
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Upload Form with Enhanced Error Handling -->
     <div class="card mb-4">
         <div class="card-body">
             <form method="POST" enctype="multipart/form-data" id="uploadForm">
@@ -15,11 +28,19 @@
                 <div class="mb-3">
                     {{ form.account.label(class="form-label") }}
                     {{ form.account(class="form-select") }}
+                    {% if form.account.errors %}
+                        {% for error in form.account.errors %}
+                            <div class="invalid-feedback d-block">
+                                <i class="fas fa-exclamation-circle me-1"></i>{{ error }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
                     {% if form.account.description %}
                         <div class="form-text">{{ form.account.description }}</div>
                     {% endif %}
                     {% if not form.account.choices %}
                         <div class="alert alert-warning mt-2">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
                             <small>No bank accounts found. Please add a bank account (starting with ca.810) in settings first.</small>
                         </div>
                     {% endif %}
@@ -28,12 +49,20 @@
                 <div class="mb-3">
                     {{ form.file.label(class="form-label") }}
                     {{ form.file(class="form-control", accept=".csv,.xlsx") }}
+                    {% if form.file.errors %}
+                        {% for error in form.file.errors %}
+                            <div class="invalid-feedback d-block">
+                                <i class="fas fa-exclamation-circle me-1"></i>{{ error }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
                     <div class="form-text">
+                        <i class="fas fa-info-circle me-1"></i>
                         Upload bank statement in CSV or Excel format
                     </div>
                 </div>
 
-                <!-- Upload Progress -->
+                <!-- Enhanced Upload Progress with Error States -->
                 <div class="progress mb-3 d-none" id="uploadProgress">
                     <div class="progress-bar progress-bar-striped progress-bar-animated" 
                          role="progressbar" style="width: 0%" 
@@ -42,24 +71,41 @@
                          aria-valuemax="100">0%</div>
                 </div>
 
-                <!-- Status Display -->
+                <!-- Enhanced Status Display -->
                 <div id="uploadStatus" class="alert d-none mb-3">
-                    <p class="mb-1"><strong>Status:</strong> <span id="statusText">Processing...</span></p>
-                    <p class="mb-1"><small>Processed: <span id="processedRows">0</span> / <span id="totalRows">0</span> rows</small></p>
-                    <p class="mb-1"><small>Processing Rate: <span id="processingRate">0</span> rows/second</small></p>
-                    <p class="mb-0"><small>Time remaining: <span id="timeRemaining">Calculating...</span></small></p>
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <div>
+                            <p class="mb-1"><strong>Status:</strong> <span id="statusText">Processing...</span></p>
+                            <p class="mb-1"><small>Processed: <span id="processedRows">0</span> / <span id="totalRows">0</span> rows</small></p>
+                            <p class="mb-1"><small>Processing Rate: <span id="processingRate">0</span> rows/second</small></p>
+                            <p class="mb-0"><small>Time remaining: <span id="timeRemaining">Calculating...</span></small></p>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Error Display -->
+                <!-- Enhanced Error Display -->
                 <div id="errorContainer" class="alert alert-danger d-none mb-3">
-                    <h6 class="alert-heading">Upload Errors:</h6>
+                    <h6 class="alert-heading">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Upload Errors:
+                    </h6>
+                    <div id="errorSummary" class="mb-2"></div>
                     <ul id="errorList" class="mb-0">
                     </ul>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="downloadErrorLog()">
+                            <i class="fas fa-download me-1"></i>Download Error Log
+                        </button>
+                    </div>
                 </div>
 
                 <!-- File Format Requirements -->
                 <div class="alert alert-info mb-3">
-                    <h6 class="alert-heading">File Format Requirements:</h6>
+                    <h6 class="alert-heading">
+                        <i class="fas fa-info-circle me-2"></i>File Format Requirements:
+                    </h6>
                     <ul class="mb-0">
                         <li>Required columns:
                             <ul>
@@ -82,7 +128,7 @@
         </div>
     </div>
 
-    <!-- Recent Uploads -->
+    <!-- Recent Uploads with Error States -->
     <div class="card">
         <div class="card-body">
             <h5 class="card-title">Recent Historical Data</h5>
@@ -94,6 +140,7 @@
                             <th>Description</th>
                             <th>Amount</th>
                             <th>Account</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -106,11 +153,22 @@
                                     {{ "%.2f"|format(entry.amount) }}
                                 </td>
                                 <td>{{ entry.account.name if entry.account else 'N/A' }}</td>
+                                <td>
+                                    {% if entry.has_error %}
+                                    <span class="badge bg-danger">
+                                        <i class="fas fa-exclamation-circle me-1"></i>Error
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check-circle me-1"></i>Success
+                                    </span>
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% endfor %}
                         {% else %}
                             <tr>
-                                <td colspan="4" class="text-center">No historical data uploaded yet.</td>
+                                <td colspan="5" class="text-center">No historical data uploaded yet.</td>
                             </tr>
                         {% endif %}
                     </tbody>
@@ -122,6 +180,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('uploadForm');
@@ -135,16 +194,25 @@ document.addEventListener('DOMContentLoaded', function() {
     const timeRemaining = document.getElementById('timeRemaining');
     const errorContainer = document.getElementById('errorContainer');
     const errorList = document.getElementById('errorList');
+    const errorSummary = document.getElementById('errorSummary');
     const submitButton = document.getElementById('submitButton');
+
+    // Error tracking
+    let errors = [];
+    let startTime = null;
 
     form.onsubmit = async function(e) {
         e.preventDefault();
+        resetErrorState();
+        startTime = Date.now();
 
         // Reset display elements
         errorContainer.classList.add('d-none');
         errorList.innerHTML = '';
+        errorSummary.innerHTML = '';
         progressBar.style.width = '0%';
         progressBar.textContent = '0%';
+        progressBar.classList.remove('bg-danger');
 
         // Create FormData including CSRF token
         const formData = new FormData(form);
@@ -170,23 +238,83 @@ document.addEventListener('DOMContentLoaded', function() {
             const result = await response.json();
 
             if (result.success) {
-                statusText.textContent = 'Upload Complete!';
-                progressBar.style.width = '100%';
-                progressBar.textContent = '100%';
-                setTimeout(() => window.location.reload(), 2000);
+                handleSuccess(result);
             } else {
-                throw new Error(result.error || 'Upload failed');
+                handleError(result);
             }
 
         } catch (error) {
             console.error('Upload error:', error);
-            statusText.textContent = error.message;
-            errorContainer.classList.remove('d-none');
-            errorList.innerHTML = `<li>${error.message}</li>`;
-            progressBar.classList.add('bg-danger');
+            handleCriticalError(error);
         } finally {
             submitButton.disabled = false;
         }
+    };
+
+    function resetErrorState() {
+        errors = [];
+        errorContainer.classList.add('d-none');
+        errorList.innerHTML = '';
+        errorSummary.innerHTML = '';
+    }
+
+    function handleSuccess(result) {
+        statusText.textContent = 'Upload Complete!';
+        progressBar.style.width = '100%';
+        progressBar.textContent = '100%';
+        setTimeout(() => window.location.reload(), 2000);
+    }
+
+    function handleError(result) {
+        statusText.textContent = 'Upload Failed';
+        progressBar.classList.add('bg-danger');
+
+        if (result.errors && result.errors.length > 0) {
+            displayErrors(result.errors);
+        } else {
+            displayCriticalError(result.error || 'Unknown error occurred');
+        }
+    }
+
+    function handleCriticalError(error) {
+        statusText.textContent = 'Critical Error';
+        progressBar.classList.add('bg-danger');
+        displayCriticalError(error.message);
+    }
+
+    function displayErrors(errorList) {
+        errorContainer.classList.remove('d-none');
+        errorSummary.innerHTML = `<strong>${errorList.length} error(s) found during upload</strong>`;
+
+        const errorHtml = errorList.map(error => 
+            `<li>Row ${error.row}: ${error.message}</li>`
+        ).join('');
+
+        document.getElementById('errorList').innerHTML = errorHtml;
+    }
+
+    function displayCriticalError(message) {
+        errorContainer.classList.remove('d-none');
+        errorSummary.innerHTML = '<strong>Critical Error</strong>';
+        errorList.innerHTML = `<li>${message}</li>`;
+    }
+
+    window.downloadErrorLog = function() {
+        const errorLog = {
+            timestamp: new Date().toISOString(),
+            errors: errors
+        };
+
+        const blob = new Blob([JSON.stringify(errorLog, null, 2)], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `error_log_${new Date().toISOString()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     };
 });
 </script>

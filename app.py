@@ -24,6 +24,29 @@ logger = logging.getLogger(__name__)
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
+def init_db(app, retries=3):
+    """Initialize database with retry mechanism"""
+    for attempt in range(retries):
+        try:
+            logger.info(f"Database initialization attempt {attempt + 1}/{retries}")
+            with app.app_context():
+                # Test connection
+                db.session.execute(text('SELECT 1'))
+                db.session.commit()
+                logger.info("Database connection successful")
+
+                # Create tables
+                db.create_all()
+                logger.info("Database tables created successfully")
+                return True
+        except Exception as e:
+            logger.warning(f"Database initialization attempt {attempt + 1} failed: {str(e)}")
+            if attempt < retries - 1:  # Don't sleep on the last attempt
+                import time
+                time.sleep(2 ** attempt)  # Exponential backoff
+            db.session.remove()
+    return False
+
 def create_app(config_name='development'):
     """Create and configure Flask application with improved error handling"""
     app = Flask(__name__)
@@ -35,25 +58,28 @@ def create_app(config_name='development'):
         app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-        # Get database URL from environment or use SQLite
-        db_url = os.environ.get('DATABASE_URL', 'sqlite:///dev.db')
-        
-        # Convert postgres:// to postgresql:// if needed
-        if db_url.startswith('postgres://'):
-            db_url = db_url.replace('postgres://', 'postgresql://', 1)
+        # Database Configuration
+        if os.environ.get('DATABASE_URL'):
+            db_url = os.environ.get('DATABASE_URL')
+            if db_url.startswith('postgres://'):
+                db_url = db_url.replace('postgres://', 'postgresql://', 1)
+            app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+            logger.info("Using PostgreSQL database")
+        else:
+            sqlite_path = os.path.join(app.instance_path, 'dev.db')
+            os.makedirs(app.instance_path, exist_ok=True)
+            app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+            logger.info("Using SQLite database")
 
-        app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-        logger.info("Database URL configured successfully")
-
-        # Minimal database configuration
+        # Database Engine Configuration
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
             'pool_pre_ping': True,
-            'pool_size': 1,
-            'max_overflow': 0,
-            'pool_timeout': 10,
+            'pool_size': 5,
+            'max_overflow': 10,
+            'pool_timeout': 30,
             'pool_recycle': 1800,
             'connect_args': {
-                'connect_timeout': 5,
+                'connect_timeout': 10,
                 'application_name': 'icountant'
             }
         }
@@ -66,42 +92,12 @@ def create_app(config_name='development'):
 
         login_manager.login_view = 'auth.login'
 
-        # Test database connection
-        with app.app_context():
-            try:
-                logger.info("Testing database connection...")
-                result = db.session.execute(text('SELECT 1'))
-                result.scalar()  # Ensure we can fetch the result
-                logger.info("Database connection successful")
+        # Initialize database with retries
+        if not init_db(app):
+            logger.error("Failed to initialize database after multiple attempts")
+            raise Exception("Database initialization failed")
 
-                logger.info("Creating database tables...")
-                db.create_all()
-                logger.info("Database tables created successfully")
-
-            except OperationalError as e:
-                logger.warning(f"Database connection error: {str(e)}")
-                logger.warning("Falling back to SQLite database")
-                # Update connection to SQLite
-                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dev.db'
-                db.get_engine(app).dispose()
-                db.init_app(app)
-                
-                # Try creating tables with SQLite
-                try:
-                    db.create_all()
-                    logger.info("Created tables with SQLite successfully")
-                except Exception as sqlite_err:
-                    logger.error(f"SQLite fallback failed: {str(sqlite_err)}")
-                    raise
-
-            except SQLAlchemyError as e:
-                logger.error(f"Database error: {str(e)}")
-                raise
-
-            except Exception as e:
-                logger.error(f"Unexpected error: {str(e)}")
-                raise
-
+        logger.info("Application initialized successfully")
         return app
 
     except Exception as e:
@@ -120,4 +116,4 @@ def load_user(user_id):
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(host='0.0.0.0', port=80, debug=False)
+    app.run(host='0.0.0.0', port=5000, debug=False)
