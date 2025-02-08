@@ -81,28 +81,31 @@ def create_app(config_name='development'):
 
         # Initialize database with enhanced error handling
         with app.app_context():
-            max_retries = 3
-            retry_count = 0
-            
-            while retry_count < max_retries:
+            try:
+                logger.debug("Testing database connection...")
+                db.session.execute(text('SELECT 1'))
+                logger.debug("Creating database tables...")
+                db.create_all()
+                logger.info("Database initialized successfully")
+            except Exception as e:
+                logger.warning(f"Primary database connection failed: {str(e)}")
+                logger.info("Switching to SQLite fallback database")
+                
+                # Ensure instance directory exists
+                if not os.path.exists('instance'):
+                    os.makedirs('instance')
+                
+                # Configure SQLite
+                sqlite_path = os.path.join('instance', 'dev.db')
+                app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+                
                 try:
-                    logger.debug("Testing database connection...")
-                    db.session.execute(text('SELECT 1'))
-                    logger.debug("Creating database tables...")
-                    db.create_all()
-                    logger.info("Database initialized successfully")
-                    break
-                except Exception as e:
-                    retry_count += 1
-                    logger.warning(f"Database connection attempt {retry_count} failed: {str(e)}")
-                    
-                    if retry_count == max_retries:
-                        logger.warning("Falling back to SQLite database")
-                        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dev.db'
-                        db.create_all()
-                        break
-                    
-                    time.sleep(1)  # Short delay between retries
+                    db.session.remove()  # Close any existing connections
+                    db.create_all()  # Create tables in SQLite
+                    logger.info(f"Successfully initialized SQLite database at {sqlite_path}")
+                except Exception as sqlite_err:
+                    logger.error(f"SQLite fallback failed: {str(sqlite_err)}")
+                    raise
 
         logger.info("Application initialized successfully")
         return app
