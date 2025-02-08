@@ -23,7 +23,7 @@ from suggestions import suggestions
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Changed to DEBUG for more detailed logs
     format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
         logging.FileHandler('app.log'),
@@ -50,9 +50,10 @@ def create_app(config_name='development'):
         sqlite_path = os.path.join(app.instance_path, 'dev.db')
         os.makedirs(app.instance_path, exist_ok=True)
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
-        logger.info("Using SQLite database")
+        logger.info(f"Using SQLite database at: {sqlite_path}")
 
-        # Initialize extensions
+        # Initialize extensions with detailed logging
+        logger.debug("Initializing Flask extensions...")
         db.init_app(app)
         migrate = Migrate(app, db)
         login_manager.init_app(app)
@@ -60,7 +61,8 @@ def create_app(config_name='development'):
 
         login_manager.login_view = 'auth.login'
 
-        # Register blueprints
+        # Register blueprints with logging
+        logger.debug("Registering blueprints...")
         app.register_blueprint(auth)
         app.register_blueprint(admin)
         app.register_blueprint(chat)
@@ -79,8 +81,9 @@ def create_app(config_name='development'):
         # Initialize database
         with app.app_context():
             try:
-                # Test connection and create tables
+                logger.debug("Testing database connection...")
                 db.session.execute(text('SELECT 1'))
+                logger.debug("Creating database tables...")
                 db.create_all()
                 logger.info("Database initialized successfully")
             except Exception as e:
