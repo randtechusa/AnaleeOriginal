@@ -37,9 +37,9 @@ def main():
         logger.info(f"Starting Flask server on port {port}")
 
         app.run(
-            host='0.0.0.0',
-            port=port,
-            debug=False  # Disable debug mode for stability
+            host='0.0.0.0',  # Bind to all network interfaces
+            port=3000,       # Use fixed port 3000
+            debug=False      # Disable debug mode for stability
         )
 
     except Exception as e:
