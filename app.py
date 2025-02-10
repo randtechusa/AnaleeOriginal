@@ -30,19 +30,33 @@ csrf = CSRFProtect()
     reraise=True
 )
 def init_database(app):
-    """Initialize database with SQLite fallback"""
+    """Initialize database with enhanced SQLite fallback"""
     try:
         logger.info("Initializing database connection...")
         with app.app_context():
             try:
-                # Test PostgreSQL connection
-                db.session.execute(text('SELECT 1'))
-                db.session.commit()
-                logger.info("PostgreSQL connection successful")
+                if 'postgres' in app.config['SQLALCHEMY_DATABASE_URI']:
+                    # Test PostgreSQL connection
+                    db.session.execute(text('SELECT 1'))
+                    db.session.commit()
+                    logger.info("PostgreSQL connection successful")
             except OperationalError as e:
                 logger.warning(f"PostgreSQL connection failed: {str(e)}")
-                logger.info("Falling back to SQLite database")
-                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
+                logger.info("Configuring SQLite database")
+                
+                # Close existing connections
+                db.session.remove()
+                db.engine.dispose()
+                
+                # Configure SQLite
+                sqlite_path = os.path.join(app.instance_path, 'dev.db')
+                app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+                
+                # Ensure instance folder exists
+                if not os.path.exists(app.instance_path):
+                    os.makedirs(app.instance_path)
+                
+                # Reinitialize SQLAlchemy
                 db.init_app(app)
             
             # Create tables
@@ -51,7 +65,7 @@ def init_database(app):
             return True
     except Exception as e:
         logger.error(f"Database initialization failed: {str(e)}")
-        raise
+        return False
 
 def create_app(config_name='development'):
     """Create and configure Flask application"""
