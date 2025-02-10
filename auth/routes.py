@@ -10,9 +10,9 @@ from forms.auth import LoginForm, RegistrationForm
 # Configure logging
 logger = logging.getLogger(__name__)
 
-auth = Blueprint('auth', __name__)
+from auth import bp
 
-@auth.route('/login', methods=['GET', 'POST'])
+@bp.route('/login', methods=['GET', 'POST'])
 def login():
     try:
         if current_user.is_authenticated:

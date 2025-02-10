@@ -79,6 +79,7 @@ def create_app(config_name='development'):
             except Exception as e:
                 logger.error(f"Error registering blueprint {name}: {str(e)}")
 
+
         @app.errorhandler(500)
         def internal_error(error):
             logger.error(f"Internal Server Error: {error}")
