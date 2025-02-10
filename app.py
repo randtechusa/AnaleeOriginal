@@ -52,26 +52,51 @@ def create_app(config_name='development'):
         with app.app_context():
             try:
                 # Test database connection
-                db.session.execute(text('SELECT 1'))
-                db.session.commit()
-                logger.info("Database connection successful")
 
-                # Create tables if they don't exist
-                db.create_all()
-                logger.info("Database tables created successfully")
-            except OperationalError as e:
+                def init_database(app):
+                    """Initialize database with enhanced fallback handling"""
+                    try:
+                        logger.info("Initializing database connection...")
+                        with app.app_context():
+                            # First try PostgreSQL
+                            if 'postgres' in app.config['SQLALCHEMY_DATABASE_URI']:
+                                try:
+                                    db.session.execute(text('SELECT 1'))
+                                    db.session.commit()
+                                    logger.info("PostgreSQL connection successful")
+                                    db.create_all()
+                                    return True
+                                except Exception as e:
+                                    logger.warning(f"PostgreSQL connection failed: {str(e)}")
+                                    # Clean up failed PostgreSQL connection
+                                    db.session.remove()
+                                    db.engine.dispose()
+
+                            # Fallback to SQLite
+                            logger.info("Configuring SQLite database")
+                            sqlite_path = os.path.join(app.instance_path, 'dev.db')
+                            os.makedirs(app.instance_path, exist_ok=True)
+
+                            app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+                            db.init_app(app)
+
+                            # Initialize SQLite
+                            db.create_all()
+                            logger.info("SQLite database initialized successfully")
+                            return True
+                    except Exception as e:
+                        logger.error(f"Database initialization failed: {str(e)}")
+                        return False
+
+                if not init_database(app):
+                    logger.error("Failed to initialize database. Exiting.")
+                    return None
+
+
+            except Exception as e:
                 logger.error(f"Database connection error: {str(e)}")
-                # Configure SQLite fallback
-                sqlite_path = os.path.join(app.instance_path, 'dev.db')
-                app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+                return None
 
-                # Ensure instance folder exists
-                if not os.path.exists(app.instance_path):
-                    os.makedirs(app.instance_path)
-
-                # Reinitialize database with SQLite
-                db.create_all()
-                logger.info("Created SQLite database as fallback")
 
         # Register blueprints
         logger.info("Registering blueprints...")
