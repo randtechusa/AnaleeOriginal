@@ -5,7 +5,7 @@ from werkzeug.utils import secure_filename
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app, abort
 from flask_login import login_required, current_user
 from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile
-from icountant import ICountant
+from icountant import ICountant, PredictiveFeatures
 
 bp = Blueprint('main', __name__)
 logger = logging.getLogger(__name__)
@@ -48,7 +48,10 @@ def dashboard():
 def analyze_list():
     """Route for analyze data menu - protected core functionality"""
     try:
-        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+        files = UploadedFile.query.filter_by(
+            user_id=current_user.id
+        ).order_by(UploadedFile.upload_date.desc()).all()
+
         return render_template('analyze_list.html', files=files)
     except Exception as e:
         logger.error(f"Error accessing analyze list: {str(e)}")
@@ -60,18 +63,10 @@ def analyze_list():
 def analyze(file_id):
     """Analyze a specific uploaded file"""
     try:
-        if not file_id:
-            flash('Invalid file ID', 'error')
-            return redirect(url_for('main.analyze_list'))
-
-        file = UploadedFile.query.get_or_404(file_id)
-        if not os.path.exists(file.filepath):
-            flash('File not found on server', 'error')
-            return redirect(url_for('main.analyze_list'))
-
-        # Verify file belongs to current user
-        if file.user_id != current_user.id:
-            abort(403)
+        file = UploadedFile.query.filter_by(
+            id=file_id,
+            user_id=current_user.id
+        ).first_or_404()
 
         # Get related transactions for this file
         transactions = Transaction.query.filter_by(
@@ -82,10 +77,17 @@ def analyze(file_id):
         if not transactions:
             flash('No transactions found in this file', 'info')
 
-        return render_template('analyze.html', 
-                             file=file, 
-                             transactions=transactions,
-                             ai_available=True)
+        # Get available accounts for processing
+        accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).order_by(Account.category, Account.name).all()
+
+        return render_template('analyze.html',
+                           file=file,
+                           transactions=transactions,
+                           accounts=accounts,
+                           ai_available=True)
     except Exception as e:
         logger.error(f"Error in analyze route: {str(e)}")
         flash('Error accessing file for analysis', 'error')
@@ -111,7 +113,7 @@ def analyze_data():
                 if not transaction.explanation:
                     similar = predictor.find_similar_transactions(transaction.description)
                     if similar.get('success') and similar.get('similar_transactions'):
-                        best_match = max(similar['similar_transactions'], 
+                        best_match = max(similar['similar_transactions'],
                                         key=lambda x: x.get('confidence', 0))
                         if best_match.get('confidence', 0) > 0.85:
                             transaction.explanation = best_match['explanation']
@@ -130,7 +132,7 @@ def analyze_data():
         db.session.commit()
 
         flash(f'Successfully analyzed {processed_count} out of {total_count} transactions', 'success')
-        return render_template('analyze.html', 
+        return render_template('analyze.html',
                              transactions=transactions,
                              processed_count=processed_count,
                              total_count=total_count)
@@ -147,52 +149,83 @@ def icountant():
     """iCountant Assistant route with enhanced error handling"""
     try:
         # Get user's accounts for transaction processing
-        accounts = Account.query.filter_by(user_id=current_user.id).all()
+        accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).order_by(Account.category, Account.name).all()
 
         if not accounts:
             flash('Please set up your accounts first', 'warning')
             return redirect(url_for('main.settings'))
 
         # Initialize iCountant with user's accounts
-        icountant = ICountant([{
+        icountant_agent = ICountant([{
             'name': account.name,
             'category': account.category,
             'id': account.id
         } for account in accounts])
 
-        # Get any pending transactions
-        pending_transaction = Transaction.query.filter_by(
+        # Get unprocessed transactions
+        unprocessed_transactions = Transaction.query.filter_by(
             user_id=current_user.id,
-            status='pending'
-        ).first()
+            account_id=None
+        ).order_by(Transaction.date).all()
 
         if request.method == 'POST':
-            if 'transaction_id' in request.form:
-                selected_account = request.form.get('selected_account')
-                if selected_account:
-                    success, message, completed_transaction = icountant.complete_transaction(int(selected_account))
-                    if success:
-                        flash('Transaction processed successfully', 'success')
-                    else:
-                        flash(f'Error processing transaction: {message}', 'error')
+            transaction_id = request.form.get('transaction_id')
+            selected_account = request.form.get('selected_account')
+
+            if transaction_id and selected_account:
+                transaction = Transaction.query.get(transaction_id)
+                if transaction and transaction.user_id == current_user.id:
+                    success, message = process_transaction(transaction, selected_account, icountant_agent)
+                    flash(message, 'success' if success else 'error')
                 else:
-                    flash('Please select an account', 'warning')
+                    flash('Invalid transaction selected', 'error')
+            else:
+                flash('Please select both transaction and account', 'warning')
 
         # Get recently processed transactions
-        recently_processed = Transaction.query.filter_by(
-            user_id=current_user.id,
-            status='completed'
+        recent_transactions = Transaction.query.filter(
+            Transaction.user_id == current_user.id,
+            Transaction.account_id.isnot(None)
         ).order_by(Transaction.date.desc()).limit(5).all()
 
         return render_template('icountant.html',
-                             accounts=accounts,
-                             transaction=pending_transaction,
-                             recently_processed=recently_processed)
+                           accounts=accounts,
+                           unprocessed_transactions=unprocessed_transactions,
+                           recent_transactions=recent_transactions)
 
     except Exception as e:
         logger.error(f"Error in iCountant interface: {str(e)}", exc_info=True)
         flash('Error accessing iCountant Assistant', 'error')
         return redirect(url_for('main.dashboard'))
+
+def process_transaction(transaction, account_id, icountant_agent):
+    """Helper function to process a transaction with iCountant"""
+    try:
+        # Get the selected account
+        account = Account.query.get(account_id)
+        if not account:
+            return False, 'Invalid account selected'
+
+        # Use iCountant to validate and process
+        success, message, _ = icountant_agent.complete_transaction(
+            transaction_id=transaction.id,
+            selected_account=account_id
+        )
+
+        if success:
+            transaction.account_id = account_id
+            transaction.processed_date = db.func.now()
+            db.session.commit()
+
+        return success, message
+
+    except Exception as e:
+        logger.error(f"Error processing transaction: {str(e)}")
+        db.session.rollback()
+        return False, f'Error processing transaction: {str(e)}'
 
 @bp.route('/settings', methods=['GET', 'POST'])
 @login_required
@@ -224,7 +257,7 @@ def settings():
 
         # Get system-wide Chart of Accounts for reference
         system_accounts = AdminChartOfAccounts.query.order_by(
-            AdminChartOfAccounts.category, 
+            AdminChartOfAccounts.category,
             AdminChartOfAccounts.name
         ).all()
 
