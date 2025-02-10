@@ -4,7 +4,7 @@ modules = ["postgresql-16", "python-3.11", "python3"]
 channel = "stable-24_05"
 
 [workflows]
-runButton = "Project"
+runButton = "Flask Server"
 
 [[workflows.workflow]]
 name = "Project"
@@ -112,7 +112,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python app.py"
+args = "FLASK_DEBUG=1 python app.py"
 waitForPort = 5000
 
 [deployment]
