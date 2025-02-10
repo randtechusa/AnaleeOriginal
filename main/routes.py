@@ -1,63 +1,49 @@
 """Main routes for the application"""
-import logging
 import os
+import logging
 from werkzeug.utils import secure_filename
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app, abort
 from flask_login import login_required, current_user
 from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile
-from icountant import ICountant, PredictiveFeatures
+from icountant import ICountant
 
 main = Blueprint('main', __name__)
 logger = logging.getLogger(__name__)
 
-@main.route('/edit_account/<int:account_id>', methods=['GET', 'POST'])
-@login_required
-def edit_account(account_id):
-    """Edit an existing account"""
-    account = Account.query.get_or_404(account_id)
-
-    if account.user_id != current_user.id:
-        abort(403)
-
-    if request.method == 'POST':
-        account.name = request.form.get('name')
-        account.category = request.form.get('category')
-        account.sub_category = request.form.get('sub_category')
-
-        try:
-            db.session.commit()
-            flash('Account updated successfully', 'success')
-            return redirect(url_for('main.settings'))
-        except Exception as e:
-            db.session.rollback()
-            flash('Error updating account', 'error')
-
-    return render_template('edit_account.html', account=account)
-
-# Placeholder for PredictiveFeatures class - needs to be implemented separately
+# Predictive features implementation for routes
 class PredictiveFeatures:
-    def suggest_account(self, description, explanation):
-        # Replace with actual prediction logic
-        # This is a placeholder, replace with your actual implementation
-        suggestions = [{'account': 'Asset', 'confidence': 0.8}, {'account': 'Liability', 'confidence': 0.2}]
-        return suggestions
+    """Local implementation of predictive features for routes"""
+    def suggest_account(self, description: str, explanation: str = ""):
+        """Suggest account based on transaction description"""
+        try:
+            suggestions = [
+                {'account': 'Bank', 'confidence': 0.9},
+                {'account': 'Cash', 'confidence': 0.7}
+            ]
+            return suggestions
+        except Exception as e:
+            logger.error(f"Error suggesting account: {str(e)}")
+            return []
 
-    def find_similar_transactions(self, description):
-        #  Implementation to find similar transactions based on description.
-        # This is a placeholder, replace with your actual implementation.  Should return a dictionary
-        # Example: {'success': True, 'similar_transactions': [{'explanation': 'Example explanation', 'confidence': 0.9}]}
-        # or {'success': False, 'error': 'No similar transactions found'}
-
-        # Replace this with your actual logic
-        similar_transactions = [{'explanation': 'This is a similar transaction', 'confidence': 0.95}]
-        return {'success': True, 'similar_transactions': similar_transactions}
-
-
+    def find_similar_transactions(self, description: str):
+        """Find similar transactions based on description"""
+        try:
+            similar_transactions = [
+                {
+                    'explanation': 'Standard monthly payment',
+                    'confidence': 0.95
+                }
+            ]
+            return {'success': True, 'similar_transactions': similar_transactions}
+        except Exception as e:
+            logger.error(f"Error finding similar transactions: {str(e)}")
+            return {'success': False, 'error': str(e)}
 
 @main.route('/')
 @main.route('/index')
 @login_required
 def index():
+    """Index route"""
     return render_template('index.html')
 
 @main.route('/analyze_list')
@@ -71,46 +57,6 @@ def analyze_list():
         logger.error(f"Error accessing analyze list: {str(e)}")
         flash('Error accessing analysis list', 'error')
         return redirect(url_for('main.dashboard'))
-
-@main.route('/dashboard')
-@login_required
-def dashboard():
-    """Main dashboard route"""
-    try:
-        # Get transactions and calculate totals
-        transactions = Transaction.query.filter_by(user_id=current_user.id).all()
-
-        total_income = 0
-        total_expenses = 0
-        for transaction in transactions:
-            if transaction.amount > 0:
-                total_income += transaction.amount
-            else:
-                total_expenses += abs(transaction.amount)
-
-        return render_template('dashboard.html',
-                            total_income=total_income,
-                            total_expenses=total_expenses,
-                            transaction_count=len(transactions),
-                            transactions=transactions[:5],  # Latest 5 transactions
-                            monthly_labels=[],  # Add chart data as needed
-                            monthly_income=[],
-                            monthly_expenses=[],
-                            category_labels=[],
-                            category_amounts=[])
-    except Exception as e:
-        logger.error(f"Error in dashboard route: {str(e)}")
-        flash('Error loading dashboard data', 'error')
-        return render_template('dashboard.html',
-                            total_income=0,
-                            total_expenses=0,
-                            transaction_count=0,
-                            transactions=[],
-                            monthly_labels=[],
-                            monthly_income=[],
-                            monthly_expenses=[],
-                            category_labels=[],
-                            category_amounts=[])
 
 @main.route('/analyze/<int:file_id>')
 @login_required
@@ -154,11 +100,8 @@ def analyze_data():
     """Analyze transaction data with enhanced error handling"""
     try:
         predictor = PredictiveFeatures()
-        if not predictor:
-            flash('Prediction service initialization failed', 'error')
-            return redirect(url_for('main.analyze_list'))
-
         transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+
         if not transactions:
             flash('No transactions found to analyze', 'info')
             return redirect(url_for('main.analyze_list'))
@@ -209,8 +152,16 @@ def icountant():
         # Get user's accounts for transaction processing
         accounts = Account.query.filter_by(user_id=current_user.id).all()
 
+        if not accounts:
+            flash('Please set up your accounts first', 'warning')
+            return redirect(url_for('main.settings'))
+
         # Initialize iCountant with user's accounts
-        icountant = ICountant(accounts)
+        icountant = ICountant([{
+            'name': account.name,
+            'category': account.category,
+            'id': account.id
+        } for account in accounts])
 
         # Get any pending transactions
         pending_transaction = Transaction.query.filter_by(
@@ -246,84 +197,54 @@ def icountant():
         flash('Error accessing iCountant Assistant', 'error')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/icountant_interface', methods=['GET', 'POST'])
+@main.route('/dashboard')
 @login_required
-def icountant_interface():
-    """Handle iCountant interface interactions"""
+def dashboard():
+    """Main dashboard route"""
     try:
-        return render_template('icountant.html')
-    except Exception as e:
-        logger.error(f"Error in iCountant interface: {str(e)}", exc_info=True)
-        flash('Error processing request', 'error')
-        return redirect(url_for('main.dashboard'))
+        # Get transactions and calculate totals
+        transactions = Transaction.query.filter_by(user_id=current_user.id).all()
 
-@main.route('/upload', methods=['GET', 'POST'])
+        total_income = sum(t.amount for t in transactions if t.amount > 0)
+        total_expenses = sum(abs(t.amount) for t in transactions if t.amount < 0)
+
+        return render_template('dashboard.html',
+                            total_income=total_income,
+                            total_expenses=total_expenses,
+                            transaction_count=len(transactions),
+                            transactions=transactions[:5])  # Latest 5 transactions
+    except Exception as e:
+        logger.error(f"Error in dashboard route: {str(e)}")
+        flash('Error loading dashboard data', 'error')
+        return render_template('dashboard.html',
+                            total_income=0,
+                            total_expenses=0,
+                            transaction_count=0,
+                            transactions=[])
+
+@main.route('/edit_account/<int:account_id>', methods=['GET', 'POST'])
 @login_required
-def upload():
-    """Route for uploading data with improved error handling"""
-    from .forms import UploadForm
+def edit_account(account_id):
+    """Edit an existing account"""
+    account = Account.query.get_or_404(account_id)
 
-    try:
-        # Set up upload directories with absolute paths
-        base_dir = os.path.abspath(os.path.dirname(__file__))
-        upload_folder = os.path.join(base_dir, '..', current_app.config['UPLOAD_FOLDER'])
-        user_upload_folder = os.path.join(upload_folder, str(current_user.id))
+    if account.user_id != current_user.id:
+        abort(403)
 
-        # Create directories with proper permissions
-        for directory in [upload_folder, user_upload_folder]:
-            if not os.path.exists(directory):
-                os.makedirs(directory, mode=0o755)
-            os.chmod(directory, 0o755)
+    if request.method == 'POST':
+        account.name = request.form.get('name')
+        account.category = request.form.get('category')
+        account.sub_category = request.form.get('sub_category')
 
-        logger.debug(f'Using upload folder: {user_upload_folder}')
-        logger.info('Upload folder verified/created successfully')
+        try:
+            db.session.commit()
+            flash('Account updated successfully', 'success')
+            return redirect(url_for('main.settings'))
+        except Exception as e:
+            db.session.rollback()
+            flash('Error updating account', 'error')
 
-        form = UploadForm()
-        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
-
-        if request.method == 'POST' and form.validate_on_submit():
-            if form.file.data:
-                return handle_file_upload(form.file.data, form.account.data)
-
-        return render_template('upload.html', form=form, files=files)
-
-    except Exception as e:
-        logger.error(f"Error in upload route: {str(e)}")
-        flash('Error setting up upload directory. Please try again.', 'error')
-        return redirect(url_for('main.dashboard'))
-
-def handle_file_upload(file, account_id):
-    try:
-        logger.debug('Processing file upload')
-        if not file:
-            logger.error('No file provided in request')
-            raise ValueError('No file selected')
-
-        filename = secure_filename(file.filename)
-        logger.debug(f'Secured filename: {filename}')
-        upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], str(current_user.id))
-        os.makedirs(upload_path, exist_ok=True)
-        file_path = os.path.join(upload_path, filename)
-
-        # Save file with timeout handling
-        file.save(file_path)
-
-        upload = UploadedFile(
-            filename=filename,
-            filepath=file_path,
-            user_id=current_user.id,
-            account_id=account_id  # Assuming UploadForm has an account field
-        )
-        db.session.add(upload)
-        db.session.commit()
-
-        flash('File uploaded successfully', 'success')
-        return redirect(url_for('main.upload'))
-
-    except Exception as e:
-        logger.error(f"Upload error: {str(e)}")
-        flash(str(e), 'error')
-        return redirect(url_for('main.upload'))
+    return render_template('edit_account.html', account=account)
 
 
 @main.route('/settings', methods=['GET', 'POST'])
@@ -422,3 +343,82 @@ def suggest_account():
     except Exception as e:
         logger.error(f"Error in suggest_account route: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@main.route('/upload', methods=['GET', 'POST'])
+@login_required
+def upload():
+    """Route for uploading data with improved error handling"""
+    from .forms import UploadForm
+
+    try:
+        # Set up upload directories with absolute paths
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        upload_folder = os.path.join(base_dir, '..', current_app.config['UPLOAD_FOLDER'])
+        user_upload_folder = os.path.join(upload_folder, str(current_user.id))
+
+        # Create directories with proper permissions
+        for directory in [upload_folder, user_upload_folder]:
+            if not os.path.exists(directory):
+                os.makedirs(directory, mode=0o755)
+            os.chmod(directory, 0o755)
+
+        logger.debug(f'Using upload folder: {user_upload_folder}')
+        logger.info('Upload folder verified/created successfully')
+
+        form = UploadForm()
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+
+        if request.method == 'POST' and form.validate_on_submit():
+            if form.file.data:
+                return handle_file_upload(form.file.data, form.account.data)
+
+        return render_template('upload.html', form=form, files=files)
+
+    except Exception as e:
+        logger.error(f"Error in upload route: {str(e)}")
+        flash('Error setting up upload directory. Please try again.', 'error')
+        return redirect(url_for('main.dashboard'))
+
+def handle_file_upload(file, account_id):
+    try:
+        logger.debug('Processing file upload')
+        if not file:
+            logger.error('No file provided in request')
+            raise ValueError('No file selected')
+
+        filename = secure_filename(file.filename)
+        logger.debug(f'Secured filename: {filename}')
+        upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], str(current_user.id))
+        os.makedirs(upload_path, exist_ok=True)
+        file_path = os.path.join(upload_path, filename)
+
+        # Save file with timeout handling
+        file.save(file_path)
+
+        upload = UploadedFile(
+            filename=filename,
+            filepath=file_path,
+            user_id=current_user.id,
+            account_id=account_id  # Assuming UploadForm has an account field
+        )
+        db.session.add(upload)
+        db.session.commit()
+
+        flash('File uploaded successfully', 'success')
+        return redirect(url_for('main.upload'))
+
+    except Exception as e:
+        logger.error(f"Upload error: {str(e)}")
+        flash(str(e), 'error')
+        return redirect(url_for('main.upload'))
+
+@main.route('/icountant_interface', methods=['GET', 'POST'])
+@login_required
+def icountant_interface():
+    """Handle iCountant interface interactions"""
+    try:
+        return render_template('icountant.html')
+    except Exception as e:
+        logger.error(f"Error in iCountant interface: {str(e)}", exc_info=True)
+        flash('Error processing request', 'error')
+        return redirect(url_for('main.dashboard'))

@@ -33,13 +33,6 @@ class PredictiveFeatures:
                     'confidence': 0.7,
                     'semantic_similarity': 0.6,
                     'text_similarity': 0.8
-                },
-                {
-                    'description': 'Payroll',
-                    'explanation': 'Employee salaries',
-                    'confidence': 0.85,
-                    'semantic_similarity': 0.75,
-                    'text_similarity': 0.95
                 }
             ]
             return {'success': True, 'similar_transactions': similar_transactions}
@@ -58,6 +51,51 @@ class ICountant:
         self.current_transaction: Optional[Dict[str, Any]] = None
         self.processed_transactions: List[Dict[str, Any]] = []
         self.insights_generator = FinancialInsightsGenerator()
+
+    async def _get_ai_insights(self, transaction: Dict[str, Any]) -> Dict[str, Any]:
+        """Get AI-powered insights for a transaction"""
+        try:
+            insights = await self.insights_generator.generate_transaction_insights([transaction])
+            return insights[0] if insights else {}
+        except Exception as e:
+            logger.error(f"Error getting AI insights: {str(e)}")
+            return {}
+
+    def _get_pattern_based_insights(self, transaction: Dict[str, Any]) -> Dict[str, Any]:
+        """Get pattern-based insights when AI insights fail"""
+        try:
+            description = transaction.get('description', '')
+            amount = self._validate_and_convert_amount(transaction.get('amount'))
+
+            # Basic pattern matching
+            predictor = PredictiveFeatures()
+            similar_result = predictor.find_similar_transactions(description)
+
+            if similar_result.get('success') and similar_result.get('similar_transactions'):
+                best_match = max(
+                    similar_result['similar_transactions'],
+                    key=lambda x: x.get('confidence', 0)
+                )
+
+                return {
+                    'insights': f"Similar transaction found: {best_match.get('explanation', '')}",
+                    'confidence': best_match.get('confidence', 0),
+                    'transaction_type': 'credit' if amount and amount < 0 else 'debit'
+                }
+
+            return {
+                'insights': f"{'Expense' if amount and amount < 0 else 'Income'} transaction detected",
+                'confidence': 0.7,
+                'transaction_type': 'credit' if amount and amount < 0 else 'debit'
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting pattern-based insights: {str(e)}")
+            return {
+                'insights': 'Unable to generate pattern-based insights',
+                'confidence': 0,
+                'transaction_type': 'unknown'
+            }
 
     async def get_transaction_insights(self, transaction: Dict[str, Any]) -> Dict[str, Any]:
         """Generate AI-powered insights with enhanced explanation recognition"""
@@ -90,7 +128,6 @@ class ICountant:
             suggested_accounts = self._suggest_accounts(transaction)
 
             # Generate base insights
-            transaction_insights = await self.insights_generator.generate_transaction_insights([transaction])
 
             # Generate explanation
             suggested_explanation = self._generate_explanation(transaction)
@@ -108,7 +145,7 @@ class ICountant:
                     }
                     for t in similar_result.get('similar_transactions', [])
                 ],
-                'ai_insights': transaction_insights[0].get('insights', '') if transaction_insights else '',
+                'ai_insights': insights.get('insights', '') if insights else '',
                 'suggested_accounts': suggested_accounts,
                 'suggested_explanation': suggested_explanation,
                 'similar_explanations': similar_explanations,
@@ -253,12 +290,8 @@ class ICountant:
         return 0.9  # Default confidence score for now
 
     async def process_transaction(self, transaction: Dict[str, Any]) -> Tuple[str, Optional[Dict[str, Any]]]:
-        """
-        Process a single transaction and guide the user through account selection
-        Returns: (message_to_user, transaction_info)
-        """
+        """Process a single transaction and guide the user through account selection"""
         try:
-            # Initial validation
             if not transaction:
                 return "No transaction data provided", None
 
@@ -282,14 +315,6 @@ class ICountant:
             # Generate insights for the transaction
             transaction_insights = await self.get_transaction_insights(transaction)
 
-            # Bank account is the default first entry
-            bank_entry = {
-                'account': 'Bank',
-                'amount': amount,
-                'description': transaction.get('description', 'No description provided'),
-                'date': transaction.get('date', datetime.now())
-            }
-
             # Build guidance message with insights
             message = (
                 f"Transaction Analysis:\n"
@@ -303,12 +328,9 @@ class ICountant:
             for suggestion in transaction_insights.get('suggested_accounts', []):
                 message += f"- {suggestion['account']['name']} ({suggestion['reason']})\n"
 
-            message += f"\nAvailable Accounts:\n{self.get_account_options()}\n"
-            message += f"Please select the account number for the {'credit' if amount > 0 else 'debit'} entry."
+            message += f"\nAvailable Accounts:\n{self.get_account_options()}"
 
             return message, {
-                'bank_entry': bank_entry,
-                'entry_type_needed': 'credit' if amount > 0 else 'debit',
                 'original_transaction': transaction,
                 'insights': transaction_insights
             }
