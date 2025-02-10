@@ -7,7 +7,7 @@ from flask_login import login_required, current_user
 from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile
 from icountant import ICountant
 
-main = Blueprint('main', __name__)
+bp = Blueprint('main', __name__) # Added this line assuming it's needed
 logger = logging.getLogger(__name__)
 
 # Predictive features implementation for routes
@@ -39,14 +39,14 @@ class PredictiveFeatures:
             logger.error(f"Error finding similar transactions: {str(e)}")
             return {'success': False, 'error': str(e)}
 
-@main.route('/')
-@main.route('/index')
+@bp.route('/') # Changed from @main.route
+@bp.route('/index') # Added this route
 @login_required
 def index():
     """Index route"""
     return render_template('index.html')
 
-@main.route('/analyze_list')
+@bp.route('/analyze_list') # Changed from @main.route
 @login_required
 def analyze_list():
     """Route for analyze data menu - protected core functionality"""
@@ -58,7 +58,7 @@ def analyze_list():
         flash('Error accessing analysis list', 'error')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/analyze/<int:file_id>')
+@bp.route('/analyze/<int:file_id>') # Changed from @main.route
 @login_required
 def analyze(file_id):
     """Analyze a specific uploaded file"""
@@ -94,7 +94,7 @@ def analyze(file_id):
         flash('Error accessing file for analysis', 'error')
         return redirect(url_for('main.analyze_list'))
 
-@main.route('/analyze_data', methods=['GET', 'POST'])
+@bp.route('/analyze_data', methods=['GET', 'POST']) # Changed from @main.route
 @login_required
 def analyze_data():
     """Analyze transaction data with enhanced error handling"""
@@ -144,7 +144,7 @@ def analyze_data():
         flash('Error analyzing transaction data', 'error')
         return redirect(url_for('main.analyze_list'))
 
-@main.route('/icountant', methods=['GET', 'POST'])
+@bp.route('/icountant', methods=['GET', 'POST']) # Changed from @main.route
 @login_required
 def icountant():
     """iCountant Assistant route with enhanced error handling"""
@@ -197,7 +197,7 @@ def icountant():
         flash('Error accessing iCountant Assistant', 'error')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/dashboard')
+@bp.route('/dashboard') # Changed from @main.route
 @login_required
 def dashboard():
     """Main dashboard route"""
@@ -222,7 +222,7 @@ def dashboard():
                             transaction_count=0,
                             transactions=[])
 
-@main.route('/edit_account/<int:account_id>', methods=['GET', 'POST'])
+@bp.route('/edit_account/<int:account_id>', methods=['GET', 'POST']) # Changed from @main.route
 @login_required
 def edit_account(account_id):
     """Edit an existing account"""
@@ -247,7 +247,7 @@ def edit_account(account_id):
     return render_template('edit_account.html', account=account)
 
 
-@main.route('/settings', methods=['GET', 'POST'])
+@bp.route('/settings', methods=['GET', 'POST']) # Changed from @main.route
 @login_required
 def settings():
     """Protected Chart of Accounts management"""
@@ -292,12 +292,12 @@ def settings():
         flash('Error accessing Chart of Accounts. Please try again.', 'error')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/admin_dashboard')
+@bp.route('/admin_dashboard') # Changed from @main.route
 @login_required
 def admin_dashboard():
     return render_template('admin/dashboard.html')
 
-@main.route('/company_settings')
+@bp.route('/company_settings') # Changed from @main.route
 @login_required
 def company_settings():
     """Company settings route"""
@@ -309,7 +309,7 @@ def company_settings():
         flash('Error accessing company settings', 'error')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/financial_insights')
+@bp.route('/financial_insights') # Changed from @main.route
 @login_required
 def financial_insights():
     """Financial insights dashboard route"""
@@ -320,7 +320,7 @@ def financial_insights():
         flash('Error accessing Financial Insights', 'error')
         return redirect(url_for('main.dashboard'))
 
-@main.route('/analyze/suggest-account', methods=['POST'])
+@bp.route('/analyze/suggest-account', methods=['POST']) # Changed from @main.route
 @login_required
 def suggest_account():
     """ASF: Get account suggestions with enhanced error handling"""
@@ -344,7 +344,7 @@ def suggest_account():
         logger.error(f"Error in suggest_account route: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@main.route('/upload', methods=['GET', 'POST'])
+@bp.route('/upload', methods=['GET', 'POST']) # Changed from @main.route
 @login_required
 def upload():
     """Route for uploading data with improved error handling"""
@@ -412,7 +412,7 @@ def handle_file_upload(file, account_id):
         flash(str(e), 'error')
         return redirect(url_for('main.upload'))
 
-@main.route('/icountant_interface', methods=['GET', 'POST'])
+@bp.route('/icountant_interface', methods=['GET', 'POST']) # Changed from @main.route
 @login_required
 def icountant_interface():
     """Handle iCountant interface interactions"""
