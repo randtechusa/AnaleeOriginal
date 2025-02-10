@@ -7,13 +7,17 @@ import logging
 import gc  # Added for garbage collection
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-from sqlalchemy import func
+from sqlalchemy import func, text
+from sqlalchemy.exc import SQLAlchemyError
 from models import db, Transaction, Account, HistoricalData
 from ai_insights import FinancialInsightsGenerator
 
 # Configure logging with proper format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 class MaintenanceMonitor:
     """
@@ -67,9 +71,15 @@ class MaintenanceMonitor:
                 self.health_metrics = metrics
                 return metrics
 
+            except SQLAlchemyError as db_error:
+                self.logger.error(f"Database error in module health check: {str(db_error)}")
+                return {
+                    **metrics,
+                    'error': f"Database error: {str(db_error)}",
+                    'timestamp': datetime.utcnow().isoformat()
+                }
             except Exception as module_error:
                 self.logger.error(f"Error in module health check: {str(module_error)}")
-                # Ensure we return protected metrics even if some checks fail
                 return {
                     **metrics,
                     'error': str(module_error),
@@ -86,6 +96,7 @@ class MaintenanceMonitor:
         finally:
             # Cleanup to prevent memory leaks
             gc.collect()
+            db.session.remove()  # Properly close db session
 
     def predict_maintenance_needs(self) -> List[Dict]:
         """

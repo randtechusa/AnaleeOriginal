@@ -1,12 +1,18 @@
 """Alert system for monitoring and detecting anomalies"""
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import List, Dict, Optional
 import logging
 from models import Transaction, db, AlertConfiguration, AlertHistory, Account
 
 class AlertSystem:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        # Configure logging with proper format
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO)
 
     def _check_pattern_anomalies(self, config) -> List[Dict]:
         """Check for pattern-based anomalies in recent transactions"""
@@ -78,10 +84,10 @@ class AlertSystem:
     def check_anomalies(self, user_id: int) -> List[Dict]:
         """
         Check for financial anomalies based on user configurations
-        
+
         Args:
             user_id: ID of the user to check anomalies for
-            
+
         Returns:
             List of detected anomalies
         """
@@ -108,10 +114,10 @@ class AlertSystem:
     def _process_alert_configuration(self, config: AlertConfiguration) -> List[Dict]:
         """
         Process individual alert configuration
-        
+
         Args:
             config: AlertConfiguration object to process
-            
+
         Returns:
             List of anomalies detected for this configuration
         """
@@ -157,12 +163,12 @@ class AlertSystem:
     def create_alert(self, user_id: int, anomaly: Dict, config_id: int) -> Optional[AlertHistory]:
         """
         Create alert history entry for detected anomaly
-        
+
         Args:
             user_id: ID of the user
             anomaly: Detected anomaly information
             config_id: ID of the alert configuration
-            
+
         Returns:
             Created AlertHistory object or None if error
         """
@@ -173,12 +179,12 @@ class AlertSystem:
                 alert_message=anomaly['message'],
                 severity=anomaly['severity']
             )
-            
+
             db.session.add(alert)
             db.session.commit()
-            
+
             return alert
-            
+
         except Exception as e:
             self.logger.error(f"Error creating alert: {str(e)}")
             db.session.rollback()

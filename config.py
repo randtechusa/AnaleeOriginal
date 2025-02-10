@@ -10,7 +10,7 @@ class Config:
     # Database Configuration
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     db_url = os.environ.get('DATABASE_URL')
-    
+
     # Enhanced database connection handling
     try:
         if db_url:
@@ -18,37 +18,31 @@ class Config:
             if db_url.startswith('postgres://'):
                 db_url = db_url.replace('postgres://', 'postgresql://', 1)
             SQLALCHEMY_DATABASE_URI = db_url
-        else:
-            # Explicit SQLite fallback
-            SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
-            
-        # Adjust engine options based on database type
-        if SQLALCHEMY_DATABASE_URI.startswith('sqlite'):
+
+            # PostgreSQL-specific engine options
             SQLALCHEMY_ENGINE_OPTIONS = {
                 'pool_pre_ping': True,
-                'pool_recycle': 280,
-                'connect_args': {'timeout': 15}
+                'pool_size': 1,
+                'max_overflow': 0,
+                'pool_timeout': 10,
+                'pool_recycle': 1800,
+                'connect_args': {
+                    'application_name': 'icountant'
+                }
             }
+        else:
+            # SQLite configuration
+            SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
+            SQLALCHEMY_ENGINE_OPTIONS = {
+                'pool_pre_ping': True
+            }
+
     except Exception as e:
         # Emergency fallback to SQLite
         SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
         SQLALCHEMY_ENGINE_OPTIONS = {
-            'pool_pre_ping': True,
-            'connect_args': {'timeout': 15}
+            'pool_pre_ping': True
         }
-
-    # Essential database connection settings
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_pre_ping': True,
-        'pool_size': 1,
-        'max_overflow': 0,
-        'pool_timeout': 10,
-        'pool_recycle': 1800,
-        'connect_args': {
-            'connect_timeout': 5,
-            'application_name': 'icountant'
-        }
-    }
 
 class DevelopmentConfig(Config):
     """Development configuration"""

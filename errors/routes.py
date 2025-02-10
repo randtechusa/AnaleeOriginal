@@ -5,8 +5,13 @@ Handles display and tracking of system errors and AI service status
 
 import logging
 from datetime import datetime, timedelta
-from flask import render_template, current_app
-from flask_login import login_required
+try:
+    from flask import Blueprint, render_template, current_app
+    from flask_login import login_required
+except ImportError as e:
+    logging.error(f"Failed to import Flask modules: {str(e)}")
+    raise
+
 import traceback
 from . import errors
 from models import db
@@ -34,21 +39,25 @@ def error_dashboard():
         }
 
         try:
-            ai_status.update({
-                'consecutive_failures': getattr(ai_service.service_status, 'consecutive_failures', 0),
-                'error_count': getattr(ai_service.service_status, 'error_count', 0),
-                'last_success': (ai_service.service_status.last_success.strftime('%Y-%m-%d %H:%M:%S') 
-                               if hasattr(ai_service.service_status, 'last_success') and 
-                               ai_service.service_status.last_success else None),
-            })
+            # Safely access AI service status attributes
+            service_status = getattr(ai_service, 'service_status', None)
+            if service_status:
+                ai_status.update({
+                    'consecutive_failures': getattr(service_status, 'consecutive_failures', 0),
+                    'error_count': getattr(service_status, 'error_count', 0),
+                    'last_success': (service_status.last_success.strftime('%Y-%m-%d %H:%M:%S') 
+                                   if hasattr(service_status, 'last_success') and 
+                                   service_status.last_success else None),
+                })
         except AttributeError as e:
             logger.warning(f"Error accessing AI service status attributes: {str(e)}")
 
-        # Get recent errors from logs
+        # Get recent errors from logs with proper error handling
         recent_errors = []
         try:
-            if hasattr(ai_service.service_status, 'last_error'):
-                error_data = ai_service.service_status.last_error
+            service_status = getattr(ai_service, 'service_status', None)
+            if service_status and hasattr(service_status, 'last_error'):
+                error_data = service_status.last_error
                 if isinstance(error_data, dict):
                     recent_errors.append({
                         'timestamp': error_data.get('timestamp', datetime.now()).strftime('%Y-%m-%d %H:%M:%S'),
@@ -88,10 +97,14 @@ def error_dashboard():
         if any('OpenAI' in err.get('message', '') for err in recent_errors):
             recommendations.append("Verify OpenAI API configuration and credentials")
 
-        # Calculate service health metrics
-        total_ops = max(1, ai_status['error_count'] + (1 if ai_status['last_success'] else 0))
-        success_rate = ((total_ops - ai_status['error_count']) / total_ops) * 100
-        uptime = f"{success_rate:.1f}% success rate"
+        # Calculate service health metrics with error handling
+        try:
+            total_ops = max(1, ai_status['error_count'] + (1 if ai_status['last_success'] else 0))
+            success_rate = ((total_ops - ai_status['error_count']) / total_ops) * 100
+            uptime = f"{success_rate:.1f}% success rate"
+        except Exception as e:
+            logger.error(f"Error calculating health metrics: {str(e)}")
+            uptime = "Unable to calculate uptime"
 
         return render_template('error_dashboard.html',
                              ai_status=ai_status,
