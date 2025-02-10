@@ -43,45 +43,12 @@ def create_app(config_name='development'):
     try:
         logger.info(f"Starting application with config: {config_name}")
 
-        # Load configuration
-        app.config.from_object('config.DevelopmentConfig')
+        # Load base configuration
+        app.config.from_object('config.Config')
 
-        # Basic Configuration
-        app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
-        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-        # Database Configuration
-        if os.environ.get('DATABASE_URL'):
-            db_url = os.environ.get('DATABASE_URL')
-            if db_url.startswith('postgres://'):
-                db_url = db_url.replace('postgres://', 'postgresql://', 1)
-            app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-                'pool_pre_ping': True,
-                'pool_size': 1,
-                'max_overflow': 0,
-                'pool_recycle': 1800
-            }
-        else:
-            # SQLite fallback
-            sqlite_path = os.path.join(app.instance_path, 'dev.db')
-            os.makedirs(app.instance_path, exist_ok=True)
-            app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
-            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-                'pool_pre_ping': True
-            }
-            logger.info(f"Using SQLite database at: {sqlite_path}")
-
-        # Error handlers
-        @app.errorhandler(500)
-        def internal_error(error):
-            logger.error(f"Internal Server Error: {error}")
-            db.session.rollback()
-            return render_template('error.html', error="An internal error occurred. Please try again."), 500
-
-        @app.errorhandler(404)
-        def not_found_error(error):
-            return render_template('error.html', error="Page not found"), 404
+        # Load environment-specific configuration
+        config_class = f'config.{config_name.capitalize()}Config'
+        app.config.from_object(config_class)
 
         # Initialize extensions
         logger.debug("Initializing Flask extensions...")
@@ -104,6 +71,17 @@ def create_app(config_name='development'):
         app.register_blueprint(reports)
         app.register_blueprint(suggestions)
 
+        # Error handlers
+        @app.errorhandler(500)
+        def internal_error(error):
+            logger.error(f"Internal Server Error: {error}")
+            db.session.rollback()
+            return render_template('error.html', error="An internal error occurred. Please try again."), 500
+
+        @app.errorhandler(404)
+        def not_found_error(error):
+            return render_template('error.html', error="Page not found"), 404
+
         # Root route
         @app.route('/')
         def index():
@@ -112,18 +90,24 @@ def create_app(config_name='development'):
         # Initialize database
         with app.app_context():
             try:
+                # Test database connection
                 logger.debug("Testing database connection...")
                 db.session.execute(text('SELECT 1'))
-                logger.debug("Creating database tables...")
+                db.session.commit()
+                logger.info("Database connection successful")
+
+                # Create tables if they don't exist
                 db.create_all()
-                logger.info("Database initialized successfully")
+                logger.info("Database tables created successfully")
+
             except Exception as e:
                 logger.error(f"Database initialization error: {str(e)}")
+
+                # Close any existing connections
+                db.session.remove()
+
                 if 'sqlite' not in app.config['SQLALCHEMY_DATABASE_URI']:
                     logger.info("Switching to SQLite fallback database")
-
-                    # Close any existing connections
-                    db.session.remove()
 
                     # Configure SQLite
                     sqlite_path = os.path.join('instance', 'dev.db')
@@ -132,6 +116,9 @@ def create_app(config_name='development'):
                     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
                         'pool_pre_ping': True
                     }
+
+                    # Reinitialize db with new configuration
+                    db.init_app(app)
 
                     try:
                         db.create_all()

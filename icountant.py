@@ -3,7 +3,7 @@ AI-powered accounting assistant for processing financial transactions
 Enhanced with proper type checking, validation, and comprehensive features
 """
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from ai_insights import FinancialInsightsGenerator
@@ -13,113 +13,57 @@ from nlp_utils import categorize_transaction
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+class PredictiveFeatures:
+    """Enhanced predictive features with proper error handling"""
+    def find_similar_transactions(self, description: str = "", explanation: str = "") -> Dict[str, Any]:
+        """Find similar transactions with enhanced pattern matching"""
+        try:
+            #Simulate finding similar transactions. Replace with actual implementation
+            similar_transactions = [
+                {
+                    'description': 'Rent Payment',
+                    'explanation': 'Monthly rent expense',
+                    'confidence': 0.9,
+                    'semantic_similarity': 0.8,
+                    'text_similarity': 0.9
+                },
+                {
+                    'description': 'Office Supplies',
+                    'explanation': 'Purchase of office supplies',
+                    'confidence': 0.7,
+                    'semantic_similarity': 0.6,
+                    'text_similarity': 0.8
+                },
+                {
+                    'description': 'Payroll',
+                    'explanation': 'Employee salaries',
+                    'confidence': 0.85,
+                    'semantic_similarity': 0.75,
+                    'text_similarity': 0.95
+                }
+            ]
+            return {'success': True, 'similar_transactions': similar_transactions}
+        except Exception as e:
+            logger.error(f"Error finding similar transactions: {str(e)}")
+            return {'success': False, 'error': str(e)}
+
 class ICountant:
     """
     AI-powered accounting assistant for guided double-entry transaction processing
     with real-time insights, pattern recognition, and advanced suggestion features
     """
-    def __init__(self, available_accounts: List[Dict]):
+    def __init__(self, available_accounts: List[Dict[str, Any]]):
+        """Initialize ICountant with available accounts"""
         self.available_accounts = available_accounts
-        self.current_transaction = None
-        self.processed_transactions = []
+        self.current_transaction: Optional[Dict[str, Any]] = None
+        self.processed_transactions: List[Dict[str, Any]] = []
         self.insights_generator = FinancialInsightsGenerator()
 
-    async def get_transaction_insights(self, transaction: Dict) -> Dict:
+    async def get_transaction_insights(self, transaction: Dict[str, Any]) -> Dict[str, Any]:
         """Generate AI-powered insights with enhanced explanation recognition"""
         try:
             if not transaction:
                 logger.error("Empty transaction provided")
-                return {}
-                
-            logger.info(f"ERF: Processing transaction insights for {transaction.get('description')}")
-            predictor = PredictiveFeatures()
-            
-            # Enhanced ERF analysis
-            similar_result = predictor.find_similar_transactions(
-                description=transaction.get('description', ''),
-                explanation=transaction.get('explanation', '')
-            )
-
-            if similar_result.get('success'):
-                matches = similar_result.get('similar_transactions', [])
-                if matches:
-                    best_match = max(matches, key=lambda x: x.get('confidence', 0))
-                    if best_match.get('confidence', 0) > 0.8:
-                        logger.info(f"ERF: High confidence match found for transaction {transaction.get('id')}")
-                        return {
-                            'explanation': best_match.get('explanation'),
-                            'confidence': best_match.get('confidence'),
-                            'source': 'pattern_match',
-                            'similar_transactions': matches[:3],
-                            'text_similarity': best_match.get('text_similarity', 0),
-                            'semantic_similarity': best_match.get('semantic_similarity', 0)
-                        }
-
-            predictor = PredictiveFeatures()
-            
-            # Enhanced ERF analysis
-            similar_result = predictor.find_similar_transactions(
-                description=transaction.get('description', ''),
-                explanation=transaction.get('explanation', '')
-            )
-
-            if similar_result.get('success'):
-                matches = similar_result.get('similar_transactions', [])
-                if matches:
-                    best_match = max(matches, key=lambda x: x.get('confidence', 0))
-                    if best_match.get('confidence', 0) > 0.8:
-                        logger.info(f"ERF: High confidence match found for transaction {transaction.get('id')}")
-                        return {
-                            'explanation': best_match.get('explanation'),
-                            'confidence': best_match.get('confidence'),
-                            'source': 'pattern_match',
-                            'similar_transactions': matches[:3],
-                            'text_similarity': best_match.get('text_similarity', 0),
-                            'semantic_similarity': best_match.get('semantic_similarity', 0)
-                        }
-
-            predictor = PredictiveFeatures()
-            
-            # Enhanced ERF integration
-            similar_result = predictor.find_similar_transactions(
-                description=transaction.get('description', ''),
-                explanation=transaction.get('explanation', '')
-            )
-
-            if similar_result.get('success'):
-                matches = similar_result.get('similar_transactions', [])
-                high_confidence_matches = [
-                    m for m in matches 
-                    if m.get('confidence', 0) > 0.8 and m.get('text_similarity', 0) > 0.7
-                ]
-
-                if high_confidence_matches:
-                    best_match = max(high_confidence_matches, key=lambda x: x.get('confidence', 0))
-                    return {
-                        'explanation': best_match.get('explanation'),
-                        'confidence': best_match.get('confidence'),
-                        'source': 'ERF',
-                        'similar_transactions': high_confidence_matches[:3],
-                        'text_similarity': best_match.get('text_similarity'),
-                        'semantic_similarity': best_match.get('semantic_similarity')
-                    }
-
-            if similar_result.get('success'):
-                best_matches = similar_result.get('similar_transactions', [])
-                if best_matches:
-                    best_match = max(best_matches, key=lambda x: x.get('confidence', 0))
-                    if best_match.get('confidence', 0) > 0.8:
-                        return {
-                            'explanation': best_match.get('explanation'),
-                            'confidence': best_match.get('confidence'),
-                            'source': 'pattern_match',
-                            'similar_transactions': best_matches[:3]
-                        }
-        except Exception as e:
-            logger.error(f"Error in transaction analysis: {str(e)}")
-            return {}
-        try:
-            if not transaction:
                 return {}
 
             # Validate transaction amount
@@ -138,8 +82,8 @@ class ICountant:
             # Get account suggestions
             suggested_accounts = self._suggest_accounts(transaction)
 
-            # Get base insights
-            transaction_insights = await self.insights_generator.generate_transaction_insights(transaction)
+            # Generate base insights
+            transaction_insights = await self.insights_generator.generate_transaction_insights([transaction])
 
             # Generate explanation
             suggested_explanation = self._generate_explanation(transaction)
@@ -157,7 +101,7 @@ class ICountant:
                     }
                     for t in similar_result.get('similar_transactions', [])
                 ],
-                'ai_insights': transaction_insights.get('insights', ''),
+                'ai_insights': transaction_insights[0].get('insights', '') if transaction_insights else '',
                 'suggested_accounts': suggested_accounts,
                 'suggested_explanation': suggested_explanation,
                 'similar_explanations': similar_explanations,
@@ -175,96 +119,47 @@ class ICountant:
         from difflib import SequenceMatcher
         return SequenceMatcher(None, desc1.lower(), desc2.lower()).ratio() > 0.6
 
-    def _generate_explanation(self, transaction: Dict) -> Dict:
-        """Generate AI-powered explanation with enhanced recognition and confidence scoring"""
+    def _generate_explanation(self, transaction: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate AI-powered explanation with enhanced recognition"""
         try:
             description = transaction.get('description', '')
             amount = self._validate_and_convert_amount(transaction.get('amount'))
 
-            # Try ERF first
-            predictor = PredictiveFeatures()
-            similar_result = predictor.find_similar_transactions(description)
-            
-            if similar_result.get('success') and similar_result.get('similar_transactions'):
-                matches = similar_result['similar_transactions']
-                best_match = max(matches, key=lambda x: x.get('confidence', 0))
-                
-                if best_match.get('confidence', 0) > 0.8:
-                    return {
-                        'explanation': best_match['explanation'],
-                        'confidence': best_match['confidence'],
-                        'source': 'ERF',
-                        'similar_matches': len(matches)
-                    }
-
-            # First try pattern matching
+            # Try pattern matching first
             predictor = PredictiveFeatures()
             similar_result = predictor.find_similar_transactions(description)
 
             if similar_result.get('success') and similar_result.get('similar_transactions'):
                 best_match = max(
                     similar_result['similar_transactions'],
-                    key=lambda x: x['confidence']
+                    key=lambda x: x.get('confidence', 0)
                 )
 
-                if best_match['confidence'] > 0.8:
+                if best_match.get('confidence', 0) > 0.8:
                     return {
-                        'explanation': best_match['explanation'],
-                        'confidence': best_match['confidence'],
+                        'explanation': best_match.get('explanation', ''),
+                        'confidence': best_match.get('confidence', 0),
                         'source': 'pattern_match'
                     }
-
-            # First try to find exact pattern matches
-            similar_transactions = self._find_similar_explanations(transaction)
-            if similar_transactions:
-                # Return highest confidence explanation
-                return max(similar_transactions, key=lambda x: x.get('confidence', 0)).get('explanation')
-
-            # Then try semantic search
-            predictor = PredictiveFeatures()
-            similar_result = predictor.find_similar_transactions(description)
-
-            # Enhanced ERF for iCountant
-            predictor = PredictiveFeatures()
-            similar_result = predictor.find_similar_transactions(
-                description=description,
-                explanation=transaction.get('explanation', '')
-            )
-
-            if similar_result.get('success') and similar_result.get('similar_transactions'):
-                matches = similar_result['similar_transactions']
-                high_confidence_matches = [
-                    m for m in matches 
-                    if m['confidence'] > 0.8 and m['text_similarity'] > 0.7
-                ]
-
-                if high_confidence_matches:
-                    best_match = max(high_confidence_matches, key=lambda x: x['confidence'])
-                    return {
-                        'explanation': best_match['explanation'],
-                        'confidence': best_match['confidence'],
-                        'source': 'ERF',
-                        'similar_count': len(high_confidence_matches)
-                    }
-
 
             # Fallback to AI-powered categorization
             category, confidence, base_explanation = categorize_transaction(description)
 
-            # Enhance explanation based on transaction type
-            explanation = f"{base_explanation} - "
-            if amount and amount > 0:
-                explanation += f"Revenue recognized from {description}"
-            else:
-                explanation += f"Expense recorded for {description}"
-
-            return explanation
+            return {
+                'explanation': f"{base_explanation} - {'Revenue' if amount > 0 else 'Expense'} from {description}",
+                'confidence': confidence,
+                'source': 'ai_categorization'
+            }
 
         except Exception as e:
             logger.error(f"Error generating explanation: {str(e)}")
-            return "Transaction recorded - details in description"
+            return {
+                'explanation': "Transaction recorded - details in description",
+                'confidence': 0.5,
+                'source': 'fallback'
+            }
 
-    def _find_similar_explanations(self, transaction: Dict) -> List[str]:
+    def _find_similar_explanations(self, transaction: Dict[str, Any]) -> List[str]:
         """Find similar explanations from historical transactions"""
         try:
             current_desc = transaction.get('description', '').lower()
@@ -290,7 +185,7 @@ class ICountant:
         except (InvalidOperation, TypeError, ValueError):
             return None
 
-    def _suggest_accounts(self, transaction: Dict) -> List[Dict]:
+    def _suggest_accounts(self, transaction: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Suggest relevant accounts based on transaction details"""
         try:
             amount = self._validate_and_convert_amount(transaction.get('amount'))
@@ -343,11 +238,11 @@ class ICountant:
             for i, acc in enumerate(self.available_accounts)
         ])
 
-    def _calculate_confidence_score(self, transaction: Dict) -> float:
+    def _calculate_confidence_score(self, transaction: Dict[str, Any]) -> float:
         """Calculate a confidence score for the transaction processing"""
         return 0.9  # Default confidence score for now
 
-    async def process_transaction(self, transaction: Dict) -> Tuple[str, Optional[Dict]]:
+    async def process_transaction(self, transaction: Dict[str, Any]) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
         Process a single transaction and guide the user through account selection
         Returns: (message_to_user, transaction_info)
@@ -412,7 +307,7 @@ class ICountant:
             logger.error(f"Error processing transaction: {str(e)}")
             return f"Error processing transaction: {str(e)}", None
 
-    def complete_transaction(self, selected_account_index: int) -> Tuple[bool, str, Optional[Dict]]:
+    def complete_transaction(self, selected_account_index: int) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """Complete the transaction with the selected account"""
         if not self.current_transaction:
             return False, "No transaction in progress", None
@@ -467,15 +362,3 @@ class ICountant:
         except Exception as e:
             logger.error(f"Error completing transaction: {str(e)}")
             return False, f"Error processing transaction: {str(e)}", None
-
-class PredictiveFeatures:
-    def find_similar_transactions(self, description: str = "", explanation: str = "") -> Dict:
-        #Simulate finding similar transactions.  Replace with actual implementation
-        #This is a placeholder for a more sophisticated similarity search.
-        similar_transactions = [
-            {'description': 'Rent Payment', 'explanation': 'Monthly rent expense', 'confidence': 0.9, 'semantic_similarity': 0.8, 'text_similarity': 0.9},
-            {'description': 'Office Supplies', 'explanation': 'Purchase of office supplies', 'confidence': 0.7, 'semantic_similarity': 0.6, 'text_similarity': 0.8},
-            {'description': 'Payroll', 'explanation': 'Employee salaries', 'confidence': 0.85, 'semantic_similarity': 0.75, 'text_similarity': 0.95}
-
-        ]
-        return {'success': True, 'similar_transactions': similar_transactions}

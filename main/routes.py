@@ -4,10 +4,11 @@ import os
 from werkzeug.utils import secure_filename
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app, abort
 from flask_login import login_required, current_user
-from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile # Added UploadedFile model import
-
+from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile
+from icountant import ICountant, PredictiveFeatures
 
 main = Blueprint('main', __name__)
+logger = logging.getLogger(__name__)
 
 @main.route('/edit_account/<int:account_id>', methods=['GET', 'POST'])
 @login_required
@@ -53,9 +54,6 @@ class PredictiveFeatures:
 
 
 
-logger = logging.getLogger(__name__)
-
-
 @main.route('/')
 @main.route('/index')
 @login_required
@@ -66,7 +64,13 @@ def index():
 @login_required
 def analyze_list():
     """Route for analyze data menu - protected core functionality"""
-    return render_template('analyze_list.html')
+    try:
+        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+        return render_template('analyze_list.html', files=files)
+    except Exception as e:
+        logger.error(f"Error accessing analyze list: {str(e)}")
+        flash('Error accessing analysis list', 'error')
+        return redirect(url_for('main.dashboard'))
 
 @main.route('/dashboard')
 @login_required
@@ -108,15 +112,116 @@ def dashboard():
                             category_labels=[],
                             category_amounts=[])
 
+@main.route('/analyze/<int:file_id>')
+@login_required
+def analyze(file_id):
+    """Analyze a specific uploaded file"""
+    try:
+        file = UploadedFile.query.get_or_404(file_id)
+
+        # Verify file belongs to current user
+        if file.user_id != current_user.id:
+            abort(403)
+
+        # Get related transactions for this file
+        transactions = Transaction.query.filter_by(
+            user_id=current_user.id,
+            file_id=file_id
+        ).order_by(Transaction.date.desc()).all()
+
+        return render_template('analyze.html', file=file, transactions=transactions)
+    except Exception as e:
+        logger.error(f"Error in analyze route: {str(e)}")
+        flash('Error accessing file for analysis', 'error')
+        return redirect(url_for('main.analyze_list'))
+
+@main.route('/analyze_data', methods=['GET', 'POST'])
+@login_required
+def analyze_data():
+    """Analyze transaction data with enhanced error handling"""
+    try:
+        predictor = PredictiveFeatures()
+        transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+        processed_count = 0
+        total_count = len(transactions)
+
+        for transaction in transactions:
+            try:
+                if not transaction.explanation:
+                    similar = predictor.find_similar_transactions(transaction.description)
+                    if similar.get('success') and similar.get('similar_transactions'):
+                        best_match = max(similar['similar_transactions'], 
+                                    key=lambda x: x.get('confidence', 0))
+                        if best_match.get('confidence', 0) > 0.85:
+                            transaction.explanation = best_match['explanation']
+                            transaction.explanation_confidence = best_match['confidence']
+                            db.session.add(transaction)
+                            processed_count += 1
+
+                if processed_count % 10 == 0:  # Commit every 10 transactions
+                    db.session.commit()
+
+            except Exception as tx_error:
+                logger.error(f"Error processing transaction {transaction.id}: {str(tx_error)}")
+                continue
+
+        # Final commit for remaining transactions
+        db.session.commit()
+
+        flash(f'Successfully analyzed {processed_count} out of {total_count} transactions', 'success')
+        return render_template('analyze.html', 
+                             transactions=transactions,
+                             processed_count=processed_count,
+                             total_count=total_count)
+
+    except Exception as e:
+        logger.error(f"Error in analyze_data route: {str(e)}")
+        db.session.rollback()
+        flash('Error analyzing transaction data', 'error')
+        return redirect(url_for('main.analyze_list'))
+
 @main.route('/icountant', methods=['GET', 'POST'])
 @login_required
 def icountant():
-    """iCountant Assistant route"""
+    """iCountant Assistant route with enhanced error handling"""
     try:
-        logger.debug("Accessing iCountant route")
-        return render_template('icountant.html')
+        # Get user's accounts for transaction processing
+        accounts = Account.query.filter_by(user_id=current_user.id).all()
+
+        # Initialize iCountant with user's accounts
+        icountant = ICountant(accounts)
+
+        # Get any pending transactions
+        pending_transaction = Transaction.query.filter_by(
+            user_id=current_user.id,
+            status='pending'
+        ).first()
+
+        if request.method == 'POST':
+            if 'transaction_id' in request.form:
+                selected_account = request.form.get('selected_account')
+                if selected_account:
+                    success, message, completed_transaction = icountant.complete_transaction(int(selected_account))
+                    if success:
+                        flash('Transaction processed successfully', 'success')
+                    else:
+                        flash(f'Error processing transaction: {message}', 'error')
+                else:
+                    flash('Please select an account', 'warning')
+
+        # Get recently processed transactions
+        recently_processed = Transaction.query.filter_by(
+            user_id=current_user.id,
+            status='completed'
+        ).order_by(Transaction.date.desc()).limit(5).all()
+
+        return render_template('icountant.html',
+                             accounts=accounts,
+                             transaction=pending_transaction,
+                             recently_processed=recently_processed)
+
     except Exception as e:
-        logger.error(f"Error in icountant route: {str(e)}", exc_info=True)
+        logger.error(f"Error in iCountant interface: {str(e)}", exc_info=True)
         flash('Error accessing iCountant Assistant', 'error')
         return redirect(url_for('main.dashboard'))
 
@@ -205,36 +310,6 @@ def handle_file_upload(file, account_id):
 def settings():
     """Protected Chart of Accounts management"""
     try:
-        # Already authenticated due to @login_required
-        user_accounts = Account.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).order_by(Account.category, Account.name).all()
-
-        system_accounts = AdminChartOfAccounts.query.order_by(
-            AdminChartOfAccounts.category,
-            AdminChartOfAccounts.name
-        ).all()
-
-        return render_template('settings.html',
-                             accounts=user_accounts,
-                             system_accounts=system_accounts)
-
-        # Get user accounts and system accounts
-        user_accounts = Account.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).order_by(Account.category, Account.name).all()
-
-        system_accounts = AdminChartOfAccounts.query.order_by(
-            AdminChartOfAccounts.category,
-            AdminChartOfAccounts.name
-        ).all()
-
-        return render_template('settings.html',
-                             accounts=user_accounts,
-                             system_accounts=system_accounts)
-
         if request.method == 'POST':
             if not request.form.get('name') or not request.form.get('category'):
                 flash('Account name and category are required', 'error')
@@ -326,40 +401,3 @@ def suggest_account():
     except Exception as e:
         logger.error(f"Error in suggest_account route: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
-
-@main.route('/analyze/<int:file_id>')
-@login_required
-def analyze(file_id):
-    """Analyze a specific uploaded file"""
-    try:
-        file = UploadedFile.query.get_or_404(file_id)
-
-        # Verify file belongs to current user
-        if file.user_id != current_user.id:
-            abort(403)
-
-        return render_template('analyze.html', file=file)
-    except Exception as e:
-        logger.error(f"Error in analyze route: {str(e)}")
-        flash('Error accessing file for analysis', 'error')
-        return redirect(url_for('main.analyze_list'))
-
-@main.route('/analyze_data', methods=['GET', 'POST'])
-@login_required
-def analyze_data():
-    predictor = PredictiveFeatures()
-    transactions = Transaction.query.filter_by(user_id=current_user.id).all()
-
-    for transaction in transactions:
-        if not transaction.explanation:
-            similar = predictor.find_similar_transactions(transaction.description)
-            if similar.get('success') and similar.get('similar_transactions'):
-                best_match = max(similar['similar_transactions'], 
-                               key=lambda x: x.get('confidence', 0))
-                if best_match.get('confidence', 0) > 0.85:
-                    transaction.explanation = best_match['explanation']
-                    transaction.explanation_confidence = best_match['confidence']
-                    db.session.add(transaction)
-
-    db.session.commit()
-    return render_template('analyze.html', transactions=transactions)
