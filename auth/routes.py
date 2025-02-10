@@ -14,74 +14,68 @@ auth = Blueprint('auth', __name__)
 
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('main.dashboard'))
-    
-    form = LoginForm()
-    if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data.lower()).first()
-        
-        if user and user.check_password(form.password.data):
-            if not user.is_active:
-                flash('Account is deactivated. Please contact support.', 'error')
-                return render_template('auth/login.html', form=form)
-            
-            login_user(user, remember=form.remember_me.data)
-            flash('Logged in successfully.', 'success')
+    try:
+        if current_user.is_authenticated:
             return redirect(url_for('main.dashboard'))
         
-        flash('Invalid email or password.', 'error')
+        form = LoginForm()
+        if form.validate_on_submit():
+            user = User.query.filter_by(email=form.email.data.lower()).first()
+            
+            if user and user.check_password(form.password.data):
+                if not user.is_active:
+                    flash('Account is deactivated. Please contact support.', 'error')
+                    return render_template('auth/login.html', form=form)
+                
+                login_user(user, remember=form.remember_me.data)
+                flash('Logged in successfully.', 'success')
+                return redirect(url_for('main.dashboard'))
+            
+            flash('Invalid email or password.', 'error')
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        flash('An error occurred during login. Please try again.', 'error')
+    
     return render_template('auth/login.html', form=form)
 
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
     """Handle user registration with enhanced logging"""
-    logger.debug("Entering registration route")
-
     if current_user.is_authenticated:
-        logger.debug(f"Already authenticated user {current_user.id} attempting to access registration")
         return redirect(url_for('main.index'))
 
+    form = RegistrationForm()
     try:
-        form = RegistrationForm()
-        logger.debug("Registration form instantiated")
-
         if form.validate_on_submit():
+            existing_user = User.query.filter_by(email=form.email.data.lower()).first()
+            if existing_user:
+                flash('Email already registered. Please use a different email.', 'error')
+                return render_template('auth/register.html', form=form)
+
+            user = User(
+                email=form.email.data.lower(),
+                username=form.username.data,
+                is_admin=False,
+                is_active=True
+            )
+            user.set_password(form.password.data)
+            db.session.add(user)
+            
             try:
-                existing_user = User.query.filter_by(email=form.email.data.lower()).first()
-                if existing_user:
-                    flash('Email already registered. Please use a different email.', 'error')
-                    return render_template('auth/register.html', form=form)
-
-                user = User(
-                    email=form.email.data.lower(),
-                    username=form.username.data,
-                    is_admin=False,
-                    is_active=True
-                )
-                user.set_password(form.password.data)
-                db.session.add(user)
-                try:
-                    db.session.commit()
-                    logger.info(f"New user registered successfully: {form.email.data}")
-                    flash('Registration successful! Please login.', 'success')
-                    return redirect(url_for('auth.login'))
-                except Exception as dbe:
-                    logger.error(f"Database error during user registration: {str(dbe)}")
-                    db.session.rollback()
-                    flash('Registration failed. Please try again.', 'error')
-                    return render_template('auth/register.html', form=form)
-
-            except Exception as e:
-                logger.error(f"Error registering user: {str(e)}")
+                db.session.commit()
+                logger.info(f"New user registered successfully: {form.email.data}")
+                flash('Registration successful! Please login.', 'success')
+                return redirect(url_for('auth.login'))
+            except Exception as dbe:
+                logger.error(f"Database error during user registration: {str(dbe)}")
                 db.session.rollback()
-                flash('Registration failed. Please try again.', 'error')
-
-        return render_template('auth/register.html', form=form)
+                flash('Database error during registration. Please try again.', 'error')
     except Exception as e:
-        logger.error(f"Registration route error: {str(e)}")
-        flash('An error occurred during registration', 'error')
-        return render_template('auth/register.html', form=form)
+        logger.error(f"Registration error: {str(e)}")
+        db.session.rollback()
+        flash('An error occurred during registration. Please try again.', 'error')
+
+    return render_template('auth/register.html', form=form)
 
 @auth.route('/logout')
 @login_required
