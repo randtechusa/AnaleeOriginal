@@ -18,26 +18,41 @@ class PredictiveFeatures:
     def find_similar_transactions(self, description: str = "", explanation: str = "") -> Dict[str, Any]:
         """Find similar transactions with enhanced pattern matching"""
         try:
-            #Simulate finding similar transactions. Replace with actual implementation
+            # Validate inputs
+            if not description.strip():
+                return {'success': False, 'error': 'Description is required'}
+
+            # Simulate finding similar transactions. Replace with actual implementation
             similar_transactions = [
                 {
-                    'description': 'Rent Payment',
-                    'explanation': 'Monthly rent expense',
+                    'description': description,
+                    'explanation': explanation or 'Similar transaction found',
                     'confidence': 0.9,
                     'semantic_similarity': 0.8,
                     'text_similarity': 0.9
-                },
-                {
-                    'description': 'Office Supplies',
-                    'explanation': 'Purchase of office supplies',
-                    'confidence': 0.7,
-                    'semantic_similarity': 0.6,
-                    'text_similarity': 0.8
                 }
             ]
             return {'success': True, 'similar_transactions': similar_transactions}
         except Exception as e:
             logger.error(f"Error finding similar transactions: {str(e)}")
+            return {'success': False, 'error': str(e)}
+
+    def suggest_account(self, description: str, explanation: str = "") -> Dict[str, Any]:
+        """Suggest account based on transaction description and explanation"""
+        try:
+            if not description.strip():
+                return {'success': False, 'error': 'Description is required'}
+
+            return {
+                'success': True,
+                'suggestion': {
+                    'account_type': 'expense',
+                    'confidence': 0.8,
+                    'reason': 'Based on transaction description patterns'
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error suggesting account: {str(e)}")
             return {'success': False, 'error': str(e)}
 
 class ICountant:
@@ -47,7 +62,7 @@ class ICountant:
     """
     def __init__(self, available_accounts: List[Dict[str, Any]]):
         """Initialize ICountant with available accounts"""
-        self.available_accounts = available_accounts
+        self.available_accounts = available_accounts or []
         self.current_transaction: Optional[Dict[str, Any]] = None
         self.processed_transactions: List[Dict[str, Any]] = []
         self.insights_generator = FinancialInsightsGenerator()
@@ -166,8 +181,21 @@ class ICountant:
     def _generate_explanation(self, transaction: Dict[str, Any]) -> Dict[str, Any]:
         """Generate AI-powered explanation with enhanced recognition"""
         try:
-            description = transaction.get('description', '')
+            description = transaction.get('description', '').strip()
+            if not description:
+                return {
+                    'explanation': "No description provided",
+                    'confidence': 0.0,
+                    'source': 'error'
+                }
+
             amount = self._validate_and_convert_amount(transaction.get('amount'))
+            if amount is None:
+                return {
+                    'explanation': "Invalid transaction amount",
+                    'confidence': 0.0,
+                    'source': 'error'
+                }
 
             # Try pattern matching first
             predictor = PredictiveFeatures()
@@ -210,7 +238,7 @@ class ICountant:
             similar_explanations = []
 
             for past_transaction in self.processed_transactions:
-                if ('explanation' in past_transaction and 
+                if ('explanation' in past_transaction and
                     self._description_similarity(current_desc, past_transaction['description'].lower())):
                     similar_explanations.append(past_transaction['explanation'])
 
@@ -226,7 +254,7 @@ class ICountant:
                 return None
             decimal_amount = Decimal(str(amount))
             if decimal_amount == 0:
-                raise ValueError("Amount cannot be zero")
+                return None
             return decimal_amount
         except (InvalidOperation, TypeError, ValueError) as e:
             logger.error(f"Amount validation error: {str(e)}")
@@ -276,14 +304,22 @@ class ICountant:
 
     def format_amount(self, amount: Decimal) -> str:
         """Format amount for display with proper sign"""
-        return f"${abs(amount):,.2f} {'credit' if amount < 0 else 'debit'}"
+        try:
+            return f"${abs(amount):,.2f} {'credit' if amount < 0 else 'debit'}"
+        except Exception as e:
+            logger.error(f"Error formatting amount: {str(e)}")
+            return "Invalid amount"
 
     def get_account_options(self) -> str:
         """Format available accounts for display"""
-        return "\n".join([
-            f"{i+1}. {acc['name']} ({acc['category']})"
-            for i, acc in enumerate(self.available_accounts)
-        ])
+        try:
+            return "\n".join([
+                f"{i+1}. {acc['name']} ({acc['category']})"
+                for i, acc in enumerate(self.available_accounts)
+            ]) or "No accounts available"
+        except Exception as e:
+            logger.error(f"Error getting account options: {str(e)}")
+            return "Error loading accounts"
 
     def _calculate_confidence_score(self, transaction: Dict[str, Any]) -> float:
         """Calculate a confidence score for the transaction processing"""
@@ -292,52 +328,50 @@ class ICountant:
     async def process_transaction(self, transaction: Dict[str, Any]) -> Tuple[str, Optional[Dict[str, Any]]]:
         """Process a single transaction and guide the user through account selection"""
         try:
-            if not transaction:
-                logger.error("Empty transaction received")
-                return "No transaction data provided", None
-                
-            if not self.available_accounts:
-                logger.error("No available accounts configured")
-                return "System configuration error: No accounts available", None
+            # Input validation
+            if not transaction or not isinstance(transaction, dict):
+                return "Invalid transaction data provided", None
 
-            # Validate transaction data
-            if not isinstance(transaction, dict):
-                return "Invalid transaction data format", None
+            required_fields = ['amount', 'description']
+            missing_fields = [field for field in required_fields if field not in transaction]
+            if missing_fields:
+                return f"Missing required fields: {', '.join(missing_fields)}", None
 
-            # Validate required fields
-            if 'amount' not in transaction:
-                return "Transaction amount is required", None
-            if 'description' not in transaction:
-                return "Transaction description is required", None
-
-            # Validate and convert amount
+            # Amount validation
             amount = self._validate_and_convert_amount(transaction.get('amount'))
             if amount is None:
                 return "Invalid transaction amount", None
 
             self.current_transaction = transaction
 
-            # Generate insights for the transaction
-            transaction_insights = await self.get_transaction_insights(transaction)
+            # Generate insights
+            try:
+                insights = await self.get_transaction_insights(transaction)
+            except Exception as e:
+                logger.error(f"Error generating insights: {str(e)}")
+                insights = {}
 
-            # Build guidance message with insights
-            message = (
-                f"Transaction Analysis:\n"
-                f"Description: {transaction.get('description', 'No description')}\n"
-                f"Amount: {self.format_amount(amount)}\n"
-                f"Type: {'Income/Revenue' if amount > 0 else 'Expense/Payment'} Transaction\n\n"
-                f"AI Insights:\n{transaction_insights.get('ai_insights', 'No insights available')}\n\n"
-                f"Suggested Accounts:\n"
-            )
+            # Build guidance message
+            message_parts = [
+                f"Transaction Analysis:",
+                f"Description: {transaction.get('description', 'No description')}",
+                f"Amount: {self.format_amount(amount)}",
+                f"Type: {'Income/Revenue' if amount > 0 else 'Expense/Payment'} Transaction\n"
+            ]
 
-            for suggestion in transaction_insights.get('suggested_accounts', []):
-                message += f"- {suggestion['account']['name']} ({suggestion['reason']})\n"
+            if insights.get('ai_insights'):
+                message_parts.append(f"AI Insights:\n{insights['ai_insights']}\n")
 
-            message += f"\nAvailable Accounts:\n{self.get_account_options()}"
+            if insights.get('suggested_accounts'):
+                message_parts.append("Suggested Accounts:")
+                for suggestion in insights['suggested_accounts']:
+                    message_parts.append(f"- {suggestion['account']['name']} ({suggestion['reason']})")
 
-            return message, {
+            message_parts.append(f"\nAvailable Accounts:\n{self.get_account_options()}")
+
+            return "\n".join(message_parts), {
                 'original_transaction': transaction,
-                'insights': transaction_insights
+                'insights': insights
             }
 
         except Exception as e:

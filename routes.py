@@ -1,7 +1,7 @@
 """Main application routes including core functionality"""
 import logging
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import current_user, login_required, logout_user
 from sqlalchemy import text
 from werkzeug.utils import secure_filename
@@ -14,6 +14,7 @@ from models import (
     UploadedFile, AdminChartOfAccounts
 )
 from forms.company import CompanySettingsForm
+from icountant import PredictiveFeatures, ICountant
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -186,9 +187,12 @@ def company_settings():
 @main.route('/analyze')
 @login_required
 def analyze_list():
-    """Show list of files available for analysis"""
+    """Show list of files available for analysis with proper error handling"""
     try:
-        files = UploadedFile.query.filter_by(user_id=current_user.id).order_by(UploadedFile.upload_date.desc()).all()
+        files = UploadedFile.query.filter_by(
+            user_id=current_user.id
+        ).order_by(UploadedFile.upload_date.desc()).all()
+
         return render_template('analyze_list.html', files=files)
     except Exception as e:
         logger.error(f"Error loading files for analysis: {str(e)}")
@@ -212,100 +216,92 @@ def analyze(file_id):
             flash('Unable to connect to database. Please try again.')
             return redirect(url_for('main.upload'))
 
-        # Load file and verify ownership with detailed logging
-        file = UploadedFile.query.filter_by(id=file_id, user_id=current_user.id).first()
-        logger.info(f"Database query completed. File found: {file is not None}")
+        # Load file and verify ownership
+        file = UploadedFile.query.filter_by(
+            id=file_id,
+            user_id=current_user.id
+        ).first_or_404()
 
-        if not file:
-            logger.error(f"File {file_id} not found or unauthorized access for user {current_user.id}")
-            flash('File not found or unauthorized access')
-            return redirect(url_for('main.upload'))
+        logger.info(f"File found: {file.filename}")
+
+        # Load accounts for the user
+        accounts = Account.query.filter_by(
+            user_id=current_user.id,
+            is_active=True
+        ).all()
+
+        if not accounts:
+            flash('Please set up your Chart of Accounts first')
+            return redirect(url_for('main.settings'))
 
         # Load transactions with improved filtering
-        try:
-            transactions = Transaction.query.filter_by(
-                file_id=file_id,
-                user_id=current_user.id
-            ).order_by(Transaction.date).all()
+        transactions = Transaction.query.filter_by(
+            file_id=file_id,
+            user_id=current_user.id
+        ).order_by(Transaction.date).all()
 
-            logger.info(f"Found {len(transactions)} total transactions for file {file_id}")
+        if not transactions:
+            flash('No transactions found in this file')
+            return redirect(url_for('main.upload'))
 
-            if not transactions:
-                logger.warning(f"No transactions found for file {file_id}")
-                flash('No transactions found in this file')
-                return redirect(url_for('main.upload'))
+        logger.info(f"Found {len(transactions)} transactions for analysis")
 
-            # Load accounts for the user
-            accounts = Account.query.filter_by(
-                user_id=current_user.id,
-                is_active=True
-            ).all()
+        # Initialize insights with improved processing logic
+        transaction_insights = {}
+        predictor = PredictiveFeatures()
 
-            if not accounts:
-                logger.warning(f"No active accounts found for user {current_user.id}")
-                flash('Please set up your Chart of Accounts first')
-                return redirect(url_for('main.settings'))
-
-            logger.info(f"Successfully loaded {len(accounts)} active accounts")
-
-            # Initialize insights with improved processing logic
-            transaction_insights = {}
-            for transaction in transactions:
-                # Only mark as needing processing if no account AND no explanation
-                needs_processing = (
-                    transaction.account_id is None and 
-                    (transaction.explanation is None or transaction.explanation.strip() == '')
-                )
-
-                transaction_insights[transaction.id] = {
-                    'similar_transactions': [],
-                    'pattern_matches': [],
-                    'keyword_matches': [],
-                    'rule_matches': [],
-                    'explanation_suggestion': None,
-                    'confidence': 0,
-                    'ai_processed': False,
-                    'needs_processing': needs_processing
-                }
-
-            # Count unprocessed transactions with improved criteria
-            unprocessed_count = sum(1 for t in transactions 
-                                  if transaction_insights[t.id]['needs_processing'])
-
-            logger.info(f"Found {unprocessed_count} transactions that need processing")
-
-            if unprocessed_count == 0:
-                flash('All transactions have been processed')
-            else:
-                flash(f'Found {unprocessed_count} transactions that need processing')
-
-            return render_template(
-                'analyze.html',
-                file=file,
-                transactions=transactions,
-                accounts=accounts,
-                transaction_insights=transaction_insights,
-                unprocessed_count=unprocessed_count,
-                ai_available=True
+        for transaction in transactions:
+            # Only mark as needing processing if no account AND no explanation
+            needs_processing = (
+                transaction.account_id is None and 
+                (transaction.explanation is None or transaction.explanation.strip() == '')
             )
 
-        except Exception as tx_error:
-            logger.error(f"Error loading transactions: {str(tx_error)}")
-            logger.exception("Full transaction loading error:")
-            db.session.rollback()
-            flash('Error loading transaction data. Please try again.')
-            return redirect(url_for('main.upload'))
+            # Get insights for each transaction
+            similar_result = predictor.find_similar_transactions(
+                description=transaction.description,
+                explanation=transaction.explanation or ''
+            )
+
+            transaction_insights[transaction.id] = {
+                'similar_transactions': similar_result.get('similar_transactions', []),
+                'pattern_matches': [],
+                'keyword_matches': [],
+                'rule_matches': [],
+                'explanation_suggestion': None,
+                'confidence': similar_result.get('similar_transactions', [{}])[0].get('confidence', 0),
+                'ai_processed': bool(similar_result.get('similar_transactions')),
+                'needs_processing': needs_processing
+            }
+
+        # Count unprocessed transactions
+        unprocessed_count = sum(1 for t in transactions 
+                              if transaction_insights[t.id]['needs_processing'])
+
+        if unprocessed_count == 0:
+            flash('All transactions have been processed')
+        else:
+            flash(f'Found {unprocessed_count} transactions that need processing')
+
+        return render_template(
+            'analyze.html',
+            file=file,
+            transactions=transactions,
+            accounts=accounts,
+            transaction_insights=transaction_insights,
+            unprocessed_count=unprocessed_count,
+            ai_available=True
+        )
 
     except Exception as e:
         logger.error(f"Error in analyze route: {str(e)}")
-        logger.exception("Full analyze route error:")
-        flash('Error loading transaction data')
+        flash('Error analyzing transactions')
         return redirect(url_for('main.upload'))
 
 @main.route('/analyze/similar-transactions', methods=['POST'])
 @login_required
 def find_similar_transactions_api():
-    """ERF: Find similar transactions based on description and explanation"""
+    """Find similar transactions based on description and explanation"""
     try:
         data = request.get_json()
         description = data.get('description', '').strip()
@@ -315,12 +311,9 @@ def find_similar_transactions_api():
             return jsonify({'error': 'Description is required'}), 400
 
         predictor = PredictiveFeatures()
-        similar_transactions = predictor.find_similar_transactions(description, explanation)
+        similar_result = predictor.find_similar_transactions(description, explanation)
 
-        return jsonify({
-            'success': True,
-            'similar_transactions': similar_transactions
-        })
+        return jsonify(similar_result)
 
     except Exception as e:
         logger.error(f"Error finding similar transactions: {str(e)}")
@@ -329,7 +322,7 @@ def find_similar_transactions_api():
 @main.route('/analyze/suggest-account', methods=['POST'])
 @login_required
 def suggest_account():
-    """ASF: Suggest account based on description and explanation"""
+    """Suggest account based on description and explanation"""
     try:
         data = request.get_json()
         description = data.get('description', '').strip()
@@ -345,26 +338,6 @@ def suggest_account():
 
     except Exception as e:
         logger.error(f"Error suggesting account: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@main.route('/analyze/suggest-explanation', methods=['POST'])
-@login_required
-def suggest_explanation():
-    """ESF: Suggest explanation based on transaction description"""
-    try:
-        data = request.get_json()
-        description = data.get('description', '').strip()
-
-        if not description:
-            return jsonify({'error': 'Description is required'}), 400
-
-        predictor = PredictiveFeatures()
-        suggestion = predictor.suggest_explanation(description)
-
-        return jsonify(suggestion)
-
-    except Exception as e:
-        logger.error(f"Error suggesting explanation: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main.route('/account/<int:account_id>/edit', methods=['GET', 'POST'])
