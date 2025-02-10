@@ -39,20 +39,22 @@ csrf = CSRFProtect()
 def create_app(config_name='development'):
     """Create and configure Flask application with improved error handling"""
     app = Flask(__name__)
+    app.config.from_object('config.Config')
+    db.init_app(app)
+    with app.app_context():
+        db.create_all()
+
 
     try:
         logger.info(f"Starting application with config: {config_name}")
 
-        # Load base configuration
-        app.config.from_object('config.Config')
 
         # Load environment-specific configuration
         config_class = f'config.{config_name.capitalize()}Config'
         app.config.from_object(config_class)
 
-        # Initialize extensions
+
         logger.debug("Initializing Flask extensions...")
-        db.init_app(app)
         migrate = Migrate(app, db)
         login_manager.init_app(app)
         csrf.init_app(app)
@@ -87,45 +89,6 @@ def create_app(config_name='development'):
         def index():
             return render_template('index.html')
 
-        # Initialize database
-        with app.app_context():
-            try:
-                # Test database connection
-                logger.debug("Testing database connection...")
-                db.session.execute(text('SELECT 1'))
-                db.session.commit()
-                logger.info("Database connection successful")
-
-                # Create tables if they don't exist
-                db.create_all()
-                logger.info("Database tables created successfully")
-
-            except Exception as e:
-                logger.error(f"Database initialization error: {str(e)}")
-
-                # Close any existing connections
-                db.session.remove()
-
-                if 'sqlite' not in app.config['SQLALCHEMY_DATABASE_URI']:
-                    logger.info("Switching to SQLite fallback database")
-
-                    # Configure SQLite
-                    sqlite_path = os.path.join('instance', 'dev.db')
-                    os.makedirs('instance', exist_ok=True)
-                    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
-                    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-                        'pool_pre_ping': True
-                    }
-
-                    # Reinitialize db with new configuration
-                    db.init_app(app)
-
-                    try:
-                        db.create_all()
-                        logger.info(f"Successfully initialized SQLite database at {sqlite_path}")
-                    except Exception as sqlite_err:
-                        logger.error(f"SQLite fallback failed: {str(sqlite_err)}")
-                        raise
 
         logger.info("Application initialized successfully")
         return app

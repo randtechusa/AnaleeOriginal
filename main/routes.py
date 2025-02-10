@@ -129,7 +129,13 @@ def analyze(file_id):
             file_id=file_id
         ).order_by(Transaction.date.desc()).all()
 
-        return render_template('analyze.html', file=file, transactions=transactions)
+        if not transactions:
+            flash('No transactions found in this file', 'info')
+
+        return render_template('analyze.html', 
+                             file=file, 
+                             transactions=transactions,
+                             ai_available=True)
     except Exception as e:
         logger.error(f"Error in analyze route: {str(e)}")
         flash('Error accessing file for analysis', 'error')

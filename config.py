@@ -2,47 +2,13 @@ import os
 from datetime import timedelta
 
 class Config:
-    """Base configuration"""
-    # Basic Configuration
-    SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24).hex())
-    TEMPLATES_AUTO_RELOAD = True
-
-    # Database Configuration
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-please-change'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///dev.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    db_url = os.environ.get('DATABASE_URL')
-
-    # Enhanced database connection handling
-    try:
-        if db_url:
-            # Convert postgres:// to postgresql:// if needed
-            if db_url.startswith('postgres://'):
-                db_url = db_url.replace('postgres://', 'postgresql://', 1)
-            SQLALCHEMY_DATABASE_URI = db_url
-
-            # PostgreSQL-specific engine options
-            SQLALCHEMY_ENGINE_OPTIONS = {
-                'pool_pre_ping': True,
-                'pool_size': 1,
-                'max_overflow': 0,
-                'pool_timeout': 10,
-                'pool_recycle': 1800,
-                'connect_args': {
-                    'application_name': 'icountant'
-                }
-            }
-        else:
-            # SQLite configuration
-            SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
-            SQLALCHEMY_ENGINE_OPTIONS = {
-                'pool_pre_ping': True
-            }
-
-    except Exception as e:
-        # Emergency fallback to SQLite
-        SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
-        SQLALCHEMY_ENGINE_OPTIONS = {
-            'pool_pre_ping': True
-        }
+    UPLOAD_FOLDER = 'uploads'
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
+    PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)
+    SESSION_TYPE = 'filesystem'
 
 class DevelopmentConfig(Config):
     """Development configuration"""

@@ -178,11 +178,14 @@ class ICountant:
     def _validate_and_convert_amount(self, amount) -> Optional[Decimal]:
         """Validate and convert amount to Decimal"""
         try:
-            if amount is None:
+            if amount is None or isinstance(amount, str) and not amount.strip():
                 return None
             decimal_amount = Decimal(str(amount))
-            return None if decimal_amount == 0 else decimal_amount
-        except (InvalidOperation, TypeError, ValueError):
+            if decimal_amount == 0:
+                raise ValueError("Amount cannot be zero")
+            return decimal_amount
+        except (InvalidOperation, TypeError, ValueError) as e:
+            logger.error(f"Amount validation error: {str(e)}")
             return None
 
     def _suggest_accounts(self, transaction: Dict[str, Any]) -> List[Dict[str, Any]]:
