@@ -1,12 +1,12 @@
 """Main application factory with enhanced logging and protection"""
 import os
 import logging
-from datetime import datetime
-from flask import Flask, render_template, request, flash, redirect, url_for
+from flask import Flask, render_template, flash, redirect, url_for
 from flask_migrate import Migrate
-from flask_login import LoginManager, current_user
+from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from sqlalchemy import text
+
 from models import db, User
 
 # Configure logging
@@ -24,11 +24,11 @@ login_manager = LoginManager()
 csrf = CSRFProtect()
 
 def create_app(config_name='development'):
-    """Create and configure Flask application with improved error handling"""
-    app = Flask(__name__)
-    logger.info(f"Starting application with config: {config_name}")
-
+    """Create and configure Flask application"""
     try:
+        app = Flask(__name__)
+        logger.info(f"Starting application with config: {config_name}")
+
         # Load configuration
         if isinstance(config_name, str):
             app.config.from_object(f'config.{config_name.capitalize()}Config')
@@ -42,8 +42,10 @@ def create_app(config_name='development'):
         csrf.init_app(app)
 
         login_manager.login_view = 'auth.login'
+        login_manager.login_message = 'Please log in to access this page.'
+        login_manager.login_message_category = 'info'
 
-        # Test database connection
+        # Test database connection and create tables
         with app.app_context():
             try:
                 logger.info("Testing database connection...")
@@ -53,42 +55,47 @@ def create_app(config_name='development'):
             except Exception as e:
                 logger.error(f"Database initialization error: {str(e)}")
                 if 'sqlite' not in app.config['SQLALCHEMY_DATABASE_URI']:
-                    logger.info("Switching to SQLite fallback database")
+                    logger.error("Error connecting to PostgreSQL, trying SQLite fallback...")
                     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
                     db.init_app(app)
                     db.create_all()
+                    logger.info("SQLite fallback database initialized")
+                else:
+                    raise
 
         # Register blueprints
-        blueprints = [
-            ('main.routes', 'main', ""),
-            ('auth.routes', 'auth', "/auth"),
-            ('admin.routes', 'admin', "/admin"),
-            ('chat.routes', 'chat', "/chat"),
-            ('historical_data.routes', 'historical_data', "/historical"),
-            ('recommendations.routes', 'recommendations', "/recommendations"),
-            ('risk_assessment.routes', 'risk_assessment', "/risk"),
-            ('reports.routes', 'reports', "/reports"),
-            ('suggestions.routes', 'suggestions', "/suggestions")
-        ]
+        logger.info("Registering blueprints...")
+        try:
+            from main import bp as main_bp
+            app.register_blueprint(main_bp)
+            logger.info("Registered main blueprint")
 
-        for module, name, url_prefix in blueprints:
-            try:
-                bp = __import__(module, fromlist=['bp']).bp
-                app.register_blueprint(bp, url_prefix=url_prefix)
-                logger.info(f"Registered blueprint {name} at {url_prefix}")
-            except Exception as e:
-                logger.error(f"Error registering blueprint {name}: {str(e)}")
+            from auth import bp as auth_bp
+            app.register_blueprint(auth_bp)
+            logger.info("Registered auth blueprint")
 
+            from admin import bp as admin_bp
+            app.register_blueprint(admin_bp, url_prefix='/admin')
+            logger.info("Registered admin blueprint")
+
+            from errors import errors as errors_bp
+            app.register_blueprint(errors_bp)
+            logger.info("Registered errors blueprint")
+        except Exception as e:
+            logger.error(f"Error registering blueprints: {str(e)}")
+            raise
+
+        # Error handlers
+        @app.errorhandler(404)
+        def not_found_error(error):
+            logger.warning(f"404 error: {error}")
+            return render_template('error.html', error="Page not found"), 404
 
         @app.errorhandler(500)
         def internal_error(error):
             logger.error(f"Internal Server Error: {error}")
             db.session.rollback()
             return render_template('error.html', error="An internal error occurred."), 500
-
-        @app.errorhandler(404)
-        def not_found_error(error):
-            return render_template('error.html', error="Page not found"), 404
 
         return app
 

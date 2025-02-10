@@ -1,21 +1,51 @@
-"""
-Admin routes for subscription management and system administration
-Completely isolated from core application features
-"""
-from flask import render_template, redirect, url_for, flash, request, current_app, abort, send_file, session
-from flask_login import current_user, login_required
+"""Admin routes for subscription management and system administration"""
+from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app, abort, jsonify, session
+from flask_login import login_required, current_user
 from sqlalchemy import func
 from datetime import datetime, timedelta
+import logging
 import pandas as pd
-import os
 
-from . import admin, admin_required
-from models import (db, User, AdminChartOfAccounts, Account, Transaction, 
-                         CompanySettings, UploadedFile, BankStatementUpload,
-                         FinancialGoal, AlertConfiguration, AlertHistory)
+from models import db, User, AdminChartOfAccounts, Account, Transaction, CompanySettings, UploadedFile, BankStatementUpload, FinancialGoal, AlertConfiguration, AlertHistory
 from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm, CompanySettingsForm
+from admin import admin_required
 
-@admin.route('/charts-of-accounts', methods=['GET'])
+# Create blueprint
+bp = Blueprint('admin', __name__)
+logger = logging.getLogger(__name__)
+
+@bp.route('/dashboard')
+@login_required
+@admin_required
+def dashboard():
+    """Admin dashboard showing subscription and system statistics"""
+    try:
+        # Gather subscription statistics
+        total_users = User.query.filter(User.is_admin == False).count()
+        active_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'active'
+        ).count()
+        pending_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'pending'
+        ).count()
+        deactivated_users = User.query.filter(
+            User.is_admin == False,
+            User.subscription_status == 'deactivated'
+        ).count()
+
+        return render_template('admin/dashboard.html',
+                           total_users=total_users,
+                           active_users=active_users,
+                           pending_users=pending_users,
+                           deactivated_users=deactivated_users)
+    except Exception as e:
+        logger.error(f"Error in admin dashboard: {str(e)}")
+        flash('Error loading admin dashboard', 'error')
+        return redirect(url_for('auth.login'))
+
+@bp.route('/charts-of-accounts', methods=['GET'])
 @login_required
 @admin_required
 def charts_of_accounts():
@@ -35,7 +65,7 @@ def charts_of_accounts():
                          accounts=accounts,
                          upload_errors=upload_errors)
 
-@admin.route('/charts-of-accounts/upload', methods=['POST'])
+@bp.route('/charts-of-accounts/upload', methods=['POST'])
 @login_required
 @admin_required
 def upload_chart_of_accounts():
@@ -169,7 +199,7 @@ def upload_chart_of_accounts():
 
     return redirect(url_for('admin.charts_of_accounts'))
 
-@admin.route('/charts-of-accounts/add', methods=['POST'])
+@bp.route('/charts-of-accounts/add', methods=['POST'])
 @login_required
 @admin_required
 def add_chart_of_accounts():
@@ -208,7 +238,7 @@ def add_chart_of_accounts():
 
     return redirect(url_for('admin.charts_of_accounts'))
 
-@admin.route('/charts-of-accounts/edit/<int:account_id>', methods=['GET', 'POST'])
+@bp.route('/charts-of-accounts/edit/<int:account_id>', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def edit_chart_of_accounts(account_id):
@@ -234,7 +264,7 @@ def edit_chart_of_accounts(account_id):
 
     return render_template('admin/edit_chart_of_accounts.html', form=form, account=account)
 
-@admin.route('/charts-of-accounts/delete/<int:account_id>', methods=['POST'])
+@bp.route('/charts-of-accounts/delete/<int:account_id>', methods=['POST'])
 @login_required
 @admin_required
 def delete_chart_of_accounts(account_id):
@@ -253,38 +283,7 @@ def delete_chart_of_accounts(account_id):
     return redirect(url_for('admin.charts_of_accounts'))
 
 
-@admin.route('/dashboard')
-@login_required
-@admin_required
-def dashboard():
-    """Admin dashboard showing subscription and system statistics"""
-    try:
-        # Gather subscription statistics
-        total_users = User.query.filter(User.is_admin == False).count()
-        active_users = User.query.filter(
-            User.is_admin == False,
-            User.subscription_status == 'active'
-        ).count()
-        pending_users = User.query.filter(
-            User.is_admin == False,
-            User.subscription_status == 'pending'
-        ).count()
-        deactivated_users = User.query.filter(
-            User.is_admin == False,
-            User.subscription_status == 'deactivated'
-        ).count()
-
-        return render_template('admin/dashboard.html',
-                           total_users=total_users,
-                           active_users=active_users,
-                           pending_users=pending_users,
-                           deactivated_users=deactivated_users)
-    except Exception as e:
-        current_app.logger.error(f"Error in admin dashboard: {str(e)}")
-        flash('Error loading admin dashboard', 'error')
-        return redirect(url_for('auth.login'))
-
-@admin.route('/active-subscribers')
+@bp.route('/active-subscribers')
 @login_required
 @admin_required
 def active_subscribers():
@@ -300,7 +299,7 @@ def active_subscribers():
         flash('Error loading active subscribers', 'error')
         return redirect(url_for('admin.dashboard'))
 
-@admin.route('/deactivated-subscribers')
+@bp.route('/deactivated-subscribers')
 @login_required
 @admin_required
 def deactivated_subscribers():
@@ -316,7 +315,7 @@ def deactivated_subscribers():
         flash('Error loading deactivated subscribers', 'error')
         return redirect(url_for('admin.dashboard'))
 
-@admin.route('/pending-subscribers')
+@bp.route('/pending-subscribers')
 @login_required
 @admin_required
 def pending_subscribers():
@@ -332,7 +331,7 @@ def pending_subscribers():
         flash('Error loading pending subscribers', 'error')
         return redirect(url_for('admin.dashboard'))
 
-@admin.route('/subscriber/<int:user_id>/approve', methods=['POST'])
+@bp.route('/subscriber/<int:user_id>/approve', methods=['POST'])
 @login_required
 @admin_required
 def approve_subscriber(user_id):
@@ -353,7 +352,7 @@ def approve_subscriber(user_id):
         flash('Error activating subscription', 'error')
     return redirect(url_for('admin.pending_subscribers'))
 
-@admin.route('/subscriber/<int:user_id>/deactivate', methods=['POST'])
+@bp.route('/subscriber/<int:user_id>/deactivate', methods=['POST'])
 @login_required
 @admin_required
 def deactivate_subscriber(user_id):
@@ -371,7 +370,7 @@ def deactivate_subscriber(user_id):
         flash('Error deactivating subscription', 'error')
     return redirect(url_for('admin.active_subscribers'))
 
-@admin.route('/subscriber/<int:user_id>/suspend', methods=['POST'])
+@bp.route('/subscriber/<int:user_id>/suspend', methods=['POST'])
 @login_required
 @admin_required
 def suspend_subscriber(user_id):
@@ -390,7 +389,7 @@ def suspend_subscriber(user_id):
         flash('Error suspending subscription', 'error')
     return redirect(url_for('admin.active_subscribers'))
 
-@admin.route('/subscriber/<int:user_id>/reactivate', methods=['POST'])
+@bp.route('/subscriber/<int:user_id>/reactivate', methods=['POST'])
 @login_required
 @admin_required
 def reactivate_subscriber(user_id):
@@ -409,7 +408,7 @@ def reactivate_subscriber(user_id):
         flash('Error reactivating subscription', 'error')
     return redirect(url_for('admin.deactivated_subscribers'))
 
-@admin.route('/subscription-stats')
+@bp.route('/subscription-stats')
 @login_required
 @admin_required
 def subscription_stats():
@@ -452,7 +451,7 @@ def subscription_stats():
         flash('Error loading subscription statistics', 'error')
         return redirect(url_for('admin.dashboard'))
 
-@admin.route('/subscriber/<int:user_id>/delete', methods=['POST'])
+@bp.route('/subscriber/<int:user_id>/delete', methods=['POST'])
 @login_required
 @admin_required
 def delete_subscriber(user_id):
@@ -492,6 +491,7 @@ def delete_subscriber(user_id):
             from flask_login import logout_user
             logout_user()
             
+
     except Exception as e:
         db.session.rollback()
         error_msg = str(e)

@@ -5,9 +5,12 @@ This module is completely separate from core features to ensure their protection
 from flask import Blueprint, abort, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
 from functools import wraps
+import logging
 
-# Create admin blueprint with URL prefix
-admin = Blueprint('admin', __name__, url_prefix='/admin')
+logger = logging.getLogger(__name__)
+
+# Create admin blueprint
+bp = Blueprint('admin', __name__)
 
 def admin_required(f):
     """Decorator to protect admin routes"""
@@ -31,13 +34,13 @@ def maintenance_check(f):
         return f(*args, **kwargs)
     return maintenance_check
 
-# Import routes after blueprint creation to avoid circular imports
-from . import routes
-
 # Protect all admin routes with admin_required decorator
-@admin.before_request
+@bp.before_request
 def restrict_admin_access():
     """Ensure only admin users can access admin routes"""
     if not current_user.is_authenticated or not current_user.is_admin:
         flash('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('auth.login'))
+
+# Import routes after blueprint creation to avoid circular imports
+from . import routes

@@ -7,46 +7,43 @@ from flask_login import login_required, current_user
 from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile
 from icountant import ICountant
 
-bp = Blueprint('main', __name__) # Added this line assuming it's needed
+bp = Blueprint('main', __name__)
 logger = logging.getLogger(__name__)
 
-# Predictive features implementation for routes
-class PredictiveFeatures:
-    """Local implementation of predictive features for routes"""
-    def suggest_account(self, description: str, explanation: str = ""):
-        """Suggest account based on transaction description"""
-        try:
-            suggestions = [
-                {'account': 'Bank', 'confidence': 0.9},
-                {'account': 'Cash', 'confidence': 0.7}
-            ]
-            return suggestions
-        except Exception as e:
-            logger.error(f"Error suggesting account: {str(e)}")
-            return []
-
-    def find_similar_transactions(self, description: str):
-        """Find similar transactions based on description"""
-        try:
-            similar_transactions = [
-                {
-                    'explanation': 'Standard monthly payment',
-                    'confidence': 0.95
-                }
-            ]
-            return {'success': True, 'similar_transactions': similar_transactions}
-        except Exception as e:
-            logger.error(f"Error finding similar transactions: {str(e)}")
-            return {'success': False, 'error': str(e)}
-
-@bp.route('/') # Changed from @main.route
-@bp.route('/index') # Added this route
-@login_required
+@bp.route('/')
+@bp.route('/index')
 def index():
-    """Index route"""
-    return render_template('index.html')
+    """Root route - redirects to dashboard if authenticated, otherwise to login"""
+    if current_user.is_authenticated:
+        return redirect(url_for('main.dashboard'))
+    return redirect(url_for('auth.login'))
 
-@bp.route('/analyze_list') # Changed from @main.route
+@bp.route('/dashboard')
+@login_required
+def dashboard():
+    """Main dashboard route"""
+    try:
+        # Get transactions and calculate totals
+        transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+
+        total_income = sum(t.amount for t in transactions if t.amount > 0)
+        total_expenses = sum(abs(t.amount) for t in transactions if t.amount < 0)
+
+        return render_template('dashboard.html',
+                           total_income=total_income,
+                           total_expenses=total_expenses,
+                           transaction_count=len(transactions),
+                           transactions=transactions[:5])  # Latest 5 transactions
+    except Exception as e:
+        logger.error(f"Error in dashboard route: {str(e)}")
+        flash('Error loading dashboard data', 'error')
+        return render_template('dashboard.html',
+                           total_income=0,
+                           total_expenses=0,
+                           transaction_count=0,
+                           transactions=[])
+
+@bp.route('/analyze_list')
 @login_required
 def analyze_list():
     """Route for analyze data menu - protected core functionality"""
@@ -58,7 +55,7 @@ def analyze_list():
         flash('Error accessing analysis list', 'error')
         return redirect(url_for('main.dashboard'))
 
-@bp.route('/analyze/<int:file_id>') # Changed from @main.route
+@bp.route('/analyze/<int:file_id>')
 @login_required
 def analyze(file_id):
     """Analyze a specific uploaded file"""
@@ -94,7 +91,7 @@ def analyze(file_id):
         flash('Error accessing file for analysis', 'error')
         return redirect(url_for('main.analyze_list'))
 
-@bp.route('/analyze_data', methods=['GET', 'POST']) # Changed from @main.route
+@bp.route('/analyze_data', methods=['GET', 'POST'])
 @login_required
 def analyze_data():
     """Analyze transaction data with enhanced error handling"""
@@ -115,7 +112,7 @@ def analyze_data():
                     similar = predictor.find_similar_transactions(transaction.description)
                     if similar.get('success') and similar.get('similar_transactions'):
                         best_match = max(similar['similar_transactions'], 
-                                    key=lambda x: x.get('confidence', 0))
+                                        key=lambda x: x.get('confidence', 0))
                         if best_match.get('confidence', 0) > 0.85:
                             transaction.explanation = best_match['explanation']
                             transaction.explanation_confidence = best_match['confidence']
@@ -144,7 +141,7 @@ def analyze_data():
         flash('Error analyzing transaction data', 'error')
         return redirect(url_for('main.analyze_list'))
 
-@bp.route('/icountant', methods=['GET', 'POST']) # Changed from @main.route
+@bp.route('/icountant', methods=['GET', 'POST'])
 @login_required
 def icountant():
     """iCountant Assistant route with enhanced error handling"""
@@ -197,57 +194,7 @@ def icountant():
         flash('Error accessing iCountant Assistant', 'error')
         return redirect(url_for('main.dashboard'))
 
-@bp.route('/dashboard') # Changed from @main.route
-@login_required
-def dashboard():
-    """Main dashboard route"""
-    try:
-        # Get transactions and calculate totals
-        transactions = Transaction.query.filter_by(user_id=current_user.id).all()
-
-        total_income = sum(t.amount for t in transactions if t.amount > 0)
-        total_expenses = sum(abs(t.amount) for t in transactions if t.amount < 0)
-
-        return render_template('dashboard.html',
-                            total_income=total_income,
-                            total_expenses=total_expenses,
-                            transaction_count=len(transactions),
-                            transactions=transactions[:5])  # Latest 5 transactions
-    except Exception as e:
-        logger.error(f"Error in dashboard route: {str(e)}")
-        flash('Error loading dashboard data', 'error')
-        return render_template('dashboard.html',
-                            total_income=0,
-                            total_expenses=0,
-                            transaction_count=0,
-                            transactions=[])
-
-@bp.route('/edit_account/<int:account_id>', methods=['GET', 'POST']) # Changed from @main.route
-@login_required
-def edit_account(account_id):
-    """Edit an existing account"""
-    account = Account.query.get_or_404(account_id)
-
-    if account.user_id != current_user.id:
-        abort(403)
-
-    if request.method == 'POST':
-        account.name = request.form.get('name')
-        account.category = request.form.get('category')
-        account.sub_category = request.form.get('sub_category')
-
-        try:
-            db.session.commit()
-            flash('Account updated successfully', 'success')
-            return redirect(url_for('main.settings'))
-        except Exception as e:
-            db.session.rollback()
-            flash('Error updating account', 'error')
-
-    return render_template('edit_account.html', account=account)
-
-
-@bp.route('/settings', methods=['GET', 'POST']) # Changed from @main.route
+@bp.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
     """Protected Chart of Accounts management"""
@@ -292,12 +239,12 @@ def settings():
         flash('Error accessing Chart of Accounts. Please try again.', 'error')
         return redirect(url_for('main.dashboard'))
 
-@bp.route('/admin_dashboard') # Changed from @main.route
+@bp.route('/admin_dashboard')
 @login_required
 def admin_dashboard():
     return render_template('admin/dashboard.html')
 
-@bp.route('/company_settings') # Changed from @main.route
+@bp.route('/company_settings')
 @login_required
 def company_settings():
     """Company settings route"""
@@ -309,7 +256,7 @@ def company_settings():
         flash('Error accessing company settings', 'error')
         return redirect(url_for('main.dashboard'))
 
-@bp.route('/financial_insights') # Changed from @main.route
+@bp.route('/financial_insights')
 @login_required
 def financial_insights():
     """Financial insights dashboard route"""
@@ -320,7 +267,7 @@ def financial_insights():
         flash('Error accessing Financial Insights', 'error')
         return redirect(url_for('main.dashboard'))
 
-@bp.route('/analyze/suggest-account', methods=['POST']) # Changed from @main.route
+@bp.route('/analyze/suggest-account', methods=['POST'])
 @login_required
 def suggest_account():
     """ASF: Get account suggestions with enhanced error handling"""
@@ -344,7 +291,7 @@ def suggest_account():
         logger.error(f"Error in suggest_account route: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@bp.route('/upload', methods=['GET', 'POST']) # Changed from @main.route
+@bp.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
     """Route for uploading data with improved error handling"""
@@ -412,7 +359,7 @@ def handle_file_upload(file, account_id):
         flash(str(e), 'error')
         return redirect(url_for('main.upload'))
 
-@bp.route('/icountant_interface', methods=['GET', 'POST']) # Changed from @main.route
+@bp.route('/icountant_interface', methods=['GET', 'POST'])
 @login_required
 def icountant_interface():
     """Handle iCountant interface interactions"""
@@ -422,3 +369,31 @@ def icountant_interface():
         logger.error(f"Error in iCountant interface: {str(e)}", exc_info=True)
         flash('Error processing request', 'error')
         return redirect(url_for('main.dashboard'))
+
+class PredictiveFeatures:
+    """Local implementation of predictive features for routes"""
+    def suggest_account(self, description: str, explanation: str = ""):
+        """Suggest account based on transaction description"""
+        try:
+            suggestions = [
+                {'account': 'Bank', 'confidence': 0.9},
+                {'account': 'Cash', 'confidence': 0.7}
+            ]
+            return suggestions
+        except Exception as e:
+            logger.error(f"Error suggesting account: {str(e)}")
+            return []
+
+    def find_similar_transactions(self, description: str):
+        """Find similar transactions based on description"""
+        try:
+            similar_transactions = [
+                {
+                    'explanation': 'Standard monthly payment',
+                    'confidence': 0.95
+                }
+            ]
+            return {'success': True, 'similar_transactions': similar_transactions}
+        except Exception as e:
+            logger.error(f"Error finding similar transactions: {str(e)}")
+            return {'success': False, 'error': str(e)}
