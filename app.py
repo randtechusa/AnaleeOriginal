@@ -6,7 +6,9 @@ from flask_migrate import Migrate
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from sqlalchemy import text
-from models import db, User, init_db
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy()
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 # Configure logging
@@ -25,20 +27,16 @@ migrate = Migrate()
 def init_database(app):
     """Initialize database with retry mechanism"""
     logger.info("Initializing database...")
-
+    
     try:
+        db.init_app(app)
         with app.app_context():
-            # Test connection
-            try:
-                db.session.execute(text('SELECT 1'))
-                db.session.commit()
-                logger.info("Database connection test successful")
-                return True
-
-            except SQLAlchemyError as db_error:
-                logger.error(f"Database operation failed: {str(db_error)}")
-                raise
-
+            db.create_all()
+            db.session.execute(text('SELECT 1'))
+            db.session.commit()
+            logger.info("Database connection test successful")
+            return True
+            
     except OperationalError as e:
         logger.warning(f"Database connection failed: {str(e)}")
         # Configure SQLite fallback
@@ -78,6 +76,11 @@ def create_app(config_name='development'):
             app.config.from_object(f'config.{config_name.capitalize()}Config')
         else:
             app.config.update(config_name)
+            
+        # Ensure SQLALCHEMY_DATABASE_URI is set
+        if not app.config.get('SQLALCHEMY_DATABASE_URI'):
+            app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
+            app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
         # Ensure SQLALCHEMY_DATABASE_URI is set
         if 'SQLALCHEMY_DATABASE_URI' not in app.config:
