@@ -26,9 +26,15 @@ csrf = CSRFProtect()
 
 def create_app(config_name='development'):
     """Create and configure Flask application with improved error handling"""
+    app = Flask(__name__)
+    logger.info(f"Starting application with config: {config_name}")
+    
     try:
-        app = Flask(__name__)
-        logger.info(f"Starting application with config: {config_name}")
+        # Load configuration
+        if isinstance(config_name, str):
+            app.config.from_object(f'config.{config_name.capitalize()}Config')
+        else:
+            app.config.from_object(config_name)
 
         # Load configuration
         app.config.from_object(f'config.{config_name.capitalize()}Config')

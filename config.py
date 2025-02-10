@@ -5,22 +5,21 @@ import time
 from datetime import timedelta
 
 def get_db_url():
-    """Get database URL with retry logic"""
-    max_retries = 3
-    retry_delay = 5
+    """Get database URL with enhanced retry logic and fallback"""
+    max_retries = 5
+    retry_delay = 3
+    
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        return 'sqlite:///instance/dev.db'
+
+    # Convert old postgres:// URLs to postgresql://
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
 
     for attempt in range(max_retries):
         try:
-            database_url = os.environ.get('DATABASE_URL')
-            if not database_url:
-                return None
-
-            # Convert old postgres:// URLs to postgresql://
-            if database_url.startswith('postgres://'):
-                database_url = database_url.replace('postgres://', 'postgresql://', 1)
-
-            # Test connection
-            engine = create_engine(database_url)
+            engine = create_engine(database_url, pool_pre_ping=True)
             with engine.connect() as conn:
                 conn.execute("SELECT 1")
             return database_url

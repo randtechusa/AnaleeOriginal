@@ -293,7 +293,12 @@ class ICountant:
         """Process a single transaction and guide the user through account selection"""
         try:
             if not transaction:
+                logger.error("Empty transaction received")
                 return "No transaction data provided", None
+                
+            if not self.available_accounts:
+                logger.error("No available accounts configured")
+                return "System configuration error: No accounts available", None
 
             # Validate transaction data
             if not isinstance(transaction, dict):
