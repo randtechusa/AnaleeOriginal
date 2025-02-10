@@ -1,26 +1,32 @@
-"""Database models for the application"""
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import UserMixin
+"""Database models for the application with enhanced documentation"""
 from datetime import datetime
+from flask_login import UserMixin
+from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
 
 class User(UserMixin, db.Model):
-    """User authentication and profile model"""
+    """User model for authentication and profile management"""
     __tablename__ = 'users'
+
+    # Core fields
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128))
+
+    # Status fields
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
 
     def set_password(self, password):
+        """Hash and set user password"""
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
+        """Verify user password"""
         return check_password_hash(self.password_hash, password)
 
     @property
@@ -35,33 +41,45 @@ class User(UserMixin, db.Model):
         return str(self.id)
 
 class Account(db.Model):
-    """Financial account model"""
+    """Financial account model for tracking different account types"""
     __tablename__ = 'accounts'
+
+    # Core fields
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     type = db.Column(db.String(50), nullable=False)
     code = db.Column(db.String(20), unique=True, nullable=False)
     description = db.Column(db.String(200))
+
+    # Metadata
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
+    # Relationships
     user = db.relationship('User', backref=db.backref('accounts', lazy=True))
 
 class Transaction(db.Model):
-    """Financial transaction model with enhanced explanation support"""
+    """Financial transaction model with AI-enhanced explanation support"""
     __tablename__ = 'transactions'
+
+    # Core fields
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     date = db.Column(db.DateTime, nullable=False)
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     description = db.Column(db.String(200))
+
+    # AI-enhanced fields
     explanation = db.Column(db.String(500))
     explanation_confidence = db.Column(db.Float, default=0.0)
     explanation_source = db.Column(db.String(50))
-    similar_transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'), nullable=True)
+    similar_transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'))
+
+    # Metadata
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Relationships
     user = db.relationship('User', backref=db.backref('transactions', lazy=True))
     similar_transaction = db.relationship('Transaction', remote_side=[id])
 

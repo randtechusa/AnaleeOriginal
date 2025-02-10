@@ -1,3 +1,4 @@
+
 """Main application factory with enhanced logging and protection"""
 import os
 import logging
@@ -5,8 +6,6 @@ from flask import Flask, render_template, flash, redirect, url_for
 from flask_migrate import Migrate
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
-from sqlalchemy import text
-
 from models import db, User
 
 # Configure logging
@@ -45,57 +44,53 @@ def create_app(config_name='development'):
         login_manager.login_message = 'Please log in to access this page.'
         login_manager.login_message_category = 'info'
 
-        # Initialize database
-        with app.app_context():
-            try:
-                logger.info("Initializing database...")
-                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
-                db.init_app(app)
-                db.create_all()
-                logger.info("Database initialized successfully")
-            except Exception as e:
-                logger.error(f"Database initialization error: {str(e)}")
-                raise
-
         # Register blueprints
         logger.info("Registering blueprints...")
-        try:
-            from main import bp as main_bp
-            app.register_blueprint(main_bp)
-            logger.info("Registered main blueprint")
+        register_blueprints(app)
 
-            from auth import bp as auth_bp
-            app.register_blueprint(auth_bp)
-            logger.info("Registered auth blueprint")
-
-            from admin import bp as admin_bp
-            app.register_blueprint(admin_bp, url_prefix='/admin')
-            logger.info("Registered admin blueprint")
-
-            from errors import errors as errors_bp
-            app.register_blueprint(errors_bp)
-            logger.info("Registered errors blueprint")
-        except Exception as e:
-            logger.error(f"Error registering blueprints: {str(e)}")
-            raise
-
-        # Error handlers
-        @app.errorhandler(404)
-        def not_found_error(error):
-            logger.warning(f"404 error: {error}")
-            return render_template('error.html', error="Page not found"), 404
-
-        @app.errorhandler(500)
-        def internal_error(error):
-            logger.error(f"Internal Server Error: {error}")
-            db.session.rollback()
-            return render_template('error.html', error="An internal error occurred."), 500
+        # Register error handlers
+        register_error_handlers(app)
 
         return app
 
     except Exception as e:
         logger.error(f"Application creation failed: {str(e)}")
         raise
+
+def register_blueprints(app):
+    """Register Flask blueprints"""
+    try:
+        from main import bp as main_bp
+        app.register_blueprint(main_bp)
+        logger.info("Registered main blueprint")
+
+        from auth import bp as auth_bp
+        app.register_blueprint(auth_bp)
+        logger.info("Registered auth blueprint")
+
+        from admin import bp as admin_bp
+        app.register_blueprint(admin_bp, url_prefix='/admin')
+        logger.info("Registered admin blueprint")
+
+        from errors import bp as errors_bp
+        app.register_blueprint(errors_bp)
+        logger.info("Registered errors blueprint")
+    except Exception as e:
+        logger.error(f"Error registering blueprints: {str(e)}")
+        raise
+
+def register_error_handlers(app):
+    """Register error handlers"""
+    @app.errorhandler(404)
+    def not_found_error(error):
+        logger.warning(f"404 error: {error}")
+        return render_template('error.html', error="Page not found"), 404
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        logger.error(f"Internal Server Error: {error}")
+        db.session.rollback()
+        return render_template('error.html', error="An internal error occurred."), 500
 
 @login_manager.user_loader
 def load_user(user_id):
