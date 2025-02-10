@@ -1,3 +1,33 @@
+
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
+import time
+
+def get_db_url():
+    """Get database URL with retry logic"""
+    max_retries = 3
+    retry_delay = 5
+    
+    for attempt in range(max_retries):
+        try:
+            database_url = os.environ.get('DATABASE_URL')
+            if not database_url:
+                raise ValueError("DATABASE_URL environment variable not set")
+                
+            engine = create_engine(database_url)
+            # Test connection
+            with engine.connect() as conn:
+                conn.execute("SELECT 1")
+            return database_url
+            
+        except (OperationalError, ValueError) as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(retry_delay)
+            
+    return None
+
 import os
 from datetime import timedelta
 

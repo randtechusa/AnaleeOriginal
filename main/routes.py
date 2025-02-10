@@ -120,7 +120,7 @@ def analyze(file_id):
         if not file_id:
             flash('Invalid file ID', 'error')
             return redirect(url_for('main.analyze_list'))
-            
+
         file = UploadedFile.query.get_or_404(file_id)
         if not os.path.exists(file.filepath):
             flash('File not found on server', 'error')
@@ -162,7 +162,7 @@ def analyze_data():
         if not transactions:
             flash('No transactions found to analyze', 'info')
             return redirect(url_for('main.analyze_list'))
-            
+
         processed_count = 0
         total_count = len(transactions)
 

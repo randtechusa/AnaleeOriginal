@@ -65,7 +65,7 @@ class ICountant:
             if not transaction:
                 logger.error("Empty transaction provided")
                 return {}
-                
+
             # Fallback to pattern matching if AI services fail
             try:
                 insights = await self._get_ai_insights(transaction)
