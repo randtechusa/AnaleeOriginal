@@ -30,29 +30,27 @@ csrf = CSRFProtect()
     reraise=True
 )
 def init_database(app):
-    """Initialize database with enhanced retry logic"""
+    """Initialize database with SQLite fallback"""
     try:
         logger.info("Initializing database connection...")
         with app.app_context():
-            # Test connection
-            db.session.execute(text('SELECT 1'))
-            db.session.commit()
-            logger.info("Database connection successful")
-
-            # Create tables if they don't exist
+            try:
+                # Test PostgreSQL connection
+                db.session.execute(text('SELECT 1'))
+                db.session.commit()
+                logger.info("PostgreSQL connection successful")
+            except OperationalError as e:
+                logger.warning(f"PostgreSQL connection failed: {str(e)}")
+                logger.info("Falling back to SQLite database")
+                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
+                db.init_app(app)
+            
+            # Create tables
             db.create_all()
             logger.info("Database tables created successfully")
             return True
-    except OperationalError as e:
-        logger.error(f"Database operational error: {str(e)}")
-        if "endpoint is disabled" in str(e):
-            logger.error("Database endpoint is disabled. Please ensure the database is active")
-        raise
-    except SQLAlchemyError as e:
-        logger.error(f"Database error: {str(e)}")
-        raise
     except Exception as e:
-        logger.error(f"Unexpected error during database initialization: {str(e)}")
+        logger.error(f"Database initialization failed: {str(e)}")
         raise
 
 def create_app(config_name='development'):
