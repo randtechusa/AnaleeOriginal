@@ -23,6 +23,9 @@ class Config:
             'connect_timeout': 5
         }
     }
+    SQLALCHEMY_POOL_RECYCLE = 280
+    SQLALCHEMY_POOL_TIMEOUT = 20
+    SQLALCHEMY_MAX_OVERFLOW = 5
 
     # Session configuration
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)

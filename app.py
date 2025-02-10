@@ -1,4 +1,5 @@
-"""Main application factory with enhanced logging and protection"""
+
+"""Main application factory with enhanced database management"""
 import os
 import logging
 from flask import Flask
@@ -13,10 +14,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.FileHandler('app.log'), logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -24,36 +22,47 @@ logger = logging.getLogger(__name__)
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
-def init_database(app):
-    """Initialize database with proper error handling"""
+def init_database(app, retries=1):
+    """Initialize database with retry mechanism"""
     try:
-        # Initialize SQLAlchemy
-        db.init_app(app)
-
-        # Test database connection
+        if not hasattr(db, 'engine') or db.engine is None:
+            db.init_app(app)
+            
+        # Test connection
         with app.app_context():
             db.session.execute(text('SELECT 1'))
             db.session.commit()
-            logger.info("Database connection successful")
-            return True
+            db.create_all()
+            logger.info("Database initialized successfully")
+        return True
     except Exception as e:
-        logger.error(f"Database initialization failed: {str(e)}")
-        return False
+        if retries > 0 and isinstance(e, OperationalError):
+            logger.warning(f"Database connection failed, attempting SQLite fallback: {str(e)}")
+            # Configure SQLite fallback
+            sqlite_path = os.path.join(app.instance_path, 'dev.db')
+            app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+            os.makedirs(app.instance_path, exist_ok=True)
+            
+            # Clear existing binds and dispose engine
+            db.session.remove()
+            if hasattr(db, 'engine'):
+                db.engine.dispose()
+            
+            return init_database(app, retries - 1)
+        else:
+            logger.error(f"Database initialization failed: {str(e)}")
+            return False
 
 def create_app(config_name='development'):
     """Create and configure Flask application"""
     try:
-        # Create Flask app
         app = Flask(__name__)
-
+        
         # Load configuration
         if isinstance(config_name, str):
             app.config.from_object(f'config.{config_name.capitalize()}Config')
         else:
             app.config.update(config_name)
-
-        # Ensure instance folder exists
-        os.makedirs('instance', exist_ok=True)
 
         # Initialize extensions
         login_manager.init_app(app)
@@ -64,18 +73,12 @@ def create_app(config_name='development'):
 
         # Initialize database
         if not init_database(app):
-            # Try SQLite fallback
-            sqlite_path = os.path.join(app.instance_path, 'dev.db')
-            app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
-            logger.info(f"Attempting SQLite fallback at {sqlite_path}")
-
-            if not init_database(app):
-                raise Exception("Both PostgreSQL and SQLite initialization failed")
+            logger.error("Failed to initialize database")
+            return None
 
         # Initialize migrations
         Migrate(app, db)
-        logger.info("Database migrations initialized")
-
+        
         # Register blueprints
         logger.info("Registering blueprints...")
         from main import bp as main_bp
@@ -90,7 +93,6 @@ def create_app(config_name='development'):
         from errors import bp as errors_bp
         app.register_blueprint(errors_bp)
 
-        logger.info("Application initialization complete")
         return app
 
     except Exception as e:
