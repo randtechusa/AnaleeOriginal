@@ -45,23 +45,17 @@ def create_app(config_name='development'):
         login_manager.login_message = 'Please log in to access this page.'
         login_manager.login_message_category = 'info'
 
-        # Test database connection and create tables
+        # Initialize database
         with app.app_context():
             try:
-                logger.info("Testing database connection...")
-                db.session.execute(text('SELECT 1'))
+                logger.info("Initializing database...")
+                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
+                db.init_app(app)
                 db.create_all()
                 logger.info("Database initialized successfully")
             except Exception as e:
                 logger.error(f"Database initialization error: {str(e)}")
-                if 'sqlite' not in app.config['SQLALCHEMY_DATABASE_URI']:
-                    logger.error("Error connecting to PostgreSQL, trying SQLite fallback...")
-                    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
-                    db.init_app(app)
-                    db.create_all()
-                    logger.info("SQLite fallback database initialized")
-                else:
-                    raise
+                raise
 
         # Register blueprints
         logger.info("Registering blueprints...")

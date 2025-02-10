@@ -8,12 +8,11 @@ import pandas as pd
 
 from models import db, User, AdminChartOfAccounts, Account, Transaction, CompanySettings, UploadedFile, BankStatementUpload, FinancialGoal, AlertConfiguration, AlertHistory
 from .forms import AdminChartOfAccountsForm, ChartOfAccountsUploadForm, CompanySettingsForm
-from admin import admin_required
+from admin import admin_required, bp
 
-# Create blueprint
-bp = Blueprint('admin', __name__)
 logger = logging.getLogger(__name__)
 
+# Routes using the blueprint from __init__.py
 @bp.route('/dashboard')
 @login_required
 @admin_required
@@ -490,7 +489,7 @@ def delete_subscriber(user_id):
         if current_user.id == user.id:
             from flask_login import logout_user
             logout_user()
-            
+
 
     except Exception as e:
         db.session.rollback()
