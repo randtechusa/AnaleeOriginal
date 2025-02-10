@@ -5,7 +5,20 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Initialize SQLAlchemy with proper session handling
-db = SQLAlchemy()
+db = SQLAlchemy(session_options={
+    'autocommit': False,
+    'autoflush': False,
+    'expire_on_commit': False
+})
+
+def init_db(app):
+    """Initialize database with the Flask app"""
+    db.init_app(app)
+
+    with app.app_context():
+        # Create tables if they don't exist
+        db.create_all()
+        return True
 
 class User(UserMixin, db.Model):
     """User model for authentication and profile management"""

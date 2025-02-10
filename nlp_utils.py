@@ -5,21 +5,9 @@ Enhanced with proper type checking, validation, and comprehensive features
 import os
 import sys
 from openai import OpenAI
-
-def clean_text(text: str) -> str:
-    """Clean and sanitize text input for API calls"""
-    try:
-        # Remove special characters and excessive whitespace
-        cleaned = ' '.join(str(text).split())
-        # Truncate if too long to avoid token limits
-        return cleaned[:1000] if len(cleaned) > 1000 else cleaned
-    except Exception as e:
-        logger.error(f"Error cleaning text: {str(e)}")
-        return str(text)
-
-from tenacity import retry, stop_after_attempt, wait_exponential
 import logging
-from typing import Optional, Tuple
+from tenacity import retry, stop_after_attempt, wait_exponential
+from typing import Optional
 from datetime import datetime, timedelta
 import time
 from collections import deque
@@ -44,12 +32,8 @@ def get_openai_client() -> Optional[OpenAI]:
     """Get OpenAI client with improved error handling and state tracking"""
     global _openai_client, _last_client_error, _last_client_init, _client_error_count
 
-    logger.debug("Entering get_openai_client()")
-    logger.debug(f"Initial state - Client exists: {_openai_client is not None}, Error count: {_client_error_count}")
-
     try:
         if _openai_client is not None:
-            logger.debug("Returning existing OpenAI client instance")
             return _openai_client
 
         api_key = os.environ.get('OPENAI_API_KEY')
@@ -57,40 +41,34 @@ def get_openai_client() -> Optional[OpenAI]:
             logger.error("OpenAI API key not found in environment variables")
             return None
 
-        logger.debug("Attempting OpenAI client initialization")
-        try:
-            _openai_client = OpenAI(api_key=api_key)
-            logger.debug("Basic client initialization successful")
+        # Initialize client without proxies
+        _openai_client = OpenAI(api_key=api_key)
 
-            # Verify client with API call
-            logger.debug("Verifying client with test API call")
-            _openai_client.models.list(limit=1)
-            logger.info("Client verification successful")
+        # Verify client with API call
+        _openai_client.models.list(limit=1)
 
-            _last_client_init = time.time()
-            _client_error_count = 0
-            logger.debug(f"Client initialized at: {_last_client_init}")
-            return _openai_client
-
-        except Exception as e:
-            logger.error(f"Client initialization/verification failed: {str(e)}")
-            _client_error_count += 1
-            _last_client_error = str(e)
-            _openai_client = None
-            return None
-
-    except Exception as outer_e:
-        logger.error(f"Unexpected error in get_openai_client: {str(outer_e)}")
-        return None
-        logger.info("OpenAI client fully initialized and ready")
-
+        _last_client_init = time.time()
+        _client_error_count = 0
+        logger.info("OpenAI client initialized successfully")
         return _openai_client
 
     except Exception as e:
+        logger.error(f"Error in get_openai_client: {str(e)}")
         _last_client_error = str(e)
         _client_error_count += 1
-        logger.error(f"OpenAI client initialization failed: {str(e)}")
+        _openai_client = None
         return None
+
+def clean_text(text: str) -> str:
+    """Clean and sanitize text input for API calls"""
+    try:
+        # Remove special characters and excessive whitespace
+        cleaned = ' '.join(str(text).split())
+        # Truncate if too long to avoid token limits
+        return cleaned[:1000] if len(cleaned) > 1000 else cleaned
+    except Exception as e:
+        logger.error(f"Error cleaning text: {str(e)}")
+        return str(text)
 
 # Rate limiting configuration
 RATE_LIMIT_REQUESTS = 50  # requests per minute
@@ -139,7 +117,7 @@ Format: category|confidence|explanation"""
     wait=wait_exponential(multiplier=1, min=4, max=10),
     reraise=True
 )
-def categorize_transaction(description: str) -> Tuple[str, float, str]:
+def categorize_transaction(description: str) -> tuple[str, float, str]:
     """
     Use OpenAI to categorize a financial transaction with explanation
     Returns: (category, confidence, explanation)

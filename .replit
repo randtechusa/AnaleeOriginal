@@ -112,7 +112,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "FLASK_DEBUG=1 python app.py"
+args = "python app.py"
 waitForPort = 5000
 
 [deployment]
