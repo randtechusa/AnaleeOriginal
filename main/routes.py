@@ -117,7 +117,14 @@ def dashboard():
 def analyze(file_id):
     """Analyze a specific uploaded file"""
     try:
+        if not file_id:
+            flash('Invalid file ID', 'error')
+            return redirect(url_for('main.analyze_list'))
+            
         file = UploadedFile.query.get_or_404(file_id)
+        if not os.path.exists(file.filepath):
+            flash('File not found on server', 'error')
+            return redirect(url_for('main.analyze_list'))
 
         # Verify file belongs to current user
         if file.user_id != current_user.id:
@@ -147,7 +154,15 @@ def analyze_data():
     """Analyze transaction data with enhanced error handling"""
     try:
         predictor = PredictiveFeatures()
+        if not predictor:
+            flash('Prediction service initialization failed', 'error')
+            return redirect(url_for('main.analyze_list'))
+
         transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+        if not transactions:
+            flash('No transactions found to analyze', 'info')
+            return redirect(url_for('main.analyze_list'))
+            
         processed_count = 0
         total_count = len(transactions)
 
