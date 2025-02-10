@@ -1,14 +1,13 @@
 """Main application factory with enhanced logging and protection"""
 import os
 import logging
-from flask import Flask, render_template
+from flask import Flask
 from flask_migrate import Migrate
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from sqlalchemy import text
 from models import db, User
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Configure logging
 logging.basicConfig(
@@ -21,12 +20,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize Flask extensions
 login_manager = LoginManager()
 csrf = CSRFProtect()
+
+def init_database(app):
+    """Initialize database with proper error handling"""
+    try:
+        # Initialize SQLAlchemy
+        db.init_app(app)
+
+        # Test database connection
+        with app.app_context():
+            db.session.execute(text('SELECT 1'))
+            db.session.commit()
+            logger.info("Database connection successful")
+            return True
+    except Exception as e:
+        logger.error(f"Database initialization failed: {str(e)}")
+        return False
 
 def create_app(config_name='development'):
     """Create and configure Flask application"""
     try:
+        # Create Flask app
         app = Flask(__name__)
 
         # Load configuration
@@ -36,96 +53,49 @@ def create_app(config_name='development'):
             app.config.update(config_name)
 
         # Ensure instance folder exists
-        if not os.path.exists('instance'):
-            os.makedirs('instance')
+        os.makedirs('instance', exist_ok=True)
 
         # Initialize extensions
-        db.init_app(app)
-        Migrate(app, db)
         login_manager.init_app(app)
         csrf.init_app(app)
-
         login_manager.login_view = 'auth.login'
         login_manager.login_message = 'Please log in to access this page.'
         login_manager.login_message_category = 'info'
 
-        with app.app_context():
-            try:
-                # Test database connection
+        # Initialize database
+        if not init_database(app):
+            # Try SQLite fallback
+            sqlite_path = os.path.join(app.instance_path, 'dev.db')
+            app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+            logger.info(f"Attempting SQLite fallback at {sqlite_path}")
 
-                def init_database(app):
-                    """Initialize database with enhanced fallback handling"""
-                    try:
-                        logger.info("Initializing database connection...")
-                        with app.app_context():
-                            # First try PostgreSQL
-                            if 'postgres' in app.config['SQLALCHEMY_DATABASE_URI']:
-                                try:
-                                    db.session.execute(text('SELECT 1'))
-                                    db.session.commit()
-                                    logger.info("PostgreSQL connection successful")
-                                    db.create_all()
-                                    return True
-                                except Exception as e:
-                                    logger.warning(f"PostgreSQL connection failed: {str(e)}")
-                                    # Clean up failed PostgreSQL connection
-                                    db.session.remove()
-                                    db.engine.dispose()
+            if not init_database(app):
+                raise Exception("Both PostgreSQL and SQLite initialization failed")
 
-                            # Fallback to SQLite
-                            logger.info("Configuring SQLite database")
-                            sqlite_path = os.path.join(app.instance_path, 'dev.db')
-                            os.makedirs(app.instance_path, exist_ok=True)
-
-                            app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
-                            db.init_app(app)
-
-                            # Initialize SQLite
-                            db.create_all()
-                            logger.info("SQLite database initialized successfully")
-                            return True
-                    except Exception as e:
-                        logger.error(f"Database initialization failed: {str(e)}")
-                        return False
-
-                if not init_database(app):
-                    logger.error("Failed to initialize database. Exiting.")
-                    return None
-
-
-            except Exception as e:
-                logger.error(f"Database connection error: {str(e)}")
-                return None
-
+        # Initialize migrations
+        Migrate(app, db)
+        logger.info("Database migrations initialized")
 
         # Register blueprints
         logger.info("Registering blueprints...")
-
-        # Main blueprint
         from main import bp as main_bp
         app.register_blueprint(main_bp)
-        logger.info("Registered main blueprint")
 
-        # Auth blueprint
         from auth import bp as auth_bp
         app.register_blueprint(auth_bp)
-        logger.info("Registered auth blueprint")
 
-        # Admin blueprint
         from admin import bp as admin_bp
         app.register_blueprint(admin_bp, url_prefix='/admin')
-        logger.info("Registered admin blueprint")
 
-        # Errors blueprint
         from errors import bp as errors_bp
         app.register_blueprint(errors_bp)
-        logger.info("Registered errors blueprint")
 
+        logger.info("Application initialization complete")
         return app
 
     except Exception as e:
         logger.error(f"Application creation failed: {str(e)}")
-        raise
+        return None
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -138,5 +108,8 @@ def load_user(user_id):
 
 if __name__ == '__main__':
     app = create_app()
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    if app:
+        port = int(os.environ.get('PORT', 5000))
+        app.run(host='0.0.0.0', port=port)
+    else:
+        logger.error("Failed to create application")

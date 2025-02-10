@@ -5,23 +5,14 @@ class Config:
     """Base configuration"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
 
-    # Database configuration with enhanced connection handling
+    # Database configuration with URL normalization
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///instance/dev.db')
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
-    
-    # Enhanced SQLAlchemy configuration
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-        'connect_args': {
-            'connect_timeout': 5
-        }
-    }
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # Enhanced SQLAlchemy configuration with more resilient settings
+    # SQLAlchemy connection pool configuration
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
         'pool_size': 5,
@@ -29,48 +20,37 @@ class Config:
         'pool_recycle': 300,
         'max_overflow': 10,
         'connect_args': {
-            'connect_timeout': 5,
-            'application_name': 'icountant',
-            'keepalives': 1,
-            'keepalives_idle': 30,
-            'keepalives_interval': 10,
-            'keepalives_count': 5
+            'connect_timeout': 5
         }
     }
-
-    # File upload configuration
-    UPLOAD_FOLDER = 'uploads'
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
 
     # Session configuration
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)
     SESSION_TYPE = 'filesystem'
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
     TESTING = False
 
-    # Pattern matching configuration
-    PATTERN_MATCHING = {
-        'min_similarity_score': 0.85,
-        'max_suggestions': 5,
-        'cache_timeout': timedelta(hours=1),
-        'use_ai_threshold': 0.7
-    }
-
-    # AI Configuration
-    AI_CONFIG = {
-        'max_retries': 3,
-        'timeout': 30,
-        'batch_size': 5,
-        'confidence_threshold': 0.85
+    # Development-specific database options
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        **Config.SQLALCHEMY_ENGINE_OPTIONS,
+        'echo': True  # Enable SQL query logging
     }
 
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
     TESTING = False
+
+    # Production-specific database options
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        **Config.SQLALCHEMY_ENGINE_OPTIONS,
+        'pool_size': 10,
+        'max_overflow': 20
+    }
 
 class TestingConfig(Config):
     """Testing configuration"""
