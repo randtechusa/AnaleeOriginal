@@ -24,49 +24,6 @@ logger = logging.getLogger(__name__)
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
-@retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=4, max=20),
-    reraise=True
-)
-def init_database(app):
-    """Initialize database with enhanced SQLite fallback"""
-    try:
-        logger.info("Initializing database connection...")
-        with app.app_context():
-            try:
-                if 'postgres' in app.config['SQLALCHEMY_DATABASE_URI']:
-                    # Test PostgreSQL connection
-                    db.session.execute(text('SELECT 1'))
-                    db.session.commit()
-                    logger.info("PostgreSQL connection successful")
-            except OperationalError as e:
-                logger.warning(f"PostgreSQL connection failed: {str(e)}")
-                logger.info("Configuring SQLite database")
-                
-                # Close existing connections
-                db.session.remove()
-                db.engine.dispose()
-                
-                # Configure SQLite
-                sqlite_path = os.path.join(app.instance_path, 'dev.db')
-                app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
-                
-                # Ensure instance folder exists
-                if not os.path.exists(app.instance_path):
-                    os.makedirs(app.instance_path)
-                
-                # Reinitialize SQLAlchemy
-                db.init_app(app)
-            
-            # Create tables
-            db.create_all()
-            logger.info("Database tables created successfully")
-            return True
-    except Exception as e:
-        logger.error(f"Database initialization failed: {str(e)}")
-        return False
-
 def create_app(config_name='development'):
     """Create and configure Flask application"""
     try:
@@ -92,8 +49,29 @@ def create_app(config_name='development'):
         login_manager.login_message = 'Please log in to access this page.'
         login_manager.login_message_category = 'info'
 
-        # Initialize database with retry logic
-        init_database(app)
+        with app.app_context():
+            try:
+                # Test database connection
+                db.session.execute(text('SELECT 1'))
+                db.session.commit()
+                logger.info("Database connection successful")
+
+                # Create tables if they don't exist
+                db.create_all()
+                logger.info("Database tables created successfully")
+            except OperationalError as e:
+                logger.error(f"Database connection error: {str(e)}")
+                # Configure SQLite fallback
+                sqlite_path = os.path.join(app.instance_path, 'dev.db')
+                app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+
+                # Ensure instance folder exists
+                if not os.path.exists(app.instance_path):
+                    os.makedirs(app.instance_path)
+
+                # Reinitialize database with SQLite
+                db.create_all()
+                logger.info("Created SQLite database as fallback")
 
         # Register blueprints
         logger.info("Registering blueprints...")
@@ -117,18 +95,6 @@ def create_app(config_name='development'):
         from errors import bp as errors_bp
         app.register_blueprint(errors_bp)
         logger.info("Registered errors blueprint")
-
-        # Register error handlers
-        @app.errorhandler(404)
-        def not_found_error(error):
-            logger.warning(f"404 error: {error}")
-            return render_template('error.html', error="Page not found"), 404
-
-        @app.errorhandler(500)
-        def internal_error(error):
-            logger.error(f"Internal Server Error: {error}")
-            db.session.rollback()
-            return render_template('error.html', error="An internal error occurred."), 500
 
         return app
 

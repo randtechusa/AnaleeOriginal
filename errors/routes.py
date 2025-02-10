@@ -5,15 +5,9 @@ Handles display and tracking of system errors and AI service status
 
 import logging
 from datetime import datetime, timedelta
-try:
-    from flask import Blueprint, render_template, current_app
-    from flask_login import login_required
-except ImportError as e:
-    logging.error(f"Failed to import Flask modules: {str(e)}")
-    raise
-
+from flask import Blueprint, render_template, current_app
+from flask_login import login_required
 import traceback
-from . import errors
 from models import db
 from ai_insights import FinancialInsightsGenerator
 
@@ -24,7 +18,25 @@ handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -
 logger.addHandler(handler)
 logger.setLevel(logging.ERROR)
 
-@errors.route('/dashboard')
+bp = Blueprint('errors', __name__)
+
+# Error handlers
+def handle_404_error(error):
+    """Handle 404 Not Found errors"""
+    logger.warning(f"404 error: {error}")
+    return render_template('errors/404.html'), 404
+
+def handle_500_error(error):
+    """Handle 500 Internal Server errors"""
+    logger.error(f"500 error: {error}\n{traceback.format_exc()}")
+    return render_template('errors/500.html'), 500
+
+def init_error_handlers(bp):
+    """Initialize error handlers for the blueprint"""
+    bp.register_error_handler(404, handle_404_error)
+    bp.register_error_handler(500, handle_500_error)
+
+@bp.route('/dashboard')
 @login_required
 def error_dashboard():
     """Display error monitoring dashboard with AI service status"""
@@ -106,7 +118,7 @@ def error_dashboard():
             logger.error(f"Error calculating health metrics: {str(e)}")
             uptime = "Unable to calculate uptime"
 
-        return render_template('error_dashboard.html',
+        return render_template('errors/dashboard.html',
                              ai_status=ai_status,
                              recent_errors=recent_errors,
                              recommendations=recommendations,
@@ -114,7 +126,7 @@ def error_dashboard():
 
     except Exception as e:
         logger.error(f"Error loading error dashboard: {str(e)}\n{traceback.format_exc()}")
-        return render_template('error_dashboard.html', 
+        return render_template('errors/dashboard.html', 
                              error="Error loading dashboard data",
                              ai_status={'error_count': 0, 'consecutive_failures': 0},
                              recent_errors=[{
@@ -124,3 +136,5 @@ def error_dashboard():
                              }],
                              recommendations=["System encountered an error, please try again later"],
                              uptime="Unknown")
+
+init_error_handlers(bp)
