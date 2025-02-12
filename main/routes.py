@@ -18,6 +18,10 @@ def index():
         return redirect(url_for('main.dashboard'))
     return redirect(url_for('auth.login'))
 
+@bp.route('/home')
+def home():
+    return redirect(url_for('main.index'))
+
 @bp.route('/dashboard')
 @login_required
 def dashboard():

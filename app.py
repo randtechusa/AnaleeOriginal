@@ -69,7 +69,7 @@ def create_app(config_name='development'):
         with app.app_context():
             # Register main blueprint
             from main import bp as main_bp
-            app.register_blueprint(main_bp, url_prefix='/main')
+            app.register_blueprint(main_bp)  # No prefix for main routes
 
             # Register auth blueprint
             from auth import bp as auth_bp
@@ -89,11 +89,11 @@ def create_app(config_name='development'):
 
             # Register risk assessment blueprint
             from risk_assessment import risk_assessment as risk_bp
-            app.register_blueprint(risk_bp)
+            app.register_blueprint(risk_bp, url_prefix='/risk')
 
             # Register historical data blueprint
             from historical_data import historical_data as historical_bp
-            app.register_blueprint(historical_bp)
+            app.register_blueprint(historical_bp, url_prefix='/historical')
 
             # Add root route that redirects to main blueprint
             @app.route('/')
