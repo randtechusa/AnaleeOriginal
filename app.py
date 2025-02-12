@@ -3,7 +3,7 @@
 import os
 import logging
 from flask import Flask, current_app
-from flask_migrate import Migrate
+from flask_migrate import Migrate 
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from markupsafe import escape
@@ -32,6 +32,13 @@ def init_database(app, db_instance):
     try:
         # Ensure instance directory exists
         os.makedirs('instance', exist_ok=True)
+        
+        # Configure SQLite
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
+        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+        
+        # Initialize database
+        db_instance.init_app(app)
         
         # Test database connection
         with app.app_context():
