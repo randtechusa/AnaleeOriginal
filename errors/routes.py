@@ -6,7 +6,7 @@ Handles display and tracking of system errors and AI service status with enhance
 import logging
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, current_app, request
-from flask_login import login_required
+from flask_login import login_required, current_user
 from markupsafe import escape
 import traceback
 from models import db
@@ -87,9 +87,9 @@ def error_dashboard():
                     ai_status.update({
                         'consecutive_failures': getattr(service_status, 'consecutive_failures', 0),
                         'error_count': getattr(service_status, 'error_count', 0),
-                        'last_success': (service_status.last_success.strftime('%Y-%m-%d %H:%M:%S') 
-                                    if hasattr(service_status, 'last_success') and 
-                                    service_status.last_success else None),
+                        'last_success': (service_status.last_success.strftime('%Y-%m-%d %H:%M:%S')
+                                        if hasattr(service_status, 'last_success') and
+                                        service_status.last_success else None),
                     })
 
                     # Get recent errors from logs with proper error handling
@@ -139,28 +139,28 @@ def error_dashboard():
         recommendations = generate_recommendations(ai_status, system_health, error_patterns)
 
         return render_template('error_dashboard.html',
-                            ai_status=ai_status,
-                            recent_errors=recent_errors,
-                            recommendations=recommendations,
-                            uptime=uptime,
-                            system_health=system_health,
-                            error_patterns=error_patterns,
-                            system_metrics=system_metrics)
+                                ai_status=ai_status,
+                                recent_errors=recent_errors,
+                                recommendations=recommendations,
+                                uptime=uptime,
+                                system_health=system_health,
+                                error_patterns=error_patterns,
+                                system_metrics=system_metrics)
 
     except Exception as e:
         logger.error(f"Error loading error dashboard: {str(e)}\n{traceback.format_exc()}")
-        return render_template('error_dashboard.html', 
-                            error=escape(str(e)),
-                            ai_status={'error_count': 0, 'consecutive_failures': 0},
-                            recent_errors=[{
-                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                'type': 'Dashboard Error',
-                                'message': escape(str(e)),
-                                'module': 'Error Dashboard',
-                                'severity': 'high'
-                            }],
-                            recommendations=["System encountered an error, please try again later"],
-                            uptime="Unknown")
+        return render_template('error_dashboard.html',
+                                error=escape(str(e)),
+                                ai_status={'error_count': 0, 'consecutive_failures': 0},
+                                recent_errors=[{
+                                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                    'type': 'Dashboard Error',
+                                    'message': escape(str(e)),
+                                    'module': 'Error Dashboard',
+                                    'severity': 'high'
+                                }],
+                                recommendations=["System encountered an error, please try again later"],
+                                uptime="Unknown")
 
 def analyze_error_patterns():
     """Analyze patterns in recent errors"""

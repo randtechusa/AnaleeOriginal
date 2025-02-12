@@ -20,10 +20,6 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "ICountant Demo"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "Database Migration"
 
 [[workflows.workflow.tasks]]
@@ -37,17 +33,6 @@ args = "Admin Setup"
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "Flask Server"
-
-[[workflows.workflow]]
-name = "ICountant Demo"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "packager.installForAll"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python icountant_demo.py"
 
 [[workflows.workflow]]
 name = "Database Migration"
@@ -117,7 +102,7 @@ task = "packager.installForAll"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python app.py"
-waitForPort = 5000
+waitForPort = 5001
 
 [[workflows.workflow]]
 name = "Flask Dev Server"
