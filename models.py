@@ -2,22 +2,18 @@
 from datetime import datetime
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-from app import db
+from extensions import db
 
 class User(UserMixin, db.Model):
     """User model for authentication and profile management"""
     __tablename__ = 'users'
 
-    # Core fields
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128))
-
-    # Status fields
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    is_active = db.Column(db.Boolean, default=True, nullable=False)
-    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
 
     def set_password(self, password):
         """Hash and set user password"""
@@ -26,14 +22,6 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         """Verify user password"""
         return check_password_hash(self.password_hash, password)
-
-    @property
-    def is_authenticated(self):
-        return True
-
-    @property
-    def is_anonymous(self):
-        return False
 
     def get_id(self):
         return str(self.id)
