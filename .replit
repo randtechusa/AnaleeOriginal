@@ -99,6 +99,9 @@ args = "python app.py"
 name = "Flask Server"
 author = "agent"
 
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
 [[workflows.workflow.tasks]]
 task = "packager.installForAll"
 
