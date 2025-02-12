@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 db = SQLAlchemy()
 login_manager = LoginManager()
 csrf = CSRFProtect()
-migrate = Migrate()
+migrate = Migrate(db=db)
 
 def init_database(app, db_instance):
     """Initialize database with comprehensive error handling"""
@@ -34,11 +34,13 @@ def init_database(app, db_instance):
         os.makedirs('instance', exist_ok=True)
         
         # Configure SQLite
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
+        if not app.config.get('SQLALCHEMY_DATABASE_URI'):
+            app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
         
-        # Initialize database
-        db_instance.init_app(app)
+        # Initialize extensions
+        if not db_instance.get_app():
+            db_instance.init_app(app)
         
         # Test database connection
         with app.app_context():
