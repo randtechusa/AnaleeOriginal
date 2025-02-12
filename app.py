@@ -8,7 +8,7 @@ from config import get_config
 
 # Configure logging with more detailed format
 logging.basicConfig(
-    level=logging.DEBUG,  # Temporarily set to DEBUG for more information
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
         logging.FileHandler('app.log'),
@@ -67,7 +67,7 @@ def create_app(config_name='development'):
         # Register blueprints
         logger.info("Registering blueprints...")
         with app.app_context():
-            # Register main blueprint
+            # Register main blueprint (no prefix for main routes)
             from main import bp as main_bp
             app.register_blueprint(main_bp)  # No prefix for main routes
 
@@ -95,9 +95,10 @@ def create_app(config_name='development'):
             from historical_data import historical_data as historical_bp
             app.register_blueprint(historical_bp, url_prefix='/historical')
 
-            # Add root route that redirects to main blueprint
+            # Root route redirects to main blueprint's index
             @app.route('/')
             def index():
+                logger.debug("Redirecting root to main.index")
                 return redirect(url_for('main.index'))
 
         logger.info("Application initialization completed successfully")

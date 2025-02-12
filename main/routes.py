@@ -7,8 +7,10 @@ from flask_login import login_required, current_user
 from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile
 from icountant import ICountant, PredictiveFeatures
 
-bp = Blueprint('main', __name__)
 logger = logging.getLogger(__name__)
+
+# Import the blueprint instance
+from main import bp
 
 @bp.route('/')
 @bp.route('/index')
