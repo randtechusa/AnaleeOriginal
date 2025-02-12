@@ -1,4 +1,3 @@
-
 """Main application factory with enhanced database management"""
 import os
 import logging
@@ -32,16 +31,16 @@ def init_database(app, db_instance):
     try:
         # Ensure instance directory exists
         os.makedirs('instance', exist_ok=True)
-        
+
         # Configure SQLite
         if not app.config.get('SQLALCHEMY_DATABASE_URI'):
             app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        
+
         # Initialize extensions
         if not db_instance.get_app():
             db_instance.init_app(app)
-        
+
         # Test database connection
         with app.app_context():
             db_instance.create_all()
@@ -57,7 +56,7 @@ def init_database(app, db_instance):
 def create_app(config_name='development'):
     """Create and configure Flask application"""
     app = Flask(__name__)
-    
+
     try:
         # Load configuration
         if isinstance(config_name, str):
@@ -114,8 +113,12 @@ def load_user(user_id):
         logger.error(f"Error loading user {user_id}: {str(e)}")
         return None
 
+def create_flask_app():
+    return create_app()
+
+app = create_flask_app()
+
 if __name__ == '__main__':
-    app = create_app()
     if app:
         port = int(os.environ.get('PORT', 5000))
         app.run(host='0.0.0.0', port=port)
