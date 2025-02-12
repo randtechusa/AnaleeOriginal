@@ -44,7 +44,7 @@ def init_database(app):
         logger.error(f"Database initialization failed: {str(e)}", exc_info=True)
         return False
 
-def create_app(config_name='development'):
+def create_app(config_name=os.getenv('FLASK_ENV', 'production')):
     """Create and configure Flask application"""
     logger.info(f"Creating Flask application with config: {config_name}")
 
