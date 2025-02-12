@@ -74,9 +74,12 @@ def init_database(app, db_instance):
     logger.info("Initializing database...")
 
     try:
-        # Validate and configure database URL
+        # Configure database URL with SQLite fallback
         if not app.config.get('SQLALCHEMY_DATABASE_URI'):
-            app.config['SQLALCHEMY_DATABASE_URI'] = validate_database_url()
+            sqlite_path = os.path.join(app.instance_path, 'dev.db')
+            app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+            os.makedirs(app.instance_path, exist_ok=True)
+            logger.info(f"Using SQLite database at {sqlite_path}")
 
         # Configure SQLAlchemy settings
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
