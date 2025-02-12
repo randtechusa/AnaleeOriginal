@@ -1,7 +1,7 @@
 """Main application factory with enhanced database management"""
 import os
 import logging
-from flask import Flask
+from flask import Flask, redirect, url_for
 from sqlalchemy import text
 from extensions import db, init_extensions
 from config import get_config
@@ -67,17 +67,38 @@ def create_app(config_name='development'):
         # Register blueprints
         logger.info("Registering blueprints...")
         with app.app_context():
+            # Register main blueprint
             from main import bp as main_bp
-            app.register_blueprint(main_bp)
+            app.register_blueprint(main_bp, url_prefix='/main')
 
+            # Register auth blueprint
             from auth import bp as auth_bp
-            app.register_blueprint(auth_bp)
+            app.register_blueprint(auth_bp, url_prefix='/auth')
 
+            # Register admin blueprint
             from admin import bp as admin_bp
             app.register_blueprint(admin_bp, url_prefix='/admin')
 
+            # Register errors blueprint
             from errors import bp as errors_bp
             app.register_blueprint(errors_bp)
+
+            # Register reports blueprint
+            from reports import reports as reports_bp
+            app.register_blueprint(reports_bp, url_prefix='/reports')
+
+            # Register risk assessment blueprint
+            from risk_assessment import risk_assessment as risk_bp
+            app.register_blueprint(risk_bp)
+
+            # Register historical data blueprint
+            from historical_data import historical_data as historical_bp
+            app.register_blueprint(historical_bp)
+
+            # Add root route that redirects to main blueprint
+            @app.route('/')
+            def index():
+                return redirect(url_for('main.index'))
 
         logger.info("Application initialization completed successfully")
         return app

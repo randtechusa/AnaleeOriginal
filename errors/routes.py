@@ -5,8 +5,9 @@ Handles display and tracking of system errors and AI service status
 
 import logging
 from datetime import datetime, timedelta
-from flask import Blueprint, render_template, current_app, escape
+from flask import Blueprint, render_template, current_app
 from flask_login import login_required
+from markupsafe import escape
 import traceback
 from models import db
 from ai_insights import FinancialInsightsGenerator

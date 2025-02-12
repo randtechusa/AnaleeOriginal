@@ -6,14 +6,14 @@ class DevelopmentConfig:
     # Basic Configuration
     DEBUG = True
     TESTING = False
-    
+
     # Security Settings
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key')
-    
-    # Database Configuration - Use development database
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL', os.environ.get('DATABASE_URL'))
+
+    # Database Configuration - Use SQLite for local testing
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///dev.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    
+
     # Pattern Matching Configuration
     PATTERN_MATCHING = {
         'min_similarity_score': 0.85,
@@ -21,7 +21,7 @@ class DevelopmentConfig:
         'cache_timeout': timedelta(hours=1),
         'use_ai_threshold': 0.7
     }
-    
+
     # AI Configuration
     AI_CONFIG = {
         'max_retries': 3,
@@ -29,7 +29,7 @@ class DevelopmentConfig:
         'batch_size': 5,
         'confidence_threshold': 0.85
     }
-    
+
     # Feature Flags for Development
     FEATURES = {
         'exact_matching': True,

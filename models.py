@@ -14,6 +14,7 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(128))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
+    is_admin = db.Column(db.Boolean, default=False)  # Added is_admin field
 
     def set_password(self, password):
         """Hash and set user password"""

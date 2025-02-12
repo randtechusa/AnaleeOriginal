@@ -53,12 +53,15 @@ args = "python icountant_demo.py"
 name = "Database Migration"
 author = "agent"
 
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
 [[workflows.workflow.tasks]]
 task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "flask db upgrade"
+args = "flask db migrate -m 'Add is_admin field to User model' && flask db upgrade"
 
 [[workflows.workflow]]
 name = "System Restore"
@@ -82,6 +85,12 @@ args = "python app.py"
 [[workflows.workflow]]
 name = "Admin Setup"
 author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
