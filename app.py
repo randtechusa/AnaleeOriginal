@@ -29,13 +29,10 @@ def init_database(app, db_instance):
 
     try:
         # Ensure instance directory exists
-        os.makedirs(os.path.join(app.root_path, 'instance'), exist_ok=True)
+        os.makedirs('instance', exist_ok=True)
 
         # Configure SQLAlchemy settings
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-            'pool_pre_ping': True
-        }
 
         # Initialize database
         db_instance.init_app(app)

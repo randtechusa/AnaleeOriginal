@@ -7,8 +7,7 @@ class Config:
 
     # Set SQLite as default database
     basedir = os.path.abspath(os.path.dirname(__file__))
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'sqlite:///' + os.path.join(basedir, 'instance', 'app.db')
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(basedir, 'instance', 'test.db')
 
     # Basic SQLAlchemy settings
     SQLALCHEMY_TRACK_MODIFICATIONS = False
