@@ -38,8 +38,7 @@ def init_database(app, db_instance):
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
         # Initialize extensions
-        if not db_instance.get_app():
-            db_instance.init_app(app)
+        db_instance.init_app(app)
 
         # Test database connection
         with app.app_context():
@@ -114,7 +113,10 @@ def load_user(user_id):
         return None
 
 def create_flask_app():
-    return create_app()
+    app = create_app()
+    if not app:
+        raise RuntimeError("Failed to create Flask application")
+    return app
 
 app = create_flask_app()
 
