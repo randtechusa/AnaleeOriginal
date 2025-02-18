@@ -11,11 +11,23 @@ class Config:
         if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
             SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
         
-        # Always use connection pooler for better reliability
-        if '.neon.tech' in SQLALCHEMY_DATABASE_URI and '-pooler.neon.tech' not in SQLALCHEMY_DATABASE_URI:
-            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('.neon.tech', '-pooler.neon.tech')
+        # Configure for Neon serverless database
+        if '.neon.tech' in SQLALCHEMY_DATABASE_URI:
+            SQLALCHEMY_ENGINE_OPTIONS = {
+                'pool_size': 5,
+                'pool_timeout': 30,
+                'pool_recycle': 1800,
+                'pool_pre_ping': True,
+                'connect_args': {
+                    'connect_timeout': 10,
+                    'keepalives': 1,
+                    'keepalives_idle': 30,
+                    'keepalives_interval': 10,
+                    'keepalives_count': 5
+                }
+            }
     else:
-        logger.error("DATABASE_URL not set in environment variables")
+        raise ValueError("DATABASE_URL environment variable is not set")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
