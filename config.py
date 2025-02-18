@@ -10,9 +10,10 @@ class Config:
     if SQLALCHEMY_DATABASE_URI:
         if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
             SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
-        # Use direct connection instead of pooler for initial setup
-        if '.neon.tech' in SQLALCHEMY_DATABASE_URI and '-pooler.neon.tech' not in SQLALCHEMY_DATABASE_URI:
-            logger.info("Using direct database connection")
+        
+        # Use direct connection for better error handling
+        if '-pooler.neon.tech' in SQLALCHEMY_DATABASE_URI:
+            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('-pooler.neon.tech', '.neon.tech')
     else:
         logger.error("DATABASE_URL not set in environment variables")
     SQLALCHEMY_TRACK_MODIFICATIONS = False

@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 def init_database(app):
     """Initialize database with comprehensive error handling"""
     logger.info("Starting database initialization...")
-    max_retries = 15  # Increased retries
+    max_retries = 5  # Reduced retries for faster feedback
     retry_count = 0
-    base_delay = 5  # Increased initial delay
+    base_delay = 2  # Reduced initial delay
 
     if not app.config['SQLALCHEMY_DATABASE_URI']:
         logger.error("DATABASE_URL environment variable is not set")
