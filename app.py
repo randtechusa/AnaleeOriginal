@@ -21,14 +21,19 @@ logger = logging.getLogger(__name__)
 def init_database(app):
     """Initialize database with comprehensive error handling"""
     logger.info("Starting database initialization...")
-    max_retries = 10
+    max_retries = 5
     retry_count = 0
-    base_delay = 2  # Initial delay in seconds
+    base_delay = 3  # Initial delay in seconds
     
     # Check if database URL is configured
     if not app.config['SQLALCHEMY_DATABASE_URI']:
         logger.error("DATABASE_URL environment variable is not set")
         return False
+
+    # Convert database URL to use connection pooler if needed
+    if '.neon.tech' in app.config['SQLALCHEMY_DATABASE_URI']:
+        app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('.neon.tech', '-pooler.neon.tech')
+        logger.info("Using connection pooler URL")
 
     while retry_count < max_retries:
         try:
