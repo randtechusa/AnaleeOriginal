@@ -126,6 +126,6 @@ if __name__ == '__main__':
     if app:
         port = int(os.environ.get('PORT', 5000))
         logger.info(f"Starting Flask server on port {port}")
-        app.run(host='0.0.0.0', port=port, debug=False)
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
     else:
         logger.error("Failed to create application")
