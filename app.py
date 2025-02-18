@@ -1,6 +1,7 @@
 """Main application factory with enhanced database management"""
 import os
 import logging
+import time
 from flask import Flask, redirect, url_for
 from sqlalchemy import text
 from extensions import db, init_extensions
@@ -20,45 +21,45 @@ logger = logging.getLogger(__name__)
 def init_database(app):
     """Initialize database with comprehensive error handling"""
     logger.info("Starting database initialization...")
-    max_retries = 3
+    max_retries = 5
     retry_count = 0
-    retry_delay = 2  # seconds
+    base_delay = 1  # Initial delay in seconds
 
     while retry_count < max_retries:
         try:
-            # Create instance directory if it doesn't exist
-            instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
-            os.makedirs(instance_path, exist_ok=True)
-            logger.info(f"Instance directory ensured at: {instance_path}")
-
-            # Initialize database
             with app.app_context():
-                # First verify connection
                 logger.info("Verifying database connection...")
-                # Add more detailed connection logging
-                logger.info(f"Database URL format: {app.config['SQLALCHEMY_DATABASE_URL_FORMAT']}")
+
+                # Log database configuration (without sensitive info)
+                db_url_parts = app.config['SQLALCHEMY_DATABASE_URI'].split('@')
+                if len(db_url_parts) > 1:
+                    safe_db_url = f"postgresql://[username]@{db_url_parts[1]}"
+                    logger.info(f"Using database URL: {safe_db_url}")
 
                 # Test database connection
                 db.session.execute(text('SELECT 1'))
                 db.session.commit()
 
+                logger.info("Database connection successful")
                 logger.info("Creating database tables...")
                 db.create_all()
-
                 logger.info("Database initialization completed successfully")
                 return True
 
         except Exception as e:
             retry_count += 1
+            delay = min(base_delay * (2 ** (retry_count - 1)), 10)  # Exponential backoff, max 10 seconds
+
             logger.warning(
                 f"Database initialization attempt {retry_count} failed: {str(e)}\n"
-                f"Retrying in {retry_delay} seconds..."
+                f"Retrying in {delay} seconds..."
             )
+
             if retry_count >= max_retries:
                 logger.error("Database initialization failed after maximum retries", exc_info=True)
                 return False
-            import time
-            time.sleep(retry_delay)
+
+            time.sleep(delay)
 
     return False
 
@@ -77,11 +78,22 @@ def create_app(config_name=None):
         config = get_config(config_name)
         app.config.from_object(config)
 
-        # Ensure SQLALCHEMY_DATABASE_URI is set from DATABASE_URL
+        # Configure SQLAlchemy from environment variables
         if 'DATABASE_URL' in os.environ:
             app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
-            app.config['SQLALCHEMY_DATABASE_URL_FORMAT'] = app.config['SQLALCHEMY_DATABASE_URI'].split('@')[0] + '@[HOST]:[PORT]/[DB]'
-            logger.info("Database URL configured from environment")
+            app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+                'pool_size': 5,
+                'max_overflow': 10,
+                'pool_recycle': 1800,
+                'pool_pre_ping': True,
+                'pool_timeout': 30,
+                'connect_args': {
+                    'connect_timeout': 10,
+                    'application_name': 'financial_intelligence_platform'
+                }
+            }
+            logger.info("Database configuration updated from environment")
 
         # Initialize extensions
         logger.info("Initializing Flask extensions...")
@@ -99,31 +111,25 @@ def create_app(config_name=None):
             from errors import bp as errors_bp
             app.register_blueprint(errors_bp)
 
-            # Register main blueprint
+            # Register other blueprints
             from main import bp as main_bp
             app.register_blueprint(main_bp)
 
-            # Register auth blueprint
             from auth import bp as auth_bp
             app.register_blueprint(auth_bp, url_prefix='/auth')
 
-            # Register admin blueprint
             from admin import bp as admin_bp
             app.register_blueprint(admin_bp, url_prefix='/admin')
 
-            # Register reports blueprint
             from reports import reports as reports_bp
             app.register_blueprint(reports_bp, url_prefix='/reports')
 
-            # Register risk assessment blueprint
             from risk_assessment import risk_assessment as risk_bp
             app.register_blueprint(risk_bp, url_prefix='/risk')
 
-            # Register historical data blueprint
             from historical_data import historical_data as historical_bp
             app.register_blueprint(historical_bp, url_prefix='/historical')
 
-            # Root route redirects to main blueprint's index
             @app.route('/')
             def index():
                 return redirect(url_for('main.index'))
