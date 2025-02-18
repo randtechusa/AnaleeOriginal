@@ -122,10 +122,10 @@ def create_app(config_name=None):
         return None
 
 if __name__ == '__main__':
-    app = create_app()
+    app = create_app('production')
     if app:
         port = int(os.environ.get('PORT', 5000))
         logger.info(f"Starting Flask server on port {port}")
-        app.run(host='0.0.0.0', port=port)
+        app.run(host='0.0.0.0', port=port, debug=False)
     else:
         logger.error("Failed to create application")
