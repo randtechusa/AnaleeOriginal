@@ -35,6 +35,10 @@ def init_database(app):
             with app.app_context():
                 # First verify connection
                 logger.info("Verifying database connection...")
+                # Add more detailed connection logging
+                logger.info(f"Database URL format: {app.config['SQLALCHEMY_DATABASE_URL_FORMAT']}")
+
+                # Test database connection
                 db.session.execute(text('SELECT 1'))
                 db.session.commit()
 
@@ -46,7 +50,10 @@ def init_database(app):
 
         except Exception as e:
             retry_count += 1
-            logger.warning(f"Database initialization attempt {retry_count} failed: {str(e)}")
+            logger.warning(
+                f"Database initialization attempt {retry_count} failed: {str(e)}\n"
+                f"Retrying in {retry_delay} seconds..."
+            )
             if retry_count >= max_retries:
                 logger.error("Database initialization failed after maximum retries", exc_info=True)
                 return False
@@ -67,7 +74,14 @@ def create_app(config_name=None):
 
         # Load configuration
         logger.info("Loading configuration...")
-        app.config.from_object(get_config(config_name))
+        config = get_config(config_name)
+        app.config.from_object(config)
+
+        # Ensure SQLALCHEMY_DATABASE_URI is set from DATABASE_URL
+        if 'DATABASE_URL' in os.environ:
+            app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
+            app.config['SQLALCHEMY_DATABASE_URL_FORMAT'] = app.config['SQLALCHEMY_DATABASE_URI'].split('@')[0] + '@[HOST]:[PORT]/[DB]'
+            logger.info("Database URL configured from environment")
 
         # Initialize extensions
         logger.info("Initializing Flask extensions...")
