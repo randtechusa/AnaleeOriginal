@@ -7,7 +7,7 @@ from sqlalchemy import text
 from extensions import db, init_extensions
 from config import get_config
 
-# Configure logging with more detailed format
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
@@ -29,6 +29,24 @@ def init_database(app):
         try:
             with app.app_context():
                 logger.info("Verifying database connection...")
+
+                # Configure SQLAlchemy from environment variables
+                if not app.config.get('SQLALCHEMY_DATABASE_URI'):
+                    if 'DATABASE_URL' in os.environ:
+                        app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
+                    else:
+                        # Construct from individual parameters
+                        db_params = {
+                            'host': os.environ.get('PGHOST'),
+                            'port': os.environ.get('PGPORT'),
+                            'database': os.environ.get('PGDATABASE'),
+                            'user': os.environ.get('PGUSER'),
+                            'password': os.environ.get('PGPASSWORD')
+                        }
+                        app.config['SQLALCHEMY_DATABASE_URI'] = (
+                            f"postgresql://{db_params['user']}:{db_params['password']}@"
+                            f"{db_params['host']}:{db_params['port']}/{db_params['database']}"
+                        )
 
                 # Log database configuration (without sensitive info)
                 db_url_parts = app.config['SQLALCHEMY_DATABASE_URI'].split('@')
@@ -146,6 +164,6 @@ if __name__ == '__main__':
     if app:
         port = int(os.environ.get('PORT', 5000))
         logger.info(f"Starting Flask server on port {port}")
-        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+        app.run(host='0.0.0.0', port=port, debug=False)
     else:
         logger.error("Failed to create application")
