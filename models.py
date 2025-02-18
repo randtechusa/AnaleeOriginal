@@ -132,6 +132,7 @@ class FinancialGoal(db.Model):
     user = db.relationship('User', backref=db.backref('financial_goals', lazy=True))
 
 class AdminChartOfAccounts(db.Model):
+    account_code = db.Column(db.String(20), unique=True, nullable=False)
     """Standard chart of accounts managed by admin"""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
