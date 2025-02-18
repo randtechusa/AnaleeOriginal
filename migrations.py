@@ -1,12 +1,19 @@
+from flask import Flask
 from flask_migrate import Migrate
 from models import db
-from app import create_app
+from config import get_config
 
 def init_migrations():
     """Initialize database migrations"""
     try:
-        app = create_app()
+        # Create Flask app with proper configuration
+        app = Flask(__name__)
+        app.config.from_object(get_config('development'))
+
+        # Initialize database and migrations
+        db.init_app(app)
         migrate = Migrate(app, db)
+
         return app, migrate
     except Exception as e:
         print(f"Error initializing migrations: {str(e)}")

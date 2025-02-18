@@ -20,32 +20,46 @@ logger = logging.getLogger(__name__)
 def init_database(app):
     """Initialize database with comprehensive error handling"""
     logger.info("Starting database initialization...")
+    max_retries = 3
+    retry_count = 0
+    retry_delay = 2  # seconds
 
-    try:
-        # Create instance directory if it doesn't exist
-        instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
-        os.makedirs(instance_path, exist_ok=True)
-        logger.info(f"Instance directory ensured at: {instance_path}")
+    while retry_count < max_retries:
+        try:
+            # Create instance directory if it doesn't exist
+            instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
+            os.makedirs(instance_path, exist_ok=True)
+            logger.info(f"Instance directory ensured at: {instance_path}")
 
-        # Initialize database
-        with app.app_context():
-            logger.info("Creating database tables...")
-            db.create_all()
+            # Initialize database
+            with app.app_context():
+                # First verify connection
+                logger.info("Verifying database connection...")
+                db.session.execute(text('SELECT 1'))
+                db.session.commit()
 
-            # Verify connection
-            logger.info("Verifying database connection...")
-            db.session.execute(text('SELECT 1'))
-            db.session.commit()
+                logger.info("Creating database tables...")
+                db.create_all()
 
-            logger.info("Database initialization completed successfully")
-            return True
+                logger.info("Database initialization completed successfully")
+                return True
 
-    except Exception as e:
-        logger.error(f"Database initialization failed: {str(e)}", exc_info=True)
-        return False
+        except Exception as e:
+            retry_count += 1
+            logger.warning(f"Database initialization attempt {retry_count} failed: {str(e)}")
+            if retry_count >= max_retries:
+                logger.error("Database initialization failed after maximum retries", exc_info=True)
+                return False
+            import time
+            time.sleep(retry_delay)
 
-def create_app(config_name=os.getenv('FLASK_ENV', 'production')):
+    return False
+
+def create_app(config_name=None):
     """Create and configure Flask application"""
+    if config_name is None:
+        config_name = os.getenv('FLASK_ENV', 'development')
+
     logger.info(f"Creating Flask application with config: {config_name}")
 
     try:
@@ -67,9 +81,13 @@ def create_app(config_name=os.getenv('FLASK_ENV', 'production')):
         # Register blueprints
         logger.info("Registering blueprints...")
         with app.app_context():
-            # Register main blueprint (no prefix for main routes)
+            # Register error routes first for proper error handling
+            from errors import bp as errors_bp
+            app.register_blueprint(errors_bp)
+
+            # Register main blueprint
             from main import bp as main_bp
-            app.register_blueprint(main_bp)  # No prefix for main routes
+            app.register_blueprint(main_bp)
 
             # Register auth blueprint
             from auth import bp as auth_bp
@@ -78,10 +96,6 @@ def create_app(config_name=os.getenv('FLASK_ENV', 'production')):
             # Register admin blueprint
             from admin import bp as admin_bp
             app.register_blueprint(admin_bp, url_prefix='/admin')
-
-            # Register errors blueprint
-            from errors import bp as errors_bp
-            app.register_blueprint(errors_bp)
 
             # Register reports blueprint
             from reports import reports as reports_bp
@@ -98,7 +112,6 @@ def create_app(config_name=os.getenv('FLASK_ENV', 'production')):
             # Root route redirects to main blueprint's index
             @app.route('/')
             def index():
-                logger.debug("Redirecting root to main.index")
                 return redirect(url_for('main.index'))
 
         logger.info("Application initialization completed successfully")
