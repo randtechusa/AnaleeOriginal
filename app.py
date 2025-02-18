@@ -24,15 +24,15 @@ def init_database(app):
     max_retries = 15  # Increased retries
     retry_count = 0
     base_delay = 5  # Increased initial delay
-    
+
     if not app.config['SQLALCHEMY_DATABASE_URI']:
         logger.error("DATABASE_URL environment variable is not set")
         return False
-        
+
     # Verify database URL format
     if 'neon.tech' in app.config['SQLALCHEMY_DATABASE_URI']:
         logger.info("Using Neon database, verifying endpoint...")
-    
+
     # Check if database URL is configured
     if not app.config['SQLALCHEMY_DATABASE_URI']:
         logger.error("DATABASE_URL environment variable is not set")
@@ -95,6 +95,13 @@ def create_app(config_name=None):
         logger.info("Loading configuration...")
         config = get_config(config_name)
         app.config.from_object(config)
+
+        # Log database configuration (without credentials)
+        db_url = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if db_url:
+            safe_url = db_url.split('@')[-1] if '@' in db_url else 'No URL found'
+            logger.info(f"Database host: {safe_url}")
+
 
         # Configure SQLAlchemy from environment variables
         if 'DATABASE_URL' in os.environ:
