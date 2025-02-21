@@ -1,10 +1,11 @@
+"""Database migrations configuration"""
 from flask import Flask
 from flask_migrate import Migrate
 from models import db
 from config import get_config
 
 def init_migrations():
-    """Initialize database migrations"""
+    """Initialize database migrations with enhanced error handling"""
     try:
         # Create Flask app with proper configuration
         app = Flask(__name__)
@@ -13,6 +14,10 @@ def init_migrations():
         # Initialize database and migrations
         db.init_app(app)
         migrate = Migrate(app, db)
+
+        with app.app_context():
+            # Create database tables
+            db.create_all()
 
         return app, migrate
     except Exception as e:

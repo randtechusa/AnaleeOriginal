@@ -5,45 +5,19 @@ class Config:
     """Base configuration"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
 
-    # Database configuration with enhanced connection settings
+    # Database configuration
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
-    if SQLALCHEMY_DATABASE_URI:
-        if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
-        
-        # Configure for Neon serverless database
-        if '.neon.tech' in SQLALCHEMY_DATABASE_URI:
-            SQLALCHEMY_ENGINE_OPTIONS = {
-                'pool_size': 5,
-                'pool_timeout': 30,
-                'pool_recycle': 1800,
-                'pool_pre_ping': True,
-                'connect_args': {
-                    'connect_timeout': 10,
-                    'keepalives': 1,
-                    'keepalives_idle': 30,
-                    'keepalives_interval': 10,
-                    'keepalives_count': 5
-                }
-            }
-    else:
+    if not SQLALCHEMY_DATABASE_URI:
         raise ValueError("DATABASE_URL environment variable is not set")
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Database connection pool settings
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_pre_ping': True,
         'pool_size': 5,
-        'max_overflow': 10,
-        'pool_timeout': 10,
-        'pool_recycle': 300,
-        'connect_args': {
-            'connect_timeout': 10,
-            'application_name': 'icountant',
-            'keepalives': 1,
-            'keepalives_idle': 30,
-            'keepalives_interval': 10,
-            'keepalives_count': 5,
-            'options': '-c statement_timeout=5000'
-        }
+        'pool_timeout': 30,
+        'pool_recycle': 1800,
+        'pool_pre_ping': True
     }
 
     # Session configuration

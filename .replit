@@ -46,7 +46,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "flask db migrate -m 'Add is_admin field to User model' && flask db upgrade"
+args = "python migrations.py && flask db upgrade"
 
 [[workflows.workflow]]
 name = "System Restore"
