@@ -1,4 +1,3 @@
-
 """
 Enhanced iCountant module with improved transaction processing and validation
 """
@@ -17,23 +16,23 @@ class TransactionValidator:
     def validate_transaction(transaction: Dict) -> Tuple[bool, str]:
         if not isinstance(transaction, dict):
             return False, "Invalid transaction format"
-        
+
         required_fields = ['description', 'amount', 'date']
         missing_fields = [field for field in required_fields if field not in transaction]
         if missing_fields:
             return False, f"Missing required fields: {', '.join(missing_fields)}"
-        
+
         try:
             amount = Decimal(str(transaction['amount']))
         except (InvalidOperation, ValueError):
             return False, "Invalid amount format"
-        
+
         try:
             if isinstance(transaction['date'], str):
                 datetime.strptime(transaction['date'], '%Y-%m-%d')
         except ValueError:
             return False, "Invalid date format (use YYYY-MM-DD)"
-            
+
         return True, "Transaction validated"
 
 class ICountant:
@@ -60,7 +59,7 @@ class ICountant:
 
             description = transaction.get('description', '').strip()
             amount = Decimal(str(transaction.get('amount', 0)))
-            
+
             account_suggestions = self.predictor.suggest_account(description)
             similar_result = self.predictor.find_similar_transactions(description)
             similar_transactions = similar_result.get('similar_transactions', []) if similar_result.get('success') else []
