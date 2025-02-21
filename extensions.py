@@ -12,13 +12,23 @@ migrate = Migrate()
 
 def init_extensions(app):
     """Initialize all Flask extensions with enhanced monitoring"""
-    # Configure SQLAlchemy event listeners for monitoring
     from sqlalchemy import event
     from sqlalchemy.engine import Engine
     import logging
     import time
+    from utils.db_health import DatabaseHealth
 
     logger = logging.getLogger('database')
+    db_health = DatabaseHealth.get_instance()
+
+    @event.listens_for(Engine, "engine_connect")
+    def engine_connect(conn, branch):
+        if not branch:
+            try:
+                conn.execute(text('SELECT 1'))
+            except Exception as e:
+                logger.error(f"Connection test failed: {e}")
+                raise
     
     @event.listens_for(Engine, "before_cursor_execute")
     def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):

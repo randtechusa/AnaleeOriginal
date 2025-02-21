@@ -23,6 +23,23 @@ def init_database(app):
     from utils.db_health import DatabaseHealth
     
     logger.info("Starting database initialization...")
+    db_health = DatabaseHealth.get_instance()
+    
+    def health_check_routine():
+        while True:
+            health_status, error = db_health.check_connection()
+            metrics = db_health.get_health_metrics()
+            
+            if not health_status:
+                logger.error(f"Health check failed: {error}")
+                if db_health.should_failover():
+                    logger.critical("Initiating failover procedure")
+                    # Attempt reconnection with alternate configuration
+                    if 'DATABASE_URL_BACKUP' in app.config:
+                        app.config['SQLALCHEMY_DATABASE_URI'] = app.config['DATABASE_URL_BACKUP']
+                        db.get_engine(app).dispose()
+            
+            time.sleep(30)  # Check every 30 seconds
     
     if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI']:
         with app.app_context():
