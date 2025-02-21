@@ -46,7 +46,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python run_migrations.py"
+args = "python run_migrations.py --retry-count=3 --retry-delay=5"
 
 [[workflows.workflow]]
 name = "System Restore"
