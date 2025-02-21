@@ -112,19 +112,22 @@ def init_database(app):
     health_check_thread.start()
 
     return True
-            with app.app_context():
-        # Test database connection
-        db.session.execute(text('SELECT 1'))
-        db.session.commit()
-        logger.info("Database connection successful")
 
-        # Create tables
-        db.create_all()
-        logger.info("Database tables created successfully")
-        return True
+    try:
+        with app.app_context():
+            # Test database connection
+            db.session.execute(text('SELECT 1'))
+            db.session.commit()
+            logger.info("Database connection successful")
 
-        except Exception as e:
-            retry_count += 1
+            # Create tables
+            db.create_all()
+            logger.info("Database tables created successfully")
+            return True
+
+    except Exception as e:
+        retry_count += 1
+        return False
             delay = base_delay * retry_count
 
             logger.warning(
