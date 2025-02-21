@@ -30,12 +30,14 @@ def init_database(app):
         logger.info("Using SQLite database")
         try:
             with app.app_context():
+                db.session.remove()  # Ensure no existing transactions
                 db.create_all()
                 db.session.execute(text('SELECT 1'))
                 db.session.commit()
                 return True
         except Exception as e:
             logger.error(f"SQLite initialization failed: {e}")
+            db.session.rollback()
             return False
 
     max_retries = 3

@@ -50,6 +50,10 @@ class Config:
             else:
                 logger.warning(f"Database connection attempt {attempt + 1} failed, retrying in {2 ** attempt} seconds")
                 time.sleep(2 ** attempt)
+    
+    # Ensure SQLite directory exists
+    if 'sqlite' in SQLALCHEMY_DATABASE_URI:
+        os.makedirs('instance', exist_ok=True)
             
     # Configure SQLAlchemy pool settings
     SQLALCHEMY_ENGINE_OPTIONS = {
