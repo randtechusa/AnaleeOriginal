@@ -14,7 +14,7 @@ class HybridPredictor:
         self.confidence_threshold = 0.85
         self.use_ai_threshold = 0.7
         self._initialize_keyword_rules()
-        
+
     def _initialize_keyword_rules(self):
         """Initialize basic keyword rules for common categories"""
         # These are just examples - actual rules should be loaded from configuration
@@ -24,11 +24,11 @@ class HybridPredictor:
             'Travel': ['flight', 'hotel', 'taxi', 'uber'],
             'Maintenance': ['repair', 'maintenance', 'cleaning'],
         }
-        
+
         for category, keywords in common_rules.items():
             for keyword in keywords:
                 self.keyword_matcher.add_keyword_rule(keyword, category)
-                
+
     def get_keyword_suggestions(self, description: str) -> List[Dict]:
         """Get suggestions based on keyword matching"""
         try:
@@ -37,7 +37,7 @@ class HybridPredictor:
             logger.error(f"Error in keyword matching: {str(e)}")
             return []
 
-    async async def get_suggestions(self, 
+    async def get_suggestions(self, 
                             description: str,
                             amount: float,
                             historical_data: List[Dict],
@@ -45,13 +45,13 @@ class HybridPredictor:
         """Enhanced suggestion system with AI integration"""
         try:
             # Get base pattern suggestions
-            pattern_suggestions = self.pattern_matcher.suggest_from_patterns(
+            pattern_suggestions = await self.pattern_matcher.suggest_from_patterns(
                 description, amount, historical_data
             )
-            
+
             # Get similar transactions
             similar_transactions = self.find_similar_transactions(description)
-            
+
             # Combine suggestions with confidence scoring
             combined_suggestions = []
             for suggestion in pattern_suggestions:
@@ -63,9 +63,9 @@ class HybridPredictor:
                         'explanation': suggestion.get('explanation', ''),
                         'similar_transactions': similar_transactions.get('similar_transactions', [])
                     })
-            
+
             return combined_suggestions[:5]  # Return top 5 suggestions
-            
+
         except Exception as e:
             logger.error(f"Error getting suggestions: {str(e)}")
             return []
@@ -80,17 +80,17 @@ class HybridPredictor:
             pattern_suggestions = self.pattern_matcher.suggest_from_patterns(
                 description, amount, historical_data
             )
-            
+
             # Get keyword-based suggestions
             keyword_suggestions = self.get_keyword_suggestions(description)
-            
+
             combined = []
-            
+
             # Add pattern-based suggestions
             for suggestion in pattern_suggestions:
                 suggestion['source'] = 'pattern'
                 combined.append(suggestion)
-                
+
             # Add keyword-based suggestions
             for suggestion in keyword_suggestions:
                 combined.append({
@@ -99,20 +99,20 @@ class HybridPredictor:
                     'match_type': suggestion['match_type'],
                     'source': 'keyword'
                 })
-            
+
             # Enhanced decision making for AI routing
             pattern_confidence = max((s.get('confidence', 0) for s in combined), default=0)
             pattern_reliability = max(
                 (s.get('pattern_confidence', {}).get('reliability_score', 0) 
                  for s in combined), default=0
             )
-            
+
             # Smart routing logic
             should_use_ai = (
                 pattern_confidence < self.use_ai_threshold or
                 (pattern_reliability < 0.7 and pattern_confidence < 0.9)
             )
-            
+
             if should_use_ai:
                 try:
                     ai_suggestions = await predict_account(description, "", available_accounts)
@@ -134,11 +134,17 @@ class HybridPredictor:
                     logger.error(f"Error getting AI suggestions: {str(ai_error)}")
                     logger.debug(f"Pattern confidence: {pattern_confidence}, "
                                f"Reliability: {pattern_reliability}")
-            
+
             # Sort by confidence and return top suggestions
             combined.sort(key=lambda x: x.get('confidence', 0), reverse=True)
             return combined[:3]
-            
+
         except Exception as e:
             logger.error(f"Error in hybrid prediction: {str(e)}")
             return []
+
+    def find_similar_transactions(self, description: str) -> Dict:
+        # Placeholder for similar transaction detection - needs implementation
+        # This would typically involve comparing the description against a database of past transactions
+        # using techniques like cosine similarity or Jaccard index.
+        return {'similar_transactions': []}
