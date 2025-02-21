@@ -169,26 +169,45 @@ def predict_account(description: str, explanation: str, available_accounts: List
     logger = logging.getLogger(__name__)
 
     try:
-        # Input validation
-        if not isinstance(description, str) or not description.strip():
-            return False, "Invalid or empty description", []
+        # Enhanced input validation
+        if not isinstance(description, str):
+            logger.error("ASF: Description must be a string")
+            return False, "Description must be a string type", []
 
-        if not isinstance(available_accounts, list) or not available_accounts:
-            return False, "No available accounts provided", []
+        description = description.strip()
+        if not description:
+            logger.error("ASF: Empty description provided")
+            return False, "Description cannot be empty", []
 
-        # Validate account structure
+        if len(description) < 3:
+            logger.error("ASF: Description too short")
+            return False, "Description must be at least 3 characters", []
+
+        # Account validation
+        if not isinstance(available_accounts, list):
+            logger.error("ASF: Invalid accounts format")
+            return False, "Invalid accounts format", []
+
+        if not available_accounts:
+            logger.error("ASF: No accounts available")
+            return False, "No accounts available for matching", []
+
+        # Validate each account
         valid_accounts = []
         for acc in available_accounts:
             if not isinstance(acc, dict):
-                logger.warning(f"Invalid account format: {acc}")
+                logger.warning(f"ASF: Invalid account format: {acc}")
                 continue
-            if all(key in acc for key in ['name', 'category', 'id']):
+
+            required_fields = ['name', 'category', 'id']
+            if all(field in acc for field in required_fields):
                 valid_accounts.append(acc)
             else:
-                logger.warning(f"Account missing required fields: {acc}")
+                logger.warning(f"ASF: Account missing required fields: {acc}")
 
         if not valid_accounts:
-            return False, "No valid accounts available for matching", []
+            logger.error("ASF: No valid accounts after validation")
+            return False, "No valid accounts available", []
 
         # Initialize metrics
         start_time = time.time()

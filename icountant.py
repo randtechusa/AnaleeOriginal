@@ -57,15 +57,30 @@ class ICountant:
         logger.setLevel(logging.INFO)
 
     def process_transaction(self, transaction: Dict) -> Tuple[bool, str, Dict]:
-        """Process transaction with enhanced ERF and ASF validation"""
+        """Process transaction with comprehensive ERF and ASF validation"""
         try:
+            processing_start = datetime.now()
             logger.info(f"Processing transaction: {transaction}")
             
-            # Validate transaction data
+            # Enhanced validation with detailed feedback
             is_valid, validation_message = self.validator.validate_transaction(transaction)
             if not is_valid:
                 logger.error(f"Transaction validation failed: {validation_message}")
-                return False, validation_message, {}
+                return False, validation_message, {
+                    'error_type': 'VALIDATION_ERROR',
+                    'validation_details': {
+                        'timestamp': datetime.now().isoformat(),
+                        'error_message': validation_message,
+                        'transaction_data': {k: v for k, v in transaction.items() if k != 'password'}
+                    }
+                }
+
+            # Track processing metrics
+            metrics = {
+                'start_time': processing_start,
+                'validation_success': True,
+                'processing_details': {}
+            }
 
             # Track processing metrics
             processing_start = time.time()

@@ -45,15 +45,31 @@ class PredictiveFeatures:
         logger.setLevel(logging.INFO)
 
     def find_similar_transactions(self, description: str) -> Dict[str, Any]:
-        """Find similar transactions with enhanced validation and error handling"""
+        """Find similar transactions with comprehensive validation and error handling"""
+        self.logger.info(f"ERF: Processing request for description: {description}")
+        
         try:
+            # Enhanced input validation
             is_valid, error_message = self.validate_input(description)
             if not is_valid:
+                self.logger.error(f"ERF validation failed: {error_message}")
                 return {
                     'success': False,
                     'error': error_message,
-                    'error_code': 'INVALID_INPUT'
+                    'error_code': 'INVALID_INPUT',
+                    'validation_details': {
+                        'description_length': len(description) if description else 0,
+                        'required_length': self.MIN_DESCRIPTION_LENGTH
+                    }
                 }
+
+            # Input sanitization
+            description = description.strip()
+            
+            # Performance tracking
+            start_time = datetime.now()
+            processed_count = 0
+            error_count = 0
 
             similar_transactions = []
             start_time = datetime.now()
