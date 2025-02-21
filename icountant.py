@@ -57,8 +57,44 @@ class ICountant:
         logger.setLevel(logging.INFO)
 
     def process_transaction(self, transaction: Dict) -> Tuple[bool, str, Dict]:
+        """Process transaction with enhanced ERF and ASF validation"""
         try:
             logger.info(f"Processing transaction: {transaction}")
+            
+            # Validate transaction data
+            is_valid, validation_message = self.validator.validate_transaction(transaction)
+            if not is_valid:
+                logger.error(f"Transaction validation failed: {validation_message}")
+                return False, validation_message, {}
+
+            # Track processing metrics
+            processing_start = time.time()
+            metrics = {
+                'start_time': processing_start,
+                'validation_success': True
+            }
+
+            description = transaction.get('description', '').strip()
+            explanation = transaction.get('explanation', '').strip()
+
+            # Enhanced ERF processing
+            erf_success, erf_message, similar_transactions = find_similar_transactions(
+                description,
+                self.historical_transactions
+            )
+            
+            if not erf_success:
+                logger.warning(f"ERF processing warning: {erf_message}")
+            
+            # Enhanced ASF processing
+            asf_success, asf_message, account_suggestions = predict_account(
+                description,
+                explanation,
+                self.available_accounts
+            )
+            
+            if not asf_success:
+                logger.warning(f"ASF processing warning: {asf_message}")
             is_valid, validation_message = self.validator.validate_transaction(transaction)
             if not is_valid:
                 logger.error(f"Transaction validation failed: {validation_message}")

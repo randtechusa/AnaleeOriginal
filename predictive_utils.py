@@ -7,10 +7,25 @@ from models import Transaction, Account, db
 
 logger = logging.getLogger(__name__)
 
-def find_similar_transactions(description: str, transactions: List[Transaction]) -> List[Dict]:
-    """Find similar transactions using pattern matching and frequency analysis"""
+def find_similar_transactions(description: str, transactions: List[Transaction]) -> Tuple[bool, str, List[Dict]]:
+    """Find similar transactions using pattern matching and frequency analysis with enhanced validation"""
+    logger = logging.getLogger(__name__)
+    
     try:
+        # Input validation
+        if not isinstance(description, str) or not description.strip():
+            return False, "Invalid description", []
+            
+        if not isinstance(transactions, list):
+            return False, "Invalid transactions list", []
+            
         matches = []
+        processed_count = 0
+        error_count = 0
+        
+        # Track metrics for logging
+        total_transactions = len(transactions)
+        start_time = time.time()
         description_lower = description.lower().strip()
         frequency_map = {}
         

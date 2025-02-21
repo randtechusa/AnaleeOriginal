@@ -2,7 +2,7 @@
 Enhanced Predictive Features Module with comprehensive error handling and validation
 """
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from difflib import SequenceMatcher
 import numpy as np
 from sqlalchemy import text
@@ -13,10 +13,27 @@ logger = logging.getLogger(__name__)
 
 class PredictiveFeatures:
     def __init__(self):
-        self.confidence_threshold = 0.7
-        self.min_description_length = 3
-        self.max_results = 5
-        self.setup_logging()
+        self.logger = logging.getLogger(__name__)
+        self.TEXT_SIMILARITY_THRESHOLD = 0.7
+        self.SEMANTIC_SIMILARITY_THRESHOLD = 0.95 #Added for semantic similarity check (Not implemented in original code)
+        self.MAX_RETRIES = 3 # Added for retry mechanism (Not implemented in original code)
+        self.MIN_DESCRIPTION_LENGTH = 3
+
+    def validate_input(self, description: str, explanation: str = "") -> Tuple[bool, str]:
+        """Validate input parameters"""
+        try:
+            if not isinstance(description, str):
+                return False, "Description must be a string"
+            if not description.strip():
+                return False, "Description cannot be empty"
+            if len(description.strip()) < self.MIN_DESCRIPTION_LENGTH:
+                return False, f"Description must be at least {self.MIN_DESCRIPTION_LENGTH} characters"
+            if explanation and not isinstance(explanation, str):
+                return False, "Explanation must be a string"
+            return True, "Valid input"
+        except Exception as e:
+            self.logger.error(f"Input validation error: {str(e)}")
+            return False, f"Validation error: {str(e)}"
 
     def setup_logging(self):
         """Configure logging for the predictive features module"""
@@ -27,23 +44,14 @@ class PredictiveFeatures:
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
 
-    def validate_input(self, description: str, min_length: int = 3) -> bool:
-        """Validate input parameters"""
-        if not description or not isinstance(description, str):
-            logger.error(f"Invalid description: {description}")
-            return False
-        if len(description.strip()) < min_length:
-            logger.error(f"Description too short: {description}")
-            return False
-        return True
-
     def find_similar_transactions(self, description: str) -> Dict[str, Any]:
         """Find similar transactions with enhanced validation and error handling"""
         try:
-            if not self.validate_input(description):
+            is_valid, error_message = self.validate_input(description)
+            if not is_valid:
                 return {
                     'success': False,
-                    'error': 'Invalid or too short description',
+                    'error': error_message,
                     'error_code': 'INVALID_INPUT'
                 }
 
@@ -63,7 +71,7 @@ class PredictiveFeatures:
                         transaction.description.lower()
                     ).ratio()
 
-                    if similarity >= self.confidence_threshold:
+                    if similarity >= self.TEXT_SIMILARITY_THRESHOLD: #Use the threshold from the class
                         similar_transactions.append({
                             'id': transaction.id,
                             'description': transaction.description,
@@ -74,14 +82,14 @@ class PredictiveFeatures:
                             'amount': float(transaction.amount) if transaction.amount else 0
                         })
                 except Exception as tx_error:
-                    logger.warning(f"Error processing transaction {transaction.id}: {str(tx_error)}")
+                    self.logger.warning(f"Error processing transaction {transaction.id}: {str(tx_error)}")
                     continue
 
             similar_transactions.sort(key=lambda x: x['confidence'], reverse=True)
             similar_transactions = similar_transactions[:self.max_results]
 
             processing_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Found {len(similar_transactions)} similar transactions in {processing_time}s")
+            self.logger.info(f"Found {len(similar_transactions)} similar transactions in {processing_time}s")
 
             return {
                 'success': True,
@@ -91,7 +99,7 @@ class PredictiveFeatures:
             }
 
         except Exception as e:
-            logger.error(f"Error finding similar transactions: {str(e)}", exc_info=True)
+            self.logger.error(f"Error finding similar transactions: {str(e)}", exc_info=True)
             return {
                 'success': False,
                 'error': str(e),
@@ -133,7 +141,7 @@ class PredictiveFeatures:
             }
 
         except Exception as e:
-            logger.error(f"Error analyzing transaction patterns: {str(e)}", exc_info=True)
+            self.logger.error(f"Error analyzing transaction patterns: {str(e)}", exc_info=True)
             return {
                 'success': False,
                 'error': str(e),

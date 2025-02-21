@@ -162,41 +162,45 @@ logger.setLevel(logging.DEBUG)
 # Global client instance
 
 
-def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
+def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> Tuple[bool, str, List[Dict]]:
     """
-    Account Suggestion Feature (ASF): Enhanced AI-powered account suggestions with robust error handling
+    Account Suggestion Feature (ASF): Enhanced AI-powered account suggestions with comprehensive validation
     """
     logger = logging.getLogger(__name__)
-    
+
     try:
         # Input validation
         if not isinstance(description, str) or not description.strip():
-            logger.error("ASF: Invalid or empty description")
-            return []
-            
+            return False, "Invalid or empty description", []
+
         if not isinstance(available_accounts, list) or not available_accounts:
-            logger.error("ASF: No available accounts provided")
-            return []
-            
+            return False, "No available accounts provided", []
+
         # Validate account structure
         valid_accounts = []
         for acc in available_accounts:
             if not isinstance(acc, dict):
-                logger.warning(f"ASF: Invalid account format: {acc}")
+                logger.warning(f"Invalid account format: {acc}")
                 continue
-            if all(key in acc for key in ['name', 'category']):
+            if all(key in acc for key in ['name', 'category', 'id']):
                 valid_accounts.append(acc)
             else:
-                logger.warning(f"ASF: Account missing required fields: {acc}")
-                
+                logger.warning(f"Account missing required fields: {acc}")
+
         if not valid_accounts:
-            logger.error("ASF: No valid accounts available for matching")
-            return []
+            return False, "No valid accounts available for matching", []
+
+        # Initialize metrics
+        start_time = time.time()
+        processing_metrics = {
+            'total_accounts': len(valid_accounts),
+            'start_time': start_time
+        }
 
         client = get_openai_client()
         if not client:
             logger.warning("OpenAI client unavailable, using fallback matching")
-            return []
+            return False, "OpenAI client unavailable", []
 
         # Format account information
         account_info = "\n".join([
@@ -226,15 +230,17 @@ Provide up to 3 suggestions in JSON format:
         )
 
         suggestions = json.loads(response.choices[0].message.content)
-        return suggestions[:3]  # Return top 3 suggestions
+        processing_metrics['end_time'] = time.time()
+        processing_metrics['processing_time'] = processing_metrics['end_time'] - processing_metrics['start_time']
+        return True, "", suggestions[:3]  # Return top 3 suggestions
 
     except Exception as e:
         logger.error(f"Error in account suggestion: {str(e)}")
-        return []
+        return False, str(e), []
     try:
         if not description or not available_accounts:
             logger.error("Missing required parameters for account prediction")
-            return []
+            return False, "Missing required parameters", []
 
         logger.info(f"ASF: Predicting account for description: {description}")
 
@@ -251,7 +257,7 @@ Provide up to 3 suggestions in JSON format:
 
         if not client:
             logger.error("Failed to initialize OpenAI client after retries")
-            return rule_based_account_matching(description, available_accounts)
+            return False, "Failed to initialize OpenAI client", rule_based_account_matching(description, available_accounts)
 
         # Format available accounts
         account_info = "\n".join([
@@ -315,7 +321,7 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
             content = get_account_suggestions()
             if not content:
                 logger.error("Empty response from AI service")
-                return rule_based_account_matching(description, available_accounts)
+                return False, "Empty AI response", rule_based_account_matching(description, available_accounts)
 
             # Enhanced response validation
             content = content.strip()
@@ -324,7 +330,7 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
             end_idx = content.rfind(']')
             if start_idx == -1 or end_idx == -1:
                 logger.error("Invalid JSON format in AI response")
-                return rule_based_account_matching(description, available_accounts)
+                return False, "Invalid JSON format", rule_based_account_matching(description, available_accounts)
 
             content = content[start_idx:end_idx + 1]
 
@@ -333,13 +339,13 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
                 suggestions = json.loads(content)
                 if not isinstance(suggestions, list):
                     logger.error("AI response is not a list")
-                    return rule_based_account_matching(description, available_accounts)
+                    return False, "AI response is not a list", rule_based_account_matching(description, available_accounts)
             except json.JSONDecodeError as je:
                 logger.error(f"JSON parsing error: {str(je)}")
-                return rule_based_account_matching(description, available_accounts)
+                return False, f"JSON parsing error: {str(je)}", rule_based_account_matching(description, available_accounts)
             except Exception as e:
                 logger.error(f"Unexpected error parsing AI response: {str(e)}")
-                return rule_based_account_matching(description, available_accounts)
+                return False, f"Unexpected error parsing AI response: {str(e)}", rule_based_account_matching(description, available_accounts)
 
             # Enhanced validation and formatting
             valid_suggestions = []
@@ -375,19 +381,19 @@ Return 1-3 suggestions, ranked by confidence. Only suggest accounts that exist i
 
             if not valid_suggestions:
                 logger.warning("No valid suggestions found from AI response")
-                return rule_based_account_matching(description, available_accounts)
+                return False, "No valid suggestions found", rule_based_account_matching(description, available_accounts)
 
             # Sort by confidence and return top 3
             valid_suggestions.sort(key=lambda x: x['confidence'], reverse=True)
-            return valid_suggestions[:3]
+            return True, "", valid_suggestions[:3]
 
         except Exception as e:
             logger.error(f"Error processing AI response: {str(e)}")
-            return rule_based_account_matching(description, available_accounts)
+            return False, str(e), rule_based_account_matching(description, available_accounts)
 
     except Exception as e:
         logger.error(f"Critical error in predict_account: {str(e)}")
-        return rule_based_account_matching(description, available_accounts)
+        return False, str(e), rule_based_account_matching(description, available_accounts)
 
 def detect_transaction_anomalies(transactions, historical_data=None):
     """Detect anomalies in transactions using AI analysis."""
@@ -899,8 +905,8 @@ def calculate_similarity(transaction_description: str, comparison_description: s
             return 0.0
         except Exception as e:
             logger.error(f"Error in similarity request: {str(e)}")
-            raise  # Let handle_rate_limit handle retries if needed
-    
+            raise  #Let handle_rate_limit handle retries if needed
+
     try:
         return make_similarity_request()
     except Exception as e:
@@ -1029,7 +1035,7 @@ def suggest_explanation(description: str, similar_transactions: list = None) -> 
     ESF (Explanation Suggestion Feature): Enhanced explanation generator
     """
     logger = logging.getLogger(__name__)
-    
+
     try:
         client = get_openai_client()
         if not client:
@@ -1069,10 +1075,10 @@ Provide a JSON response:
         logger.error(f"Error suggesting explanation: {str(e)}")
         return {'explanation': '', 'confidence': 0}
     logger.info("ESF: Generating explanation suggestion")
-    
+
     # Initialize OpenAI client
     client = get_openai_client()
-    
+
     try:
         # Format similar transactions for context
         similar_context = ""
@@ -1081,17 +1087,17 @@ Provide a JSON response:
                 f"- Description: {t['transaction'].description}\n  Explanation: {t['transaction'].explanation if t['transaction'].explanation else 'No explanation'}"
                 for t in similar_transactions[:3]
             ])
-        
+
         prompt = f"""Analyze this financial transaction and suggest an explanation:
-        
+
         Transaction Description: {description}
         {similar_context}
-        
+
         Based on the transaction description and any similar transactions, provide:
         1. A clear, professional explanation
         2. The confidence level in this suggestion
         3. Key factors considered in generating this explanation
-        
+
         Format your response as a JSON object with this structure:
         {{
             "suggested_explanation": "string",
@@ -1099,7 +1105,7 @@ Provide a JSON response:
             "factors_considered": ["string"]
         }}
         """
-        
+
         @handle_rate_limit
         def get_explanation_suggestion():
             response = client.chat.completions.create(
@@ -1112,7 +1118,7 @@ Provide a JSON response:
                 max_tokens=250
             )
             return response.choices[0].message.content.strip()
-        
+
         try:
             content = get_explanation_suggestion()
             if content:
@@ -1121,15 +1127,15 @@ Provide a JSON response:
             else:
                 logger.error("Empty response from OpenAI")
                 return generate_fallback_explanation(description, similar_transactions)
-                
+
         except json.JSONDecodeError as je:
             logger.error(f"Error parsing explanation suggestion: {str(je)}")
             return generate_fallback_explanation(description, similar_transactions)
-            
+
         except Exception as e:
             logger.error(f"Error processing explanation suggestion: {str(e)}")
             return generate_fallback_explanation(description, similar_transactions)
-            
+
     except Exception as e:
         logger.warning(f"AI explanation generation failed, falling back to pattern matching: {str(e)}")
         return generate_fallback_explanation(description, similar_transactions)
@@ -1146,17 +1152,17 @@ def generate_fallback_explanation(description: str, similar_transactions: list =
                     "confidence": best_match['similarity_score'],
                     "factors_considered": ["Based on similar transaction pattern"]
                 }
-        
+
         # If no similar transactions, generate a basic explanation
         words = description.split()
         basic_explanation = f"Payment for {' '.join(words[:3])}..." if len(words) > 3 else description
-        
+
         return {
             "suggested_explanation": basic_explanation,
             "confidence": 0.3,  # Low confidence for basic pattern matching
             "factors_considered": ["Generated from transaction description pattern"]
         }
-        
+
     except Exception as fallback_error:
         logger.error(f"Fallback explanation generation failed: {str(fallback_error)}")
         return {
@@ -1170,32 +1176,32 @@ def verify_ai_features() -> bool:
     Verifies AI features functionality with direct API calls
     """
     logger.info("Starting AI features verification...")
-    
+
     try:
         # Test ASF - Account Suggestion Feature
         test_account = predict_account(
             "Monthly Office Rent Payment",
             "Regular monthly office space rental",
-            [{'name': 'Rent Expense', 'category': 'Expenses', 'link': '510'}]
+            [{'name': 'Rent Expense', 'category': 'Expenses', 'link': '510', 'id': 1}]
         )
         logger.info("ASF test successful")
-        
+
         # Test ERF - Explanation Recognition Feature
         similar_trans = find_similar_transactions(
             "Monthly Office Rent Payment",
             [{'description': 'Office Rent March 2024', 'id': 1}], 1
         )
         logger.info("ERF test successful")
-        
+
         # Test ESF - Explanation Suggestion Feature
         explanation = suggest_explanation(
             "Monthly Office Rent Payment",
             similar_trans if similar_trans else None
         )
         logger.info("ESF test successful")
-        
+
         return True
-        
+
     except Exception as e:
         logger.error(f"AI features verification failed: {str(e)}")
         return False
