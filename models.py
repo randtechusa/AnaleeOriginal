@@ -201,15 +201,40 @@ class AlertConfiguration(db.Model):
     user = db.relationship('User', backref=db.backref('alert_configurations', lazy=True))
 
 class ErrorLog(db.Model):
-    """Error logging model"""
+    """Enhanced error logging model with detailed tracking"""
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     error_type = db.Column(db.String(50))
     error_message = db.Column(db.Text)
     stack_trace = db.Column(db.Text)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    endpoint = db.Column(db.String(100))
+    request_method = db.Column(db.String(10))
+    request_path = db.Column(db.String(255))
+    status_code = db.Column(db.Integer)
+    resolved = db.Column(db.Boolean, default=False)
+    resolution_time = db.Column(db.DateTime)
+    resolution_notes = db.Column(db.Text)
 
     user = db.relationship('User', backref=db.backref('error_logs', lazy=True))
+
+    @classmethod
+    def log_error(cls, error_type, message, stack_trace=None, user_id=None, **kwargs):
+        """Centralized error logging method"""
+        try:
+            error_log = cls(
+                error_type=error_type,
+                error_message=str(message),
+                stack_trace=stack_trace,
+                user_id=user_id,
+                **kwargs
+            )
+            db.session.add(error_log)
+            db.session.commit()
+            return True
+        except Exception as e:
+            print(f"Failed to log error: {e}")
+            return False
 
 class FinancialRecommendation(db.Model):
     """Model for storing AI-generated financial recommendations"""

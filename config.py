@@ -5,7 +5,7 @@ class Config:
     """Base configuration"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
 
-    # Database configuration with enhanced SQLite fallback
+    # Database configuration with enhanced connection handling
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     
     def init_sqlite():
@@ -13,21 +13,28 @@ class Config:
         os.makedirs('instance', exist_ok=True)
         return f'sqlite:///{sqlite_path}'
 
+    def test_db_connection(uri):
+        from sqlalchemy import create_engine, text
+        try:
+            if uri.startswith('postgres://'):
+                uri = uri.replace('postgres://', 'postgresql://')
+            engine = create_engine(uri, pool_pre_ping=True, connect_args={'connect_timeout': 10})
+            with engine.connect() as conn:
+                conn.execute(text('SELECT 1'))
+            return True, uri
+        except Exception as e:
+            print(f"Database connection failed: {e}")
+            return False, None
+
     if not SQLALCHEMY_DATABASE_URI:
         SQLALCHEMY_DATABASE_URI = init_sqlite()
     else:
-        if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
-        
-        try:
-            from sqlalchemy import create_engine, text
-            engine = create_engine(SQLALCHEMY_DATABASE_URI, pool_pre_ping=True)
-            with engine.connect() as conn:
-                conn.execute(text('SELECT 1'))
-        except Exception as e:
-            print(f"Warning: Primary database connection failed: {e}")
+        success, tested_uri = test_db_connection(SQLALCHEMY_DATABASE_URI)
+        if not success:
             print("Falling back to SQLite database")
             SQLALCHEMY_DATABASE_URI = init_sqlite()
+        else:
+            SQLALCHEMY_DATABASE_URI = tested_uri
             
     # Configure SQLAlchemy pool settings
     SQLALCHEMY_ENGINE_OPTIONS = {
