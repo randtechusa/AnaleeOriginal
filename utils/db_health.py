@@ -1,4 +1,3 @@
-
 import logging
 import time
 from typing import Tuple, Optional, Dict
@@ -13,14 +12,15 @@ handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -
 logger.addHandler(handler)
 
 class DatabaseHealth:
-    _instance = None
     _health_metrics = {
         'last_check': None,
         'consecutive_failures': 0,
-        'total_failures': 0,
+        'total_checks': 0,
         'avg_response_time': 0,
-        'total_checks': 0
+        'total_failures': 0
     }
+
+    _instance = None
 
     @staticmethod
     def get_instance():
@@ -30,11 +30,11 @@ class DatabaseHealth:
 
     @staticmethod
     def check_connection() -> Tuple[bool, Optional[str]]:
-        start_time = time.time()
         try:
+            start_time = time.time()
             db.session.execute(text('SELECT 1'))
             db.session.commit()
-            
+
             # Update metrics
             elapsed = time.time() - start_time
             DatabaseHealth._health_metrics['avg_response_time'] = (
@@ -45,7 +45,7 @@ class DatabaseHealth:
             DatabaseHealth._health_metrics['total_checks'] += 1
             DatabaseHealth._health_metrics['last_check'] = datetime.now()
             DatabaseHealth._health_metrics['consecutive_failures'] = 0
-            
+
             return True, None
         except SQLAlchemyError as e:
             error_msg = f"Database health check failed: {str(e)}"
@@ -64,7 +64,7 @@ class DatabaseHealth:
             except OperationalError as e:
                 delay = base_delay * (2 ** attempt)
                 logger.warning(f"Database operation failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
-                
+
                 if attempt < max_retries - 1:
                     logger.info(f"Retrying in {delay} seconds...")
                     time.sleep(delay)

@@ -59,119 +59,60 @@ class ICountant:
         logger.setLevel(logging.INFO)
 
     def process_transaction(self, transaction: Dict) -> Tuple[bool, str, Dict]:
-    """Process transaction with comprehensive ERF and ASF validation"""
-    try:
-        processing_start = datetime.now()
-        logger.info(f"Processing transaction: {transaction}")
-
-        # Enhanced validation
-        is_valid, validation_message = self.validator.validate_transaction(transaction)
-        if not is_valid:
-            logger.error(f"Transaction validation failed: {validation_message}")
-            return False, validation_message, {
-                'error_type': 'VALIDATION_ERROR',
-                'details': validation_message
-            }
-
-        description = transaction.get('description', '').strip()
-        amount = Decimal(str(transaction.get('amount', 0)))
-
-        # Get account suggestions and similar transactions
-        account_suggestions = self.predictor.suggest_account(description)
-        similar_result = self.predictor.find_similar_transactions(description)
-        similar_transactions = similar_result.get('similar_transactions', [])
-
-        insights = {
-            'transaction_type': 'income' if amount > 0 else 'expense',
-            'amount_formatted': f"${abs(amount):,.2f}",
-            'suggested_accounts': account_suggestions,
-            'similar_transactions': similar_transactions,
-            'confidence_level': max([s.get('confidence', 0) for s in account_suggestions] + [0]),
-            'processing_time': (datetime.now() - processing_start).total_seconds()
-        }
-
-        return True, "Transaction processed successfully", insights
-
-    except Exception as e:
-        logger.error(f"Error processing transaction: {str(e)}", exc_info=True)
-        return False, f"Error processing transaction: {str(e)}", {}
-        """Process transaction with comprehensive ERF and ASF validation"""
+        """Process transaction with enhanced AI insights"""
         try:
-            processing_start = datetime.now()
-            logger.info(f"Processing transaction: {transaction}")
+            amount = transaction.get('amount', 0)
+            description = transaction.get('description', '')
 
-            # Enhanced validation with detailed feedback
-            if not isinstance(transaction, dict):
-                error_msg = "Invalid transaction format"
-                logger.error(f"Transaction validation failed: {error_msg}")
-                return False, error_msg, {'error_type': 'FORMAT_ERROR'}
-
-            # Create safe transaction data copy without sensitive info
-            safe_transaction = {
-                k: v for k, v in transaction.items() 
-                if k not in ['password', 'token', 'api_key']
-            }
-
-            # Validate transaction structure
-            is_valid, validation_message = self.validator.validate_transaction(transaction)
-            if not is_valid:
-                logger.error(f"Transaction validation failed: {validation_message}")
-                return False, validation_message, {
-                    'error_type': 'VALIDATION_ERROR',
-                    'validation_details': {
-                        'timestamp': datetime.now().isoformat(),
-                        'error_message': validation_message,
-                        'transaction_data': safe_transaction,
-                        'validation_context': {
-                            'has_description': bool(transaction.get('description')),
-                            'has_amount': bool(transaction.get('amount')),
-                            'has_date': bool(transaction.get('date'))
-                        }
-                    },
-                    'suggestion': 'Please verify all required fields are provided with valid formats'
-                }
-
-            # Track processing metrics
-            metrics = {
-                'start_time': processing_start,
-                'validation_success': True,
-                'processing_details': {}
-            }
-
-            # Placeholder for ERF and ASF - needs proper implementation
-            def find_similar_transactions(description, historical_transactions):
-                return True, "ERF successful (placeholder)", []
-
-            def predict_account(description, explanation, available_accounts):
-                return True, "ASF successful (placeholder)", ["Account 1", "Account 2"]
-
-            description = transaction.get('description', '').strip()
-            amount = Decimal(str(transaction.get('amount', 0)))
-
-            account_suggestions = self.predictor.suggest_account(description)
-            similar_result = self.predictor.find_similar_transactions(description)
-            similar_transactions = similar_result.get('similar_transactions', []) if similar_result.get('success') else []
-
-            insights = {
-                'transaction_type': 'income' if amount > 0 else 'expense',
-                'amount_formatted': f"${abs(amount):,.2f}",
-                'suggested_accounts': account_suggestions,
-                'similar_transactions': similar_transactions,
-                'confidence_level': max([s.get('confidence', 0) for s in account_suggestions] + [0]),
-                'processing_date': datetime.now().isoformat(),
-                'patterns': {
-                    'frequency': self._analyze_frequency(description, similar_transactions),
-                    'amount_pattern': self._analyze_amount_pattern(amount, similar_transactions),
-                    'timing_pattern': self._analyze_timing_pattern(similar_transactions)
+            # Generate insights
+            transaction_info = {
+                'insights': {
+                    'amount_formatted': f"${abs(amount):,.2f}",
+                    'transaction_type': 'income' if amount > 0 else 'expense',
+                    'ai_insights': self._generate_insights(description, amount),
+                    'suggested_accounts': self._suggest_accounts(description, amount),
                 }
             }
 
-            logger.info(f"Transaction processed successfully: {description}")
-            return True, "Transaction processed successfully", insights
+            message = "Transaction analyzed successfully"
+            return True, message, transaction_info
 
         except Exception as e:
-            logger.error(f"Error processing transaction: {str(e)}", exc_info=True)
-            return False, f"Error processing transaction: {str(e)}", {}
+            return False, str(e), {}
+
+    def _generate_insights(self, description, amount):
+        """Generate AI-powered insights"""
+        insights = f"<div class='alert alert-info'>"
+        insights += f"<i class='fas fa-robot me-2'></i>"
+        insights += f"Transaction appears to be a {self._categorize_transaction(description)}"
+        insights += "</div>"
+        return insights
+
+    def _suggest_accounts(self, description, amount):
+        """Suggest appropriate accounts"""
+        suggestions = []
+        for account in self.available_accounts:
+            if self._matches_account(description, account):
+                suggestions.append({
+                    'account': account,
+                    'reason': f"Matches typical {account['category']} transaction pattern"
+                })
+        return suggestions[:3]  # Return top 3 suggestions
+
+    def _categorize_transaction(self, description: str) -> str:
+        # Placeholder for more sophisticated categorization logic
+        if "rent" in description.lower():
+            return "rent payment"
+        elif "grocery" in description.lower():
+            return "grocery purchase"
+        elif "salary" in description.lower():
+            return "salary deposit"
+        else:
+            return "uncategorized transaction"
+
+    def _matches_account(self, description: str, account: Dict) -> bool:
+        # Placeholder for more robust matching logic
+        return any(keyword in description.lower() for keyword in account.get('keywords', []))
 
     def complete_transaction(self, transaction_id: int, selected_account: int) -> Tuple[bool, str, Dict]:
         try:

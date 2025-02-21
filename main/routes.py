@@ -107,7 +107,16 @@ def analyze_data():
     """Analyze transaction data with enhanced error handling"""
     try:
         predictor = PredictiveFeatures()
-        transactions = Transaction.query.filter_by(user_id=current_user.id).all()
+        transactions = Transaction.query.filter_by(
+            user_id=current_user.id,
+            is_processed=False
+        ).order_by(Transaction.date.desc()).all()
+
+        total_count = len(transactions)
+        processed_count = Transaction.query.filter_by(
+            user_id=current_user.id,
+            is_processed=True
+        ).count()
 
         if not transactions:
             flash('No transactions found to analyze', 'info')
