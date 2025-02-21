@@ -331,8 +331,22 @@ class PredictiveEngine:
                 historical_transactions = Transaction.query.filter_by(
                     user_id=user_id
                 ).order_by(Transaction.date.desc()).limit(100).all()
+                
+                # Initialize ERF processor
+                erf_processor = ERFProcessor()
+                
+                # Process similar transactions
+                success, message, similar_transactions = erf_processor.find_similar_transactions(
+                    description,
+                    [t.to_dict() for t in historical_transactions],
+                    user_id
+                )
+                
+                if not success:
+                    self.logger.warning(f"ERF processing warning: {message}")
+                    
             except Exception as e:
-                self.logger.error(f"Error fetching historical transactions: {str(e)}")
+                self.logger.error(f"Error in ERF processing: {str(e)}")
                 historical_transactions = []
 
             # Apply ERF to find similar transactions

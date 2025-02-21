@@ -4,12 +4,16 @@ AI utilities module with enhanced error handling and rate limiting
 
 import logging
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 from openai import OpenAI, APIError, RateLimitError
 import os
 import time
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import json
+from difflib import SequenceMatcher
+from sqlalchemy.exc import SQLAlchemyError
+from models import ErrorLog, db
+
 
 # Configure logging with proper format
 logging.basicConfig(
@@ -882,91 +886,122 @@ def calculate_similarity(transaction_description: str, comparison_description: s
         logger.error(f"Error calculating similarity: {str(e)}")
         return 0.0
 
-def find_similar_transactions(transaction_description: str, transactions: list) -> list:
+class ERFProcessor:
+    def __init__(self):
+        self.TEXT_SIMILARITY_THRESHOLD = 0.7
+        self.SEMANTIC_SIMILARITY_THRESHOLD = 0.95
+        self.MAX_RETRIES = 3
+        self.MIN_DESCRIPTION_LENGTH = 3
+
+    def validate_description(self, description: str) -> Tuple[bool, str]:
+        """Validate transaction description"""
+        if not description:
+            return False, "Description cannot be empty"
+        if len(description.strip()) < self.MIN_DESCRIPTION_LENGTH:
+            return False, f"Description must be at least {self.MIN_DESCRIPTION_LENGTH} characters"
+        return True, "Valid description"
+
+    def calculate_text_similarity(self, text1: str, text2: str) -> float:
+        """Calculate text similarity between two strings"""
+        try:
+            return SequenceMatcher(None, text1.lower(), text2.lower()).ratio()
+        except Exception as e:
+            logger.error(f"Error calculating text similarity: {str(e)}")
+            return 0.0
+
+    def find_similar_transactions(self, 
+                                transaction_description: str, 
+                                transactions: List[Dict],
+                                user_id: int) -> Tuple[bool, str, List[Dict]]:
+        """
+        Enhanced ERF: Find transactions with similar descriptions using multiple similarity metrics
+        """
+        try:
+            # Validate input
+            is_valid, validation_msg = self.validate_description(transaction_description)
+            if not is_valid:
+                return False, validation_msg, []
+
+            # Initialize results
+            similar_transactions = []
+            processed_count = 0
+            error_count = 0
+
+            logger.info(f"Processing ERF for description: {transaction_description}")
+
+            for transaction in transactions:
+                try:
+                    processed_count += 1
+
+                    # Skip invalid transactions
+                    if not transaction.get('description'):
+                        continue
+
+                    # Calculate similarity
+                    similarity = self.calculate_text_similarity(
+                        transaction_description,
+                        transaction['description']
+                    )
+
+                    if similarity >= self.TEXT_SIMILARITY_THRESHOLD:
+                        similar_transactions.append({
+                            'transaction': transaction,
+                            'similarity_score': similarity,
+                            'match_type': 'text'
+                        })
+
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"Error processing transaction {transaction.get('id', 'unknown')}: {str(e)}")
+
+                    # Log error to database
+                    self.log_error(user_id, 'ERF_PROCESSING_ERROR', str(e))
+
+                    if error_count > self.MAX_RETRIES:
+                        return False, "Exceeded maximum error threshold", []
+
+            # Sort by similarity score
+            similar_transactions.sort(key=lambda x: x['similarity_score'], reverse=True)
+
+            logger.info(f"ERF processing completed. Found {len(similar_transactions)} matches")
+
+            return True, f"Successfully processed {processed_count} transactions", similar_transactions
+
+        except Exception as e:
+            error_msg = f"ERF processing failed: {str(e)}"
+            logger.error(error_msg)
+            self.log_error(user_id, 'ERF_SYSTEM_ERROR', error_msg)
+            return False, error_msg, []
+
+    def log_error(self, user_id: int, error_type: str, error_message: str):
+        """Log errors to database"""
+        try:
+            error_log = ErrorLog(
+                timestamp=datetime.utcnow(),
+                error_type=error_type,
+                error_message=error_message,
+                user_id=user_id
+            )
+            db.session.add(error_log)
+            db.session.commit()
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to log error to database: {str(e)}")
+
+def find_similar_transactions(transaction_description: str, transactions: list, user_id: int) -> list:
     """
     ERF (Explanation Recognition Feature): 
     Find transactions with similar descriptions based on:
     - 70% text similarity OR
     - 95% semantic similarity threshold
     """
-    TEXT_THRESHOLD = 0.7
-    SEMANTIC_THRESHOLD = 0.95
-    MAX_RETRIES = 3
-
-    try:
-        if not transaction_description:
-            logger.warning("Empty transaction description provided")
-            return []
-            
-        if not transactions:
-            logger.info("No historical transactions available for comparison")
-            return []
-        
-        logger.info(f"ERF: Finding similar transactions for description: {transaction_description}")
-        
-        def process_transaction(transaction) -> Optional[dict]:
-            try:
-                if not transaction or not getattr(transaction, 'description', None):
-                    return None
-                
-                # Implement retry logic for similarity calculation
-                retries = MAX_RETRIES
-                similarity = 0.0
-                last_error = None
-                
-                while retries > 0:
-                    try:
-                        similarity = calculate_similarity(transaction_description, transaction.description)
-                        break
-                    except Exception as e:
-                        last_error = e
-                        retries -= 1
-                        if retries > 0:
-                            time.sleep(2 ** (MAX_RETRIES - retries))  # Exponential backoff
-                            
-                if retries == 0 and last_error:
-                    logger.error(f"Failed to calculate similarity after {MAX_RETRIES} attempts: {str(last_error)}")
-                    return None
-                # Process matches based on similarity thresholds
-                if similarity >= SEMANTIC_THRESHOLD:
-                    return {
-                        'transaction': transaction,
-                        'similarity': similarity,
-                        'match_type': 'semantic',
-                        'confidence': similarity
-                    }
-                elif similarity >= TEXT_THRESHOLD:
-                    return {
-                        'transaction': transaction,
-                        'similarity': similarity,
-                        'match_type': 'text',
-                        'confidence': similarity * 0.9  # Slightly lower confidence for text matches
-                    }
-                return None
-                
-            except Exception as e:
-                logger.error(f"Error processing transaction for similarity: {str(e)}")
-                return None
-                
-        try:
-            # Process transactions in parallel batches
-            similar_transactions = []
-            for transaction in transactions:
-                result = process_transaction(transaction)
-                if result:
-                    similar_transactions.append(result)
-            
-            # Sort by similarity and return top matches
-            similar_transactions.sort(key=lambda x: x['similarity'], reverse=True)
-            return similar_transactions[:5]  # Return top 5 matches
-            
-        except Exception as e:
-            logger.error(f"Error processing transaction batch: {str(e)}")
-            return []
-            
-    except Exception as e:
-        logger.error(f"Critical error in findsimilar_transactions: {str(e)}")
+    erf_processor = ERFProcessor()
+    success, message, similar_transactions = erf_processor.find_similar_transactions(
+        transaction_description, transactions, user_id
+    )
+    if not success:
+        logger.error(message)
         return []
+    return similar_transactions
 
 def suggest_explanation(description: str, similar_transactions: list = None) -> dict:
     """
@@ -984,8 +1019,8 @@ def suggest_explanation(description: str, similar_transactions: list = None) -> 
         context = ""
         if similar_transactions:
             context = "\nSimilar transactions:\n" + "\n".join([
-                f"- {t.description}: {t.explanation}"
-                for t in similar_transactions[:3] if hasattr(t, 'explanation')
+                f"- {t['transaction'].description}: {t['transaction'].explanation if hasattr(t['transaction'], 'explanation') else 'No explanation'}"
+                for t in similar_transactions[:3]
             ])
 
         prompt = f"""
@@ -1022,8 +1057,8 @@ Provide a JSON response:
         similar_context = ""
         if similar_transactions:
             similar_context = "\nSimilar transactions and their explanations:\n" + "\n".join([
-                f"- Description: {t['transaction'].description}\n  Explanation: {t['transaction'].explanation}"
-                for t in similar_transactions[:3] if t['transaction'].explanation
+                f"- Description: {t['transaction'].description}\n  Explanation: {t['transaction'].explanation if t['transaction'].explanation else 'No explanation'}"
+                for t in similar_transactions[:3]
             ])
         
         prompt = f"""Analyze this financial transaction and suggest an explanation:
@@ -1083,11 +1118,11 @@ def generate_fallback_explanation(description: str, similar_transactions: list =
     try:
         # Fallback: Use similar transactions if available
         if similar_transactions and len(similar_transactions) > 0:
-            best_match = max(similar_transactions, key=lambda x: x['similarity'])
-            if best_match['similarity'] > 0.7:  # High confidence threshold
+            best_match = max(similar_transactions, key=lambda x: x['similarity_score'])
+            if best_match['similarity_score'] > 0.7:  # High confidence threshold
                 return {
-                    "suggested_explanation": best_match['transaction'].explanation or description,
-                    "confidence": best_match['similarity'],
+                    "suggested_explanation": best_match['transaction'].get('explanation', description),
+                    "confidence": best_match['similarity_score'],
                     "factors_considered": ["Based on similar transaction pattern"]
                 }
         
@@ -1127,7 +1162,7 @@ def verify_ai_features() -> bool:
         # Test ERF - Explanation Recognition Feature
         similar_trans = find_similar_transactions(
             "Monthly Office Rent Payment",
-            [{'description': 'Office Rent March 2024', 'id': 1}]
+            [{'description': 'Office Rent March 2024', 'id': 1}], 1
         )
         logger.info("ERF test successful")
         
