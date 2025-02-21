@@ -11,7 +11,7 @@ localPort = 5000
 externalPort = 80
 
 [workflows]
-runButton = "Initialize Database"
+runButton = "Initialize"
 
 [[workflows.workflow]]
 name = "Project"
@@ -114,6 +114,14 @@ args = "python app.py"
 
 [[workflows.workflow]]
 name = "Initialize Database"
+author = 37983975
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python migrations.py && python app.py"
+
+[[workflows.workflow]]
+name = "Initialize"
 author = 37983975
 
 [[workflows.workflow.tasks]]
