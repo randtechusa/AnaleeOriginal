@@ -37,11 +37,38 @@ class HybridPredictor:
             logger.error(f"Error in keyword matching: {str(e)}")
             return []
 
-    async def get_suggestions(self, 
+    async async def get_suggestions(self, 
                             description: str,
                             amount: float,
                             historical_data: List[Dict],
                             available_accounts: List[Dict]) -> List[Dict]:
+        """Enhanced suggestion system with AI integration"""
+        try:
+            # Get base pattern suggestions
+            pattern_suggestions = self.pattern_matcher.suggest_from_patterns(
+                description, amount, historical_data
+            )
+            
+            # Get similar transactions
+            similar_transactions = self.find_similar_transactions(description)
+            
+            # Combine suggestions with confidence scoring
+            combined_suggestions = []
+            for suggestion in pattern_suggestions:
+                if suggestion.get('confidence', 0) > self.confidence_threshold:
+                    combined_suggestions.append({
+                        'account': suggestion.get('account_name', ''),
+                        'confidence': suggestion.get('confidence', 0),
+                        'source': 'pattern',
+                        'explanation': suggestion.get('explanation', ''),
+                        'similar_transactions': similar_transactions.get('similar_transactions', [])
+                    })
+            
+            return combined_suggestions[:5]  # Return top 5 suggestions
+            
+        except Exception as e:
+            logger.error(f"Error getting suggestions: {str(e)}")
+            return []
         """
         Get suggestions using hybrid approach:
         1. Try pattern matching first
