@@ -11,8 +11,28 @@ csrf = CSRFProtect()
 migrate = Migrate()
 
 def init_extensions(app):
-    """Initialize all Flask extensions"""
-    # Initialize SQLAlchemy first
+    """Initialize all Flask extensions with enhanced monitoring"""
+    # Configure SQLAlchemy event listeners for monitoring
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+    import logging
+    import time
+
+    logger = logging.getLogger('database')
+    
+    @event.listens_for(Engine, "before_cursor_execute")
+    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        conn.info.setdefault('query_start_time', []).append(time.time())
+        logger.debug("Starting Query: %s", statement)
+
+    @event.listens_for(Engine, "after_cursor_execute")
+    def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        total = time.time() - conn.info['query_start_time'].pop()
+        logger.debug("Query Complete! Time: %f", total)
+        if total > 1.0:  # Log slow queries
+            logger.warning("Slow Query Detected: %s", statement)
+
+    # Initialize SQLAlchemy with monitoring
     db.init_app(app)
 
     # Then initialize other extensions

@@ -19,19 +19,49 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def init_database(app):
-    """Initialize database with comprehensive error handling"""
+    """Initialize database with comprehensive error handling and health monitoring"""
+    from utils.db_health import DatabaseHealth
+    
     logger.info("Starting database initialization...")
-    max_retries = 5
-    retry_count = 0
-    base_delay = 1
-
+    
     if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI']:
         with app.app_context():
             db.create_all()
             return True
 
-    while retry_count < max_retries:
-        try:
+    def db_init_operation():
+        with app.app_context():
+            # Test connection
+            db.session.execute(text('SELECT 1'))
+            db.session.commit()
+            
+            # Create tables
+            db.create_all()
+            logger.info("Database tables created successfully")
+
+    success, error = DatabaseHealth.perform_retry(
+        operation=db_init_operation,
+        max_retries=5,
+        base_delay=1.0
+    )
+
+    if not success:
+        logger.error(f"Database initialization failed: {error}")
+        return False
+
+    # Schedule periodic health checks
+    def scheduled_health_check():
+        while True:
+            health_status, error = DatabaseHealth.check_connection()
+            if not health_status:
+                logger.error(f"Health check failed: {error}")
+            time.sleep(300)  # Check every 5 minutes
+
+    import threading
+    health_check_thread = threading.Thread(target=scheduled_health_check, daemon=True)
+    health_check_thread.start()
+
+    return True
             with app.app_context():
                 # Test database connection
                 db.session.execute(text('SELECT 1'))
