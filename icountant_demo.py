@@ -15,50 +15,51 @@ async def demo_icountant():
         {'name': 'Rent', 'category': 'Expense', 'id': 5}
     ]
 
-    # Sample transactions to process
-    sample_transactions = [
+    # Initialize iCountant
+    agent = ICountant(available_accounts)
+
+    # Test cases including edge cases and invalid data
+    test_transactions = [
+        # Valid transactions
         {
-            'date': datetime.now(),
+            'date': datetime.now().strftime('%Y-%m-%d'),
             'amount': Decimal('1500.00'),
             'description': 'Client payment received - ABC Corp'
         },
         {
-            'date': datetime.now(),
+            'date': datetime.now().strftime('%Y-%m-%d'),
             'amount': Decimal('-250.75'),
             'description': 'Office supplies purchase'
         },
-        # Add an invalid transaction to test error handling
+        # Invalid transactions for testing error handling
         {
-            'date': datetime.now(),
-            'amount': 'invalid',
-            'description': 'Invalid transaction'
+            'date': 'invalid-date',
+            'amount': 'not-a-number',
+            'description': ''
+        },
+        {
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'amount': Decimal('0.00'),
+            'description': 'Zero amount transaction'
+        },
+        # Missing required fields
+        {
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'description': 'Missing amount'
         }
     ]
 
-    # Initialize iCountant
-    agent = ICountant(available_accounts)
-
-    # Process each transaction
-    for transaction in sample_transactions:
-        print("\n" + "="*50)  # Visual separator
-
-        # Get guidance message and transaction info
-        message, transaction_info = await agent.process_transaction(transaction)
-        print("ICountant says:", message)
-
-        if transaction_info:  # Only proceed if transaction was valid
-            # In a real application, this would be user input
-            # For demo, we'll simulate user selecting the first applicable account
-            selected_index = 0 if 'Revenue' in available_accounts[0]['category'] else 1
-
-            # Complete the transaction
-            success, result_message, completed_transaction = agent.complete_transaction(selected_index)
-            print("\nResult:", result_message)
-
-            if success:
-                print("\nCompleted transaction:", completed_transaction)
-        else:
-            print("\nSkipping invalid transaction")
+    # Process each test transaction
+    for transaction in test_transactions:
+        print("\n" + "="*50)
+        print(f"Testing transaction: {transaction}")
+        
+        # Process transaction
+        success, message, insights = agent.process_transaction(transaction)
+        print(f"Success: {success}")
+        print(f"Message: {message}")
+        if success:
+            print("Insights:", insights)
 
 if __name__ == "__main__":
     asyncio.run(demo_icountant())

@@ -1,3 +1,4 @@
+
 """
 Enhanced iCountant module with improved transaction processing and validation
 """
@@ -24,6 +25,8 @@ class TransactionValidator:
 
         try:
             amount = Decimal(str(transaction['amount']))
+            if amount == 0:
+                return False, "Amount cannot be zero"
         except (InvalidOperation, ValueError):
             return False, "Invalid amount format"
 
@@ -32,6 +35,9 @@ class TransactionValidator:
                 datetime.strptime(transaction['date'], '%Y-%m-%d')
         except ValueError:
             return False, "Invalid date format (use YYYY-MM-DD)"
+
+        if not transaction.get('description', '').strip():
+            return False, "Description cannot be empty"
 
         return True, "Transaction validated"
 
@@ -52,6 +58,7 @@ class ICountant:
 
     def process_transaction(self, transaction: Dict) -> Tuple[bool, str, Dict]:
         try:
+            logger.info(f"Processing transaction: {transaction}")
             is_valid, validation_message = self.validator.validate_transaction(transaction)
             if not is_valid:
                 logger.error(f"Transaction validation failed: {validation_message}")
