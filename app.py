@@ -23,7 +23,7 @@ def init_database(app):
     logger.info("Starting database initialization...")
     max_retries = 3
     retry_count = 0
-    base_delay = 1
+    base_delay = 2
 
     while retry_count < max_retries:
         try:
