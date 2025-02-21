@@ -47,6 +47,10 @@ class Config:
             if attempt == max_retries - 1:
                 logger.warning("Falling back to SQLite database after failed PostgreSQL connection attempts")
                 SQLALCHEMY_DATABASE_URI = init_sqlite()
+                db.session.remove()  # Clear any existing sessions
+                success, _ = test_db_connection(SQLALCHEMY_DATABASE_URI)
+                if not success:
+                    raise Exception("Both PostgreSQL and SQLite fallback failed")
             else:
                 logger.warning(f"Database connection attempt {attempt + 1} failed, retrying in {2 ** attempt} seconds")
                 time.sleep(2 ** attempt)

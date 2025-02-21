@@ -43,10 +43,8 @@ class DatabaseHealth:
                 )
                 with engine.connect() as conn:
                     conn.execute(text('SELECT 1'))
-                    conn.execute(text('SELECT version()'))
             else:
                 db.session.execute(text('SELECT 1'))
-                db.session.execute(text('SELECT version()'))
                 db.session.commit()
 
             elapsed = time.time() - start_time
