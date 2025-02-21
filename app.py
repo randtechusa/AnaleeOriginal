@@ -22,18 +22,18 @@ def init_database(app):
     """Initialize database with comprehensive error handling and health monitoring"""
     from utils.db_health import DatabaseHealth
     import time
-    
+
     logger.info("Starting database initialization...")
-    
+
     if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI'].lower():
         logger.info("Using SQLite database")
         with app.app_context():
             db.create_all()
             return True
-            
+
     max_retries = 3
     retry_count = 0
-    
+
     while retry_count < max_retries:
         try:
             with app.app_context():
@@ -54,15 +54,15 @@ def init_database(app):
                     db.create_all()
                     return True
     return False
-            
+
     logger.critical("Failed to initialize database after maximum retries")
     return False
-    
+
     def health_check_routine():
         while True:
             health_status, error = db_health.check_connection()
             metrics = db_health.get_health_metrics()
-            
+
             if not health_status:
                 logger.error(f"Health check failed: {error}")
                 if db_health.should_failover():
@@ -71,9 +71,9 @@ def init_database(app):
                     if 'DATABASE_URL_BACKUP' in app.config:
                         app.config['SQLALCHEMY_DATABASE_URI'] = app.config['DATABASE_URL_BACKUP']
                         db.get_engine(app).dispose()
-            
+
             time.sleep(30)  # Check every 30 seconds
-    
+
     if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI']:
         with app.app_context():
             db.create_all()
@@ -84,7 +84,7 @@ def init_database(app):
             # Test connection
             db.session.execute(text('SELECT 1'))
             db.session.commit()
-            
+
             # Create tables
             db.create_all()
             logger.info("Database tables created successfully")
