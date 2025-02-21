@@ -1,4 +1,3 @@
-
 """
 Enhanced Predictive Features Module with comprehensive error handling and validation
 """
@@ -51,7 +50,6 @@ class PredictiveFeatures:
             similar_transactions = []
             start_time = datetime.now()
 
-            # Get transactions with valid explanations
             transactions = Transaction.query.filter(
                 Transaction.explanation.isnot(None),
                 Transaction.description.isnot(None)
@@ -59,7 +57,6 @@ class PredictiveFeatures:
 
             for transaction in transactions:
                 try:
-                    # Calculate similarity score
                     similarity = SequenceMatcher(
                         None,
                         description.lower(),
@@ -80,7 +77,6 @@ class PredictiveFeatures:
                     logger.warning(f"Error processing transaction {transaction.id}: {str(tx_error)}")
                     continue
 
-            # Sort and limit results
             similar_transactions.sort(key=lambda x: x['confidence'], reverse=True)
             similar_transactions = similar_transactions[:self.max_results]
 
@@ -100,6 +96,48 @@ class PredictiveFeatures:
                 'success': False,
                 'error': str(e),
                 'error_code': 'PROCESSING_ERROR'
+            }
+
+    def get_transaction_patterns(self, user_id: int) -> Dict[str, Any]:
+        """Analyze transaction patterns for a user"""
+        try:
+            if not isinstance(user_id, int) or user_id <= 0:
+                return {'success': False, 'error': 'Invalid user ID'}
+
+            transactions = Transaction.query.filter_by(user_id=user_id).all()
+            if not transactions:
+                return {'success': False, 'error': 'No transactions found'}
+
+            patterns = {
+                'frequent_descriptions': {},
+                'amount_ranges': {},
+                'temporal_patterns': {}
+            }
+
+            for transaction in transactions:
+                desc = transaction.description.lower() if transaction.description else 'unknown'
+                patterns['frequent_descriptions'][desc] = patterns['frequent_descriptions'].get(desc, 0) + 1
+
+                amount = float(transaction.amount) if transaction.amount else 0
+                range_key = f"{int(amount/1000)}k-{int(amount/1000)+1}k"
+                patterns['amount_ranges'][range_key] = patterns['amount_ranges'].get(range_key, 0) + 1
+
+                if transaction.date:
+                    month_key = transaction.date.strftime('%B')
+                    patterns['temporal_patterns'][month_key] = patterns['temporal_patterns'].get(month_key, 0) + 1
+
+            return {
+                'success': True,
+                'patterns': patterns,
+                'total_analyzed': len(transactions)
+            }
+
+        except Exception as e:
+            logger.error(f"Error analyzing transaction patterns: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'error': str(e),
+                'error_code': 'PATTERN_ANALYSIS_ERROR'
             }
 
     def suggest_account(self, description: str, explanation: str = "") -> List[Dict]:
@@ -177,7 +215,7 @@ class PredictiveFeatures:
                         'source': 'pattern_match',
                         'reasoning': f"Pattern match: name ({name_similarity:.0%}), category ({category_similarity:.0%})"
                     }
-                    
+
                     if suggestion not in suggestions:
                         suggestions.append(suggestion)
 
@@ -193,45 +231,3 @@ class PredictiveFeatures:
         except Exception as e:
             logger.error(f"Error suggesting account: {str(e)}", exc_info=True)
             return []
-
-    def get_transaction_patterns(self, user_id: int) -> Dict[str, Any]:
-        """Analyze transaction patterns for a user"""
-        try:
-            transactions = Transaction.query.filter_by(user_id=user_id).all()
-            if not transactions:
-                return {'success': False, 'error': 'No transactions found'}
-
-            patterns = {
-                'frequent_descriptions': {},
-                'amount_ranges': {},
-                'temporal_patterns': {}
-            }
-
-            for transaction in transactions:
-                # Analyze description patterns
-                desc = transaction.description.lower() if transaction.description else 'unknown'
-                patterns['frequent_descriptions'][desc] = patterns['frequent_descriptions'].get(desc, 0) + 1
-
-                # Analyze amount ranges
-                amount = float(transaction.amount) if transaction.amount else 0
-                range_key = f"{int(amount/1000)}k-{int(amount/1000)+1}k"
-                patterns['amount_ranges'][range_key] = patterns['amount_ranges'].get(range_key, 0) + 1
-
-                # Analyze temporal patterns
-                if transaction.date:
-                    month_key = transaction.date.strftime('%B')
-                    patterns['temporal_patterns'][month_key] = patterns['temporal_patterns'].get(month_key, 0) + 1
-
-            return {
-                'success': True,
-                'patterns': patterns,
-                'total_analyzed': len(transactions)
-            }
-
-        except Exception as e:
-            logger.error(f"Error analyzing transaction patterns: {str(e)}", exc_info=True)
-            return {
-                'success': False,
-                'error': str(e),
-                'error_code': 'PATTERN_ANALYSIS_ERROR'
-            }

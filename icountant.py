@@ -5,7 +5,7 @@ Enhanced iCountant module with improved transaction processing and validation
 import logging
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from models import db, Transaction, Account
 from predictive_features import PredictiveFeatures
 
@@ -18,28 +18,32 @@ class TransactionValidator:
         if not isinstance(transaction, dict):
             return False, "Invalid transaction format"
         
-        required_fields = ['description', 'amount']
-        for field in required_fields:
-            if field not in transaction:
-                return False, f"Missing required field: {field}"
-                
-        if not isinstance(transaction.get('amount'), (int, float, Decimal)):
+        required_fields = ['description', 'amount', 'date']
+        missing_fields = [field for field in required_fields if field not in transaction]
+        if missing_fields:
+            return False, f"Missing required fields: {', '.join(missing_fields)}"
+        
+        try:
+            amount = Decimal(str(transaction['amount']))
+        except (InvalidOperation, ValueError):
             return False, "Invalid amount format"
+        
+        try:
+            if isinstance(transaction['date'], str):
+                datetime.strptime(transaction['date'], '%Y-%m-%d')
+        except ValueError:
+            return False, "Invalid date format (use YYYY-MM-DD)"
             
         return True, "Transaction validated"
 
 class ICountant:
-    """Enhanced ICountant with comprehensive validation and error handling"""
-    
     def __init__(self, available_accounts: List[Dict]):
-        self.available_accounts = available_accounts
+        self.available_accounts = available_accounts or []
         self.predictor = PredictiveFeatures()
         self.validator = TransactionValidator()
-        self.min_confidence = 0.7
         self.setup_logging()
 
     def setup_logging(self):
-        """Configure logging for ICountant"""
         handler = logging.FileHandler('icountant.log')
         handler.setFormatter(logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -48,9 +52,7 @@ class ICountant:
         logger.setLevel(logging.INFO)
 
     def process_transaction(self, transaction: Dict) -> Tuple[bool, str, Dict]:
-        """Process a transaction with enhanced validation and insights"""
         try:
-            # Validate transaction
             is_valid, validation_message = self.validator.validate_transaction(transaction)
             if not is_valid:
                 logger.error(f"Transaction validation failed: {validation_message}")
@@ -59,14 +61,10 @@ class ICountant:
             description = transaction.get('description', '').strip()
             amount = Decimal(str(transaction.get('amount', 0)))
             
-            # Get account suggestions
             account_suggestions = self.predictor.suggest_account(description)
-            
-            # Find similar transactions
             similar_result = self.predictor.find_similar_transactions(description)
             similar_transactions = similar_result.get('similar_transactions', []) if similar_result.get('success') else []
 
-            # Generate detailed insights
             insights = {
                 'transaction_type': 'income' if amount > 0 else 'expense',
                 'amount_formatted': f"${abs(amount):,.2f}",
@@ -89,13 +87,10 @@ class ICountant:
             return False, f"Error processing transaction: {str(e)}", {}
 
     def complete_transaction(self, transaction_id: int, selected_account: int) -> Tuple[bool, str, Dict]:
-        """Complete a transaction with enhanced validation and rollback handling"""
         try:
-            # Validate inputs
-            if not transaction_id or not selected_account:
+            if not isinstance(transaction_id, int) or not isinstance(selected_account, int):
                 return False, "Invalid transaction or account ID", {}
 
-            # Get transaction and account
             transaction = Transaction.query.get(transaction_id)
             account = Account.query.get(selected_account)
 
@@ -103,14 +98,12 @@ class ICountant:
                 logger.error(f"Invalid transaction ({transaction_id}) or account ({selected_account})")
                 return False, "Invalid transaction or account", {}
 
-            # Validate transaction hasn't been processed
             if transaction.processed_date:
                 logger.warning(f"Transaction {transaction_id} already processed")
                 return False, "Transaction already processed", {
                     'processed_date': transaction.processed_date.isoformat()
                 }
 
-            # Update transaction with retry mechanism
             retry_count = 0
             max_retries = 3
             while retry_count < max_retries:
@@ -118,15 +111,7 @@ class ICountant:
                     transaction.account_id = account.id
                     transaction.processed_date = datetime.now()
                     db.session.commit()
-
-                    logger.info(f"Transaction {transaction_id} completed successfully")
-                    return True, "Transaction processed successfully", {
-                        'transaction_id': transaction.id,
-                        'account': account.name,
-                        'processed_date': transaction.processed_date.isoformat(),
-                        'amount': float(transaction.amount) if transaction.amount else 0
-                    }
-
+                    break
                 except Exception as db_error:
                     retry_count += 1
                     logger.warning(f"Retry {retry_count} for transaction {transaction_id}: {str(db_error)}")
@@ -134,18 +119,26 @@ class ICountant:
                     if retry_count == max_retries:
                         raise db_error
 
+            logger.info(f"Transaction {transaction_id} completed successfully")
+            return True, "Transaction processed successfully", {
+                'transaction_id': transaction.id,
+                'account': account.name,
+                'processed_date': transaction.processed_date.isoformat(),
+                'amount': float(transaction.amount) if transaction.amount else 0
+            }
+
         except Exception as e:
             logger.error(f"Error completing transaction: {str(e)}", exc_info=True)
             return False, f"Error: {str(e)}", {}
 
     def _analyze_frequency(self, description: str, similar_transactions: List[Dict]) -> Dict:
-        """Analyze transaction frequency patterns"""
         try:
             total_similar = len(similar_transactions)
             if total_similar == 0:
                 return {'pattern': 'new', 'confidence': 1.0}
 
-            monthly_count = sum(1 for t in similar_transactions if 'monthly' in t.get('description', '').lower())
+            monthly_count = sum(1 for t in similar_transactions 
+                              if 'monthly' in t.get('description', '').lower())
             if monthly_count > total_similar * 0.5:
                 return {'pattern': 'monthly', 'confidence': monthly_count/total_similar}
 
@@ -155,7 +148,6 @@ class ICountant:
             return {'pattern': 'unknown', 'confidence': 0}
 
     def _analyze_amount_pattern(self, amount: Decimal, similar_transactions: List[Dict]) -> Dict:
-        """Analyze transaction amount patterns"""
         try:
             if not similar_transactions:
                 return {'pattern': 'unique', 'confidence': 1.0}
@@ -175,7 +167,6 @@ class ICountant:
             return {'pattern': 'unknown', 'confidence': 0}
 
     def _analyze_timing_pattern(self, similar_transactions: List[Dict]) -> Dict:
-        """Analyze transaction timing patterns"""
         try:
             if not similar_transactions:
                 return {'pattern': 'new', 'confidence': 1.0}
