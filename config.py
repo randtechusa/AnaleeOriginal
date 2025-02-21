@@ -1,5 +1,10 @@
 import os
+import logging
 from datetime import timedelta
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class Config:
     """Base configuration"""
