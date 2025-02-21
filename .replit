@@ -46,7 +46,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python migrations.py && flask db upgrade"
+args = "python run_migrations.py"
 
 [[workflows.workflow]]
 name = "System Restore"
