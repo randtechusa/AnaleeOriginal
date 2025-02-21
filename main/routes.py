@@ -67,12 +67,14 @@ def analyze_list():
 @bp.route('/analyze/<int:file_id>')
 @login_required
 def analyze(file_id):
-    """Analyze a specific uploaded file"""
+    """Analyze a specific uploaded file with enhanced error handling"""
     try:
         file = UploadedFile.query.filter_by(
             id=file_id,
             user_id=current_user.id
         ).first_or_404()
+        
+        predictor = PredictiveFeatures()
 
         # Get related transactions for this file
         transactions = Transaction.query.filter_by(
