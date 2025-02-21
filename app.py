@@ -113,15 +113,15 @@ def init_database(app):
 
     return True
             with app.app_context():
-                # Test database connection
-                db.session.execute(text('SELECT 1'))
-                db.session.commit()
-                logger.info("Database connection successful")
+        # Test database connection
+        db.session.execute(text('SELECT 1'))
+        db.session.commit()
+        logger.info("Database connection successful")
 
-                # Create tables
-                db.create_all()
-                logger.info("Database tables created successfully")
-                return True
+        # Create tables
+        db.create_all()
+        logger.info("Database tables created successfully")
+        return True
 
         except Exception as e:
             retry_count += 1
