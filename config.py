@@ -7,11 +7,22 @@ class Config:
 
     # Database configuration with SQLite fallback
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
-    if not SQLALCHEMY_DATABASE_URI:
+    try:
+        if not SQLALCHEMY_DATABASE_URI:
+            SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/app.db'
+            os.makedirs('instance', exist_ok=True)
+        elif SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
+            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
+            
+        # Test database connection
+        from sqlalchemy import create_engine
+        engine = create_engine(SQLALCHEMY_DATABASE_URI)
+        with engine.connect():
+            pass
+    except Exception as e:
+        print(f"Failed to connect to primary database: {e}")
         SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/app.db'
         os.makedirs('instance', exist_ok=True)
-    elif SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

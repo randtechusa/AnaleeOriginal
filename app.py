@@ -21,9 +21,29 @@ logger = logging.getLogger(__name__)
 def init_database(app):
     """Initialize database with comprehensive error handling and health monitoring"""
     from utils.db_health import DatabaseHealth
+    import time
     
     logger.info("Starting database initialization...")
-    db_health = DatabaseHealth.get_instance()
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            db_health = DatabaseHealth.get_instance()
+            with app.app_context():
+                db.create_all()
+                db.session.execute(text('SELECT 1'))
+                db.session.commit()
+                logger.info("Database initialized successfully")
+                return True
+        except Exception as e:
+            retry_count += 1
+            logger.error(f"Database initialization attempt {retry_count} failed: {e}")
+            if retry_count < max_retries:
+                time.sleep(2 ** retry_count)  # Exponential backoff
+            
+    logger.critical("Failed to initialize database after maximum retries")
+    return False
     
     def health_check_routine():
         while True:
