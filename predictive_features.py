@@ -45,11 +45,19 @@ class PredictiveFeatures:
         logger.setLevel(logging.INFO)
 
     def find_similar_transactions(self, description: str) -> Dict[str, Any]:
-        """Find similar transactions with comprehensive validation and error handling"""
+        """Find similar transactions with enhanced validation and comprehensive error handling"""
         self.logger.info(f"ERF: Processing request for description: {description}")
         
         try:
-            # Enhanced input validation
+            # Enhanced input validation with sanitization
+            if not isinstance(description, str):
+                return {
+                    'success': False,
+                    'error': 'Description must be a string',
+                    'error_code': 'INVALID_TYPE'
+                }
+
+            description = description.strip()
             is_valid, error_message = self.validate_input(description)
             if not is_valid:
                 self.logger.error(f"ERF validation failed: {error_message}")
@@ -58,10 +66,19 @@ class PredictiveFeatures:
                     'error': error_message,
                     'error_code': 'INVALID_INPUT',
                     'validation_details': {
-                        'description_length': len(description) if description else 0,
-                        'required_length': self.MIN_DESCRIPTION_LENGTH
+                        'description_length': len(description),
+                        'required_length': self.MIN_DESCRIPTION_LENGTH,
+                        'contains_special_chars': bool(re.search(r'[^a-zA-Z0-9\s]', description)),
+                        'validation_timestamp': datetime.now().isoformat()
                     }
                 }
+
+            # Performance tracking initialization
+            processing_metrics = {
+                'start_time': datetime.now(),
+                'input_length': len(description),
+                'processing_details': {}
+            }
 
             # Input sanitization
             description = description.strip()

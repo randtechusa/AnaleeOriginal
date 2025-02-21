@@ -169,10 +169,47 @@ def predict_account(description: str, explanation: str, available_accounts: List
     logger = logging.getLogger(__name__)
 
     try:
-        # Enhanced input validation
+        # Enhanced input validation with detailed error tracking
+        validation_errors = []
+        
         if not isinstance(description, str):
-            logger.error("ASF: Description must be a string")
-            return False, "Description must be a string type", []
+            validation_errors.append("Description must be a string type")
+        elif not description.strip():
+            validation_errors.append("Description cannot be empty")
+        elif len(description.strip()) < 3:
+            validation_errors.append("Description must be at least 3 characters")
+            
+        if explanation is not None and not isinstance(explanation, str):
+            validation_errors.append("Explanation must be a string type")
+            
+        if validation_errors:
+            error_msg = "; ".join(validation_errors)
+            logger.error(f"ASF validation failed: {error_msg}")
+            return False, error_msg, []
+            
+        # Validate available accounts structure
+        if not isinstance(available_accounts, list):
+            logger.error("ASF: Invalid accounts format")
+            return False, "Invalid accounts format", []
+            
+        valid_accounts = []
+        for idx, acc in enumerate(available_accounts):
+            if not isinstance(acc, dict):
+                logger.warning(f"ASF: Invalid account format at index {idx}")
+                continue
+                
+            required_fields = ['name', 'category', 'id']
+            missing_fields = [f for f in required_fields if f not in acc]
+            
+            if missing_fields:
+                logger.warning(f"ASF: Account at index {idx} missing fields: {missing_fields}")
+                continue
+                
+            valid_accounts.append(acc)
+
+        if not valid_accounts:
+            logger.error("ASF: No valid accounts after validation")
+            return False, "No valid accounts available", []
 
         description = description.strip()
         if not description:

@@ -57,22 +57,41 @@ class ICountant:
         logger.setLevel(logging.INFO)
 
     def process_transaction(self, transaction: Dict) -> Tuple[bool, str, Dict]:
-        """Process transaction with comprehensive ERF and ASF validation"""
+        """Process transaction with enhanced ERF and ASF validation"""
         try:
             processing_start = datetime.now()
             logger.info(f"Processing transaction: {transaction}")
             
+            # Validate transaction structure
+            if not isinstance(transaction, dict):
+                error_msg = "Invalid transaction format"
+                logger.error(f"Transaction validation failed: {error_msg}")
+                return False, error_msg, {'error_type': 'FORMAT_ERROR'}
+                
             # Enhanced validation with detailed feedback
             is_valid, validation_message = self.validator.validate_transaction(transaction)
             if not is_valid:
                 logger.error(f"Transaction validation failed: {validation_message}")
+                
+                # Create safe transaction data copy without sensitive info
+                safe_transaction = {
+                    k: v for k, v in transaction.items() 
+                    if k not in ['password', 'token', 'api_key']
+                }
+                
                 return False, validation_message, {
                     'error_type': 'VALIDATION_ERROR',
                     'validation_details': {
                         'timestamp': datetime.now().isoformat(),
                         'error_message': validation_message,
-                        'transaction_data': {k: v for k, v in transaction.items() if k != 'password'}
-                    }
+                        'transaction_data': safe_transaction,
+                        'validation_context': {
+                            'has_description': bool(transaction.get('description')),
+                            'has_amount': bool(transaction.get('amount')),
+                            'has_date': bool(transaction.get('date'))
+                        }
+                    },
+                    'suggestion': 'Please verify all required fields are provided with valid formats'
                 }
 
             # Track processing metrics
