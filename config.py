@@ -5,27 +5,29 @@ class Config:
     """Base configuration"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
 
-    # Database configuration with SQLite fallback
+    # Database configuration with enhanced SQLite fallback
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     
-    if not SQLALCHEMY_DATABASE_URI:
-        SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/app.db'
+    def init_sqlite():
+        sqlite_path = os.path.join(os.getcwd(), 'instance', 'app.db')
         os.makedirs('instance', exist_ok=True)
+        return f'sqlite:///{sqlite_path}'
+
+    if not SQLALCHEMY_DATABASE_URI:
+        SQLALCHEMY_DATABASE_URI = init_sqlite()
     else:
-        # Handle both connection string formats
         if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
             SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
         
         try:
-            from sqlalchemy import create_engine
+            from sqlalchemy import create_engine, text
             engine = create_engine(SQLALCHEMY_DATABASE_URI, pool_pre_ping=True)
             with engine.connect() as conn:
                 conn.execute(text('SELECT 1'))
         except Exception as e:
             print(f"Warning: Primary database connection failed: {e}")
             print("Falling back to SQLite database")
-            SQLALCHEMY_DATABASE_URI = 'sqlite:///instance/app.db'
-            os.makedirs('instance', exist_ok=True)
+            SQLALCHEMY_DATABASE_URI = init_sqlite()
             
     # Configure SQLAlchemy pool settings
     SQLALCHEMY_ENGINE_OPTIONS = {
