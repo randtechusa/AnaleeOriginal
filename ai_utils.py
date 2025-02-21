@@ -175,6 +175,62 @@ def predict_account(description: str, explanation: str, available_accounts: List
         if not available_accounts:
             return False, "No accounts available for matching", []
 
+        # Initialize OpenAI client
+        client = get_openai_client()
+        if not client:
+            logger.warning("OpenAI client unavailable, using pattern matching")
+            return rule_based_account_matching(description, available_accounts)
+
+        # Format account information for analysis
+        account_info = "\n".join([
+            f"- {acc['name']} ({acc['category']}): Standard {acc['category']} account"
+            for acc in available_accounts
+        ])
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial account classification expert."},
+                    {"role": "user", "content": f"Analyze this transaction and suggest the best account:\nDescription: {description}\nContext: {explanation}\n\nAvailable accounts:\n{account_info}"}
+                ],
+                temperature=0.3
+            )
+
+            suggestions = []
+            content = response.choices[0].message.content
+
+            # Process AI suggestions and combine with pattern matching
+            for acc in available_accounts[:3]:
+                confidence = SequenceMatcher(None, description.lower(), acc['name'].lower()).ratio()
+                if confidence > 0.6:
+                    suggestions.append({
+                        'account': acc,
+                        'confidence': confidence,
+                        'reasoning': f"Matched based on {acc['category']} classification"
+                    })
+
+            return True, "", suggestions
+
+        except Exception as e:
+            logger.error(f"Error in AI suggestion: {str(e)}")
+            return rule_based_account_matching(description, available_accounts)
+
+    except Exception as e:
+        logger.error(f"Critical error in ASF: {str(e)}")
+        return False, str(e), []
+    """Account Suggestion Feature (ASF) with enhanced validation and pattern matching"""
+    logger = logging.getLogger(__name__)
+    processing_start = datetime.now()
+
+    try:
+        # Input validation
+        if not isinstance(description, str) or not description.strip():
+            return False, "Invalid or empty description", []
+
+        if not available_accounts:
+            return False, "No accounts available for matching", []
+
         # Initialize OpenAI client for AI suggestions
         client = get_openai_client()
         if not client:
@@ -1144,6 +1200,53 @@ def find_similar_transactions(transaction_description: str, transactions: list, 
     return similar_transactions
 
 def suggest_explanation(description: str, similar_transactions: list = None) -> dict:
+    """
+    ESF (Explanation Suggestion Feature): Enhanced explanation generator
+    """
+    logger = logging.getLogger(__name__)
+
+    try:
+        client = get_openai_client()
+        if not client:
+            return {'explanation': '', 'confidence': 0}
+
+        # Create context from similar transactions
+        context = ""
+        if similar_transactions:
+            context = "\nSimilar transactions:\n" + "\n".join([
+                f"- {t['description']}: {t.get('explanation', 'No explanation')}"
+                for t in similar_transactions[:3]
+            ])
+
+        prompt = f"""Analyze this financial transaction and suggest a clear explanation:
+Description: {description}
+{context}
+
+Consider:
+1. Transaction type and purpose
+2. Business context
+3. Similar historical transactions
+4. Standard accounting practices
+
+Provide a JSON response:
+{{"explanation": "clear_professional_explanation", "confidence": 0.0-1.0}}
+"""
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a financial transaction analyst."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+
+        result = json.loads(response.choices[0].message.content)
+        return result
+
+    except Exception as e:
+        logger.error(f"Error suggesting explanation: {str(e)}")
+        return {'explanation': '', 'confidence': 0}
     """
     ESF (Explanation Suggestion Feature): Enhanced explanation generator
     """
