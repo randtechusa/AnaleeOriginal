@@ -173,9 +173,61 @@ class PredictiveFeatures:
     metrics = {'start_time': datetime.now(), 'processed': 0, 'errors': 0}
 
     try:
-        # Enhanced input validation with sanitization
+        # Enhanced input validation 
         if not isinstance(description, str):
-            self.logger.error("ERF: Invalid description type")
+            return {'success': False, 'error': 'Description must be a string'}
+
+        description = description.strip()
+        if not description:
+            return {'success': False, 'error': 'Description cannot be empty'}
+
+        if len(description) < self.MIN_DESCRIPTION_LENGTH:
+            return {'success': False, 'error': f'Description must be at least {self.MIN_DESCRIPTION_LENGTH} characters'}
+
+        similar_transactions = []
+        transactions = Transaction.query.filter(
+            Transaction.explanation.isnot(None),
+            Transaction.description.isnot(None)
+        ).all()
+
+        for transaction in transactions:
+            try:
+                metrics['processed'] += 1
+                text_similarity = SequenceMatcher(
+                    None,
+                    description.lower(),
+                    transaction.description.lower()
+                ).ratio()
+
+                if text_similarity >= self.TEXT_SIMILARITY_THRESHOLD:
+                    similar_transactions.append({
+                        'id': transaction.id,
+                        'description': transaction.description,
+                        'explanation': transaction.explanation,
+                        'confidence': round(text_similarity, 2),
+                        'match_type': 'text',
+                        'account_id': transaction.account_id
+                    })
+            except Exception as tx_error:
+                metrics['errors'] += 1
+                self.logger.warning(f"Error processing transaction {transaction.id}: {str(tx_error)}")
+                continue
+
+        similar_transactions.sort(key=lambda x: x['confidence'], reverse=True)
+        similar_transactions = similar_transactions[:self.max_results]
+
+        metrics['end_time'] = datetime.now()
+        metrics['total_time'] = (metrics['end_time'] - metrics['start_time']).total_seconds()
+
+        return {
+            'success': True,
+            'similar_transactions': similar_transactions,
+            'metrics': metrics
+        }
+
+    except Exception as e:
+        self.logger.error(f"ERF processing failed: {str(e)}")
+        return {'success': False, 'error': str(e)}
             return {
                 'success': False,
                 'error': 'Description must be a string',
