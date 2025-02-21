@@ -53,7 +53,13 @@ def init_database(app):
                 with app.app_context():
                     db.create_all()
                     return True
+        return False
+
+    logger.critical("Failed to initialize database after maximum retries")
     return False
+
+def health_check_routine():
+    pass
 
 
 def create_app(config_name=None):
