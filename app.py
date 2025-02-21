@@ -24,12 +24,18 @@ def init_database(app):
     import time
     
     logger.info("Starting database initialization...")
+    
+    if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI'].lower():
+        logger.info("Using SQLite database")
+        with app.app_context():
+            db.create_all()
+            return True
+            
     max_retries = 3
     retry_count = 0
     
     while retry_count < max_retries:
         try:
-            db_health = DatabaseHealth.get_instance()
             with app.app_context():
                 db.create_all()
                 db.session.execute(text('SELECT 1'))
@@ -41,6 +47,13 @@ def init_database(app):
             logger.error(f"Database initialization attempt {retry_count} failed: {e}")
             if retry_count < max_retries:
                 time.sleep(2 ** retry_count)  # Exponential backoff
+            else:
+                logger.info("Falling back to SQLite database")
+                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/app.db'
+                with app.app_context():
+                    db.create_all()
+                    return True
+    return False
             
     logger.critical("Failed to initialize database after maximum retries")
     return False
