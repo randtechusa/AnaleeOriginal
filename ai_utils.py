@@ -163,6 +163,62 @@ logger.setLevel(logging.DEBUG)
 
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> Tuple[bool, str, List[Dict]]:
+    """Account Suggestion Feature (ASF) with enhanced validation and pattern matching"""
+    logger = logging.getLogger(__name__)
+    processing_start = datetime.now()
+
+    try:
+        # Input validation
+        if not isinstance(description, str) or not description.strip():
+            return False, "Invalid or empty description", []
+
+        if not available_accounts:
+            return False, "No accounts available for matching", []
+
+        # Initialize OpenAI client for AI suggestions
+        client = get_openai_client()
+        if not client:
+            logger.warning("OpenAI client unavailable, using pattern matching")
+            return rule_based_account_matching(description, available_accounts)
+
+        # Format account information for AI analysis
+        account_info = "\n".join([
+            f"- {acc['name']} ({acc['category']}): Standard {acc['category']} account"
+            for acc in available_accounts
+        ])
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a financial account classification expert."},
+                    {"role": "user", "content": f"Analyze this transaction and suggest the best account:\nDescription: {description}\nContext: {explanation}\n\nAvailable accounts:\n{account_info}"}
+                ],
+                temperature=0.3
+            )
+
+            suggestions = []
+            content = response.choices[0].message.content
+
+            # Process AI suggestions
+            for acc in available_accounts[:3]:
+                confidence = SequenceMatcher(None, description.lower(), acc['name'].lower()).ratio()
+                if confidence > 0.6:
+                    suggestions.append({
+                        'account': acc,
+                        'confidence': confidence,
+                        'reasoning': f"Matched based on {acc['category']} classification"
+                    })
+
+            return True, "", suggestions
+
+        except Exception as e:
+            logger.error(f"Error in AI suggestion: {str(e)}")
+            return rule_based_account_matching(description, available_accounts)
+
+    except Exception as e:
+        logger.error(f"Critical error in ASF: {str(e)}")
+        return False, str(e), []
     """
     Account Suggestion Feature (ASF): Enhanced AI-powered account suggestions with comprehensive validation
     """

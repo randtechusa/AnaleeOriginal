@@ -59,6 +59,42 @@ class ICountant:
         logger.setLevel(logging.INFO)
 
     def process_transaction(self, transaction: Dict) -> Tuple[bool, str, Dict]:
+    """Process transaction with comprehensive ERF and ASF validation"""
+    try:
+        processing_start = datetime.now()
+        logger.info(f"Processing transaction: {transaction}")
+
+        # Enhanced validation
+        is_valid, validation_message = self.validator.validate_transaction(transaction)
+        if not is_valid:
+            logger.error(f"Transaction validation failed: {validation_message}")
+            return False, validation_message, {
+                'error_type': 'VALIDATION_ERROR',
+                'details': validation_message
+            }
+
+        description = transaction.get('description', '').strip()
+        amount = Decimal(str(transaction.get('amount', 0)))
+
+        # Get account suggestions and similar transactions
+        account_suggestions = self.predictor.suggest_account(description)
+        similar_result = self.predictor.find_similar_transactions(description)
+        similar_transactions = similar_result.get('similar_transactions', [])
+
+        insights = {
+            'transaction_type': 'income' if amount > 0 else 'expense',
+            'amount_formatted': f"${abs(amount):,.2f}",
+            'suggested_accounts': account_suggestions,
+            'similar_transactions': similar_transactions,
+            'confidence_level': max([s.get('confidence', 0) for s in account_suggestions] + [0]),
+            'processing_time': (datetime.now() - processing_start).total_seconds()
+        }
+
+        return True, "Transaction processed successfully", insights
+
+    except Exception as e:
+        logger.error(f"Error processing transaction: {str(e)}", exc_info=True)
+        return False, f"Error processing transaction: {str(e)}", {}
         """Process transaction with comprehensive ERF and ASF validation"""
         try:
             processing_start = datetime.now()

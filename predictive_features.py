@@ -48,6 +48,72 @@ class PredictiveFeatures:
         logger.setLevel(logging.INFO)
 
     def find_similar_transactions(self, description: str) -> Dict[str, Any]:
+    """Find similar transactions with comprehensive validation and error handling"""
+    self.logger.info(f"ERF: Processing request for description: {description}")
+    metrics = {'start_time': datetime.now(), 'processed': 0, 'errors': 0}
+
+    try:
+        # Enhanced input validation with sanitization
+        if not isinstance(description, str):
+            self.logger.error("ERF: Invalid description type")
+            return {
+                'success': False,
+                'error': 'Description must be a string',
+                'error_code': 'INVALID_TYPE'
+            }
+
+        description = description.strip()
+        if not description:
+            self.logger.error("ERF: Empty description provided")
+            return {
+                'success': False,
+                'error': 'Description cannot be empty',
+                'error_code': 'EMPTY_INPUT'
+            }
+
+        similar_transactions = []
+        transactions = Transaction.query.filter(
+            Transaction.explanation.isnot(None),
+            Transaction.description.isnot(None)
+        ).all()
+
+        for transaction in transactions:
+            try:
+                similarity = SequenceMatcher(
+                    None,
+                    description.lower(),
+                    transaction.description.lower()
+                ).ratio()
+
+                if similarity >= self.TEXT_SIMILARITY_THRESHOLD:
+                    similar_transactions.append({
+                        'id': transaction.id,
+                        'description': transaction.description,
+                        'explanation': transaction.explanation,
+                        'confidence': round(similarity, 2),
+                        'account_id': transaction.account_id
+                    })
+            except Exception as tx_error:
+                self.logger.warning(f"Error processing transaction {transaction.id}: {str(tx_error)}")
+                metrics['errors'] += 1
+                continue
+
+        similar_transactions.sort(key=lambda x: x['confidence'], reverse=True)
+        similar_transactions = similar_transactions[:self.max_results]
+
+        return {
+            'success': True,
+            'similar_transactions': similar_transactions,
+            'metrics': metrics
+        }
+
+    except Exception as e:
+        self.logger.error(f"Error finding similar transactions: {str(e)}", exc_info=True)
+        return {
+            'success': False,
+            'error': str(e),
+            'error_code': 'PROCESSING_ERROR'
+        }
         """Find similar transactions with comprehensive validation and error handling"""
         self.logger.info(f"ERF: Processing request for description: {description}")
         metrics = {'start_time': datetime.now(), 'processed': 0, 'errors': 0}
