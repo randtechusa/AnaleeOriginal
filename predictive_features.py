@@ -8,6 +8,7 @@ import numpy as np
 from sqlalchemy import text
 from datetime import datetime
 from models import db, Transaction, Account
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,8 @@ class PredictiveFeatures:
         self.SEMANTIC_SIMILARITY_THRESHOLD = 0.95 #Added for semantic similarity check (Not implemented in original code)
         self.MAX_RETRIES = 3 # Added for retry mechanism (Not implemented in original code)
         self.MIN_DESCRIPTION_LENGTH = 3
+        self.max_results = 10 #Added to limit results
+
 
     def validate_input(self, description: str, explanation: str = "") -> Tuple[bool, str]:
         """Validate input parameters"""
@@ -45,31 +48,39 @@ class PredictiveFeatures:
         logger.setLevel(logging.INFO)
 
     def find_similar_transactions(self, description: str) -> Dict[str, Any]:
-        """Find similar transactions with enhanced validation and comprehensive error handling"""
+        """Find similar transactions with comprehensive validation and error handling"""
         self.logger.info(f"ERF: Processing request for description: {description}")
-        
+        metrics = {'start_time': datetime.now(), 'processed': 0, 'errors': 0}
+
         try:
             # Enhanced input validation with sanitization
             if not isinstance(description, str):
+                self.logger.error("ERF: Invalid description type")
                 return {
                     'success': False,
                     'error': 'Description must be a string',
-                    'error_code': 'INVALID_TYPE'
+                    'error_code': 'INVALID_TYPE',
+                    'details': {'provided_type': str(type(description))}
                 }
 
             description = description.strip()
-            is_valid, error_message = self.validate_input(description)
-            if not is_valid:
-                self.logger.error(f"ERF validation failed: {error_message}")
+            if not description:
+                self.logger.error("ERF: Empty description provided")
                 return {
                     'success': False,
-                    'error': error_message,
-                    'error_code': 'INVALID_INPUT',
+                    'error': 'Description cannot be empty',
+                    'error_code': 'EMPTY_INPUT'
+                }
+
+            if len(description) < self.MIN_DESCRIPTION_LENGTH:
+                self.logger.error(f"ERF: Description too short: {len(description)} chars")
+                return {
+                    'success': False,
+                    'error': f'Description must be at least {self.MIN_DESCRIPTION_LENGTH} characters',
+                    'error_code': 'SHORT_INPUT',
                     'validation_details': {
-                        'description_length': len(description),
-                        'required_length': self.MIN_DESCRIPTION_LENGTH,
-                        'contains_special_chars': bool(re.search(r'[^a-zA-Z0-9\s]', description)),
-                        'validation_timestamp': datetime.now().isoformat()
+                        'current_length': len(description),
+                        'required_length': self.MIN_DESCRIPTION_LENGTH
                     }
                 }
 
@@ -82,7 +93,7 @@ class PredictiveFeatures:
 
             # Input sanitization
             description = description.strip()
-            
+
             # Performance tracking
             start_time = datetime.now()
             processed_count = 0
