@@ -63,16 +63,42 @@ def find_similar_transactions(description: str, transactions: List[Transaction])
         return []
 
 def predict_account(description: str, explanation: str, accounts: List[Dict]) -> Optional[int]:
-    """Predict account based on description and explanation patterns"""
+    """Predict account based on description and explanation patterns with enhanced validation"""
     try:
-        # Start with keyword matching
+        # Input validation with detailed logging
+        if not isinstance(description, str) or not description.strip():
+            logger.error("Invalid description provided to account prediction")
+            return None
+            
+        if not isinstance(accounts, list) or not accounts:
+            logger.error("No valid accounts provided for prediction")
+            return None
+            
+        # Enhanced keyword matching with validation
         keywords = {
             'salary': 'Income',
             'rent': 'Rent Expense',
             'fuel': 'Vehicle Expenses',
             'interest': 'Interest Income',
-            'utilities': 'Utilities'
+            'utilities': 'Utilities',
+            'insurance': 'Insurance Expense',
+            'maintenance': 'Maintenance Expense',
+            'supplies': 'Office Supplies',
+            'advertising': 'Marketing Expense'
         }
+        
+        # Validate accounts structure
+        valid_accounts = [
+            acc for acc in accounts 
+            if isinstance(acc, dict) and 
+            'id' in acc and 
+            'category' in acc and 
+            isinstance(acc['category'], str)
+        ]
+        
+        if not valid_accounts:
+            logger.error("No valid accounts found after validation")
+            return None
         
         description_lower = description.lower()
         for keyword, category in keywords.items():

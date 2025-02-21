@@ -311,14 +311,40 @@ def financial_insights():
 @bp.route('/analyze/suggest-account', methods=['POST'])
 @login_required
 def suggest_account():
-    """ASF: Get account suggestions with enhanced error handling"""
+    """ASF: Get account suggestions with comprehensive error handling and validation"""
     try:
+        # Request validation
+        if not request.is_json:
+            return jsonify({
+                'success': False, 
+                'error': 'Request must be JSON format'
+            }), 400
+
         data = request.get_json()
         if not data:
-            return jsonify({'success': False, 'error': 'No data provided'}), 400
+            return jsonify({
+                'success': False, 
+                'error': 'No data provided'
+            }), 400
 
+        # Input validation
         description = data.get('description', '').strip()
         explanation = data.get('explanation', '').strip()
+        
+        if not description:
+            return jsonify({
+                'success': False,
+                'error': 'Description is required',
+                'field': 'description'
+            }), 400
+            
+        # Length validation
+        if len(description) < 3:
+            return jsonify({
+                'success': False,
+                'error': 'Description must be at least 3 characters',
+                'field': 'description'
+            }), 400
 
         if not description:
             return jsonify({'success': False, 'error': 'Description required'}), 400

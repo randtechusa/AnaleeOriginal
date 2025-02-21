@@ -164,12 +164,33 @@ logger.setLevel(logging.DEBUG)
 
 def predict_account(description: str, explanation: str, available_accounts: List[Dict]) -> List[Dict]:
     """
-    Account Suggestion Feature (ASF): Enhanced AI-powered account suggestions
+    Account Suggestion Feature (ASF): Enhanced AI-powered account suggestions with robust error handling
     """
     logger = logging.getLogger(__name__)
     
     try:
-        if not description or not available_accounts:
+        # Input validation
+        if not isinstance(description, str) or not description.strip():
+            logger.error("ASF: Invalid or empty description")
+            return []
+            
+        if not isinstance(available_accounts, list) or not available_accounts:
+            logger.error("ASF: No available accounts provided")
+            return []
+            
+        # Validate account structure
+        valid_accounts = []
+        for acc in available_accounts:
+            if not isinstance(acc, dict):
+                logger.warning(f"ASF: Invalid account format: {acc}")
+                continue
+            if all(key in acc for key in ['name', 'category']):
+                valid_accounts.append(acc)
+            else:
+                logger.warning(f"ASF: Account missing required fields: {acc}")
+                
+        if not valid_accounts:
+            logger.error("ASF: No valid accounts available for matching")
             return []
 
         client = get_openai_client()
