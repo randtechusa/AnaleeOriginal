@@ -12,7 +12,7 @@ migrate = Migrate()
 
 def init_extensions(app):
     """Initialize all Flask extensions with enhanced monitoring"""
-    from sqlalchemy import event
+    from sqlalchemy import event, text
     from sqlalchemy.engine import Engine
     import logging
     import time
@@ -29,7 +29,7 @@ def init_extensions(app):
             except Exception as e:
                 logger.error(f"Connection test failed: {e}")
                 raise
-    
+
     @event.listens_for(Engine, "before_cursor_execute")
     def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
         conn.info.setdefault('query_start_time', []).append(time.time())

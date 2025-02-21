@@ -22,14 +22,21 @@ def init_database(app):
     """Initialize database with comprehensive error handling and health monitoring"""
     from utils.db_health import DatabaseHealth
     import time
+    from sqlalchemy import text
 
     logger.info("Starting database initialization...")
 
     if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI'].lower():
         logger.info("Using SQLite database")
-        with app.app_context():
-            db.create_all()
-            return True
+        try:
+            with app.app_context():
+                db.create_all()
+                db.session.execute(text('SELECT 1'))
+                db.session.commit()
+                return True
+        except Exception as e:
+            logger.error(f"SQLite initialization failed: {e}")
+            return False
 
     max_retries = 3
     retry_count = 0
