@@ -39,19 +39,29 @@ class FinancialInsightsGenerator:
 
     def _initialize_client(self):
         max_retries = 3
+        last_error = None
+        
         for attempt in range(max_retries):
             try:
                 client = get_openai_client()
                 if client:
+                    self.client = client
+                    self.client_error = None
+                    logger.info("Successfully initialized OpenAI client")
                     return client
-                logger.warning(f"Client initialization attempt {attempt + 1} failed")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+                    
+                logger.warning(f"Client initialization returned None (attempt {attempt + 1}/{max_retries})")
             except Exception as e:
-                logger.error(f"Error initializing OpenAI client (attempt {attempt + 1}): {str(e)}")
-                if attempt == max_retries - 1:
-                    raise
-        raise ValueError("Failed to initialize OpenAI client after maximum retries")
+                last_error = str(e)
+                logger.error(f"Error initializing OpenAI client (attempt {attempt + 1}/{max_retries}): {last_error}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Waiting {wait_time} seconds before retry")
+                    time.sleep(wait_time)
+                    
+        self.client_error = last_error
+        logger.critical(f"Failed to initialize OpenAI client after {max_retries} attempts")
+        return None
 
 
     def _log_error(self, error_type, message):

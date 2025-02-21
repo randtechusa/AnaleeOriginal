@@ -145,3 +145,59 @@ class MaintenanceMonitor:
             'predictions': self.predict_maintenance_needs(),
             'last_update': datetime.utcnow().isoformat()
         }
+class MaintenanceMonitor:
+    def __init__(self):
+        self.db_health = DatabaseHealth.get_instance()
+        self.logger = logging.getLogger(__name__)
+        
+    def check_module_health(self, user_id=None):
+        health_status = {
+            'database': self._check_database_health(),
+            'ai_service': self._check_ai_service_health(),
+            'error_monitoring': self._check_error_logs(),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        if any(not status['healthy'] for status in health_status.values() if isinstance(status, dict)):
+            self.logger.warning(f"System health check failed: {health_status}")
+            
+        return health_status
+        
+    def _check_database_health(self):
+        metrics = self.db_health.get_health_metrics()
+        return {
+            'healthy': metrics['consecutive_failures'] == 0,
+            'metrics': metrics
+        }
+
+    def _check_ai_service_health(self):
+        try:
+            ai_service = FinancialInsightsGenerator()
+            health = ai_service.get_service_health()
+            return {
+                'healthy': health['status'] == 'healthy',
+                'metrics': health
+            }
+        except Exception as e:
+            self.logger.error(f"AI service health check failed: {str(e)}")
+            return {
+                'healthy': False,
+                'error': str(e)
+            }
+
+    def _check_error_logs(self):
+        try:
+            recent_errors = ErrorLog.query.filter(
+                ErrorLog.timestamp >= datetime.now() - timedelta(hours=1)
+            ).count()
+            
+            return {
+                'healthy': recent_errors < 5,
+                'recent_error_count': recent_errors
+            }
+        except Exception as e:
+            self.logger.error(f"Error log check failed: {str(e)}")
+            return {
+                'healthy': False,
+                'error': str(e)
+            }

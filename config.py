@@ -28,18 +28,20 @@ class Config:
 
     if not SQLALCHEMY_DATABASE_URI:
         SQLALCHEMY_DATABASE_URI = init_sqlite()
+        logger.info("No database URI provided, using SQLite")
     else:
         max_retries = 3
         for attempt in range(max_retries):
             success, tested_uri = test_db_connection(SQLALCHEMY_DATABASE_URI)
             if success:
                 SQLALCHEMY_DATABASE_URI = tested_uri
+                logger.info("Successfully connected to PostgreSQL database")
                 break
             if attempt == max_retries - 1:
-                print("Falling back to SQLite database after failed retries")
+                logger.warning("Falling back to SQLite database after failed PostgreSQL connection attempts")
                 SQLALCHEMY_DATABASE_URI = init_sqlite()
             else:
-                print(f"Connection attempt {attempt + 1} failed, retrying...")
+                logger.warning(f"Database connection attempt {attempt + 1} failed, retrying in {2 ** attempt} seconds")
                 time.sleep(2 ** attempt)
             
     # Configure SQLAlchemy pool settings
