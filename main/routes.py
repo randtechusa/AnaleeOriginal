@@ -67,7 +67,7 @@ def analyze_list():
 @bp.route('/analyze/<int:file_id>')
 @login_required
 def analyze(file_id):
-    """Analyze a specific uploaded file with enhanced error handling"""
+    """Enhanced analyze endpoint with predictive features"""
     try:
         file = UploadedFile.query.filter_by(
             id=file_id,
@@ -76,7 +76,7 @@ def analyze(file_id):
         
         predictor = PredictiveFeatures()
 
-        # Get related transactions for this file
+        # Get related transactions with enhanced querying
         transactions = Transaction.query.filter_by(
             user_id=current_user.id,
             file_id=file_id
@@ -84,17 +84,38 @@ def analyze(file_id):
 
         if not transactions:
             flash('No transactions found in this file', 'info')
+            return redirect(url_for('main.analyze_list'))
 
-        # Get available accounts for processing
+        # Get available accounts
         accounts = Account.query.filter_by(
             user_id=current_user.id,
             is_active=True
         ).order_by(Account.category, Account.name).all()
 
+        # Pre-analyze transactions
+        analyzed_transactions = []
+        for transaction in transactions:
+            similar = predictor.find_similar_transactions(transaction.description)
+            suggestions = predictor.suggest_account(
+                transaction.description,
+                transaction.explanation
+            )
+            
+            analyzed_transactions.append({
+                'transaction': transaction,
+                'similar_transactions': similar.get('similar_transactions', []),
+                'account_suggestions': suggestions,
+                'analysis_score': similar.get('analysis', {}).get('confidence_avg', 0)
+            })
+
+        # Get anomaly insights
+        anomalies = check_anomalies(analyzed_transactions) if analyzed_transactions else None
+
         return render_template('analyze.html',
                            file=file,
-                           transactions=transactions,
+                           analyzed_transactions=analyzed_transactions,
                            accounts=accounts,
+                           anomalies=anomalies,
                            ai_available=True)
     except Exception as e:
         logger.error(f"Error in analyze route: {str(e)}")
@@ -447,29 +468,106 @@ def icountant_interface():
         return redirect(url_for('main.dashboard'))
 
 class PredictiveFeatures:
-    """Local implementation of predictive features for routes"""
+    """Enhanced implementation of predictive features"""
+    def __init__(self):
+        self.hybrid_predictor = HybridPredictor()
+
     def suggest_account(self, description: str, explanation: str = ""):
-        """Suggest account based on transaction description"""
+        """Suggest account based on transaction description and explanation"""
         try:
-            suggestions = [
-                {'account': 'Bank', 'confidence': 0.9},
-                {'account': 'Cash', 'confidence': 0.7}
-            ]
+            # Get pattern-based suggestions
+            pattern_suggestions = self.hybrid_predictor.get_suggestions(
+                description=description,
+                amount=0.0,  # Default amount for pattern matching
+                historical_data=[],
+                available_accounts=[]
+            )
+
+            # Convert to standard format
+            suggestions = []
+            for suggestion in pattern_suggestions:
+                suggestions.append({
+                    'account': suggestion.get('account_name', ''),
+                    'confidence': suggestion.get('confidence', 0),
+                    'reasoning': suggestion.get('reasoning', ''),
+                    'source': suggestion.get('source', 'hybrid')
+                })
+
             return suggestions
+
         except Exception as e:
             logger.error(f"Error suggesting account: {str(e)}")
             return []
 
     def find_similar_transactions(self, description: str):
-        """Find similar transactions based on description"""
+        """Find similar transactions based on description with enhanced pattern matching"""
         try:
-            similar_transactions = [
-                {
-                    'explanation': 'Standard monthly payment',
-                    'confidence': 0.95
+            # Use keyword matcher for initial filtering
+            similar_descriptions = self.hybrid_predictor.get_keyword_suggestions(description)
+            
+            transactions = []
+            for match in similar_descriptions:
+                if match.get('confidence', 0) > 0.7:  # Confidence threshold
+                    transactions.append({
+                        'explanation': match.get('category', ''),
+                        'confidence': match.get('confidence', 0),
+                        'match_type': match.get('match_type', 'pattern'),
+                        'source': 'hybrid'
+                    })
+
+            return {
+                'success': True, 
+                'similar_transactions': transactions,
+                'analysis': {
+                    'pattern_count': len(transactions),
+                    'confidence_avg': sum(t['confidence'] for t in transactions) / len(transactions) if transactions else 0
                 }
-            ]
-            return {'success': True, 'similar_transactions': similar_transactions}
+            }
+
         except Exception as e:
             logger.error(f"Error finding similar transactions: {str(e)}")
             return {'success': False, 'error': str(e)}
+def check_anomalies(analyzed_transactions):
+    """Check for anomalies in analyzed transactions"""
+    try:
+        anomalies = {
+            'anomalies': [],
+            'pattern_insights': {
+                'identified_patterns': [],
+                'unusual_deviations': []
+            }
+        }
+
+        # Analyze amount patterns
+        amounts = [t['transaction'].amount for t in analyzed_transactions]
+        avg_amount = sum(amounts) / len(amounts) if amounts else 0
+        std_dev = (sum((x - avg_amount) ** 2 for x in amounts) / len(amounts)) ** 0.5 if amounts else 0
+
+        # Check for amount anomalies
+        for idx, transaction in enumerate(analyzed_transactions):
+            amount = transaction['transaction'].amount
+            if abs(amount - avg_amount) > 2 * std_dev:
+                anomalies['anomalies'].append({
+                    'transaction_index': idx,
+                    'severity': 'high' if abs(amount - avg_amount) > 3 * std_dev else 'medium',
+                    'reason': f"Amount (${abs(amount):.2f}) significantly deviates from average (${abs(avg_amount):.2f})",
+                    'confidence': 0.9 if abs(amount - avg_amount) > 3 * std_dev else 0.7,
+                    'recommendation': "Review this transaction's unusually large amount"
+                })
+
+        # Pattern recognition
+        if len(analyzed_transactions) >= 3:
+            # Look for recurring patterns
+            descriptions = [t['transaction'].description.lower() for t in analyzed_transactions]
+            recurring = [desc for desc in set(descriptions) if descriptions.count(desc) >= 2]
+            
+            if recurring:
+                anomalies['pattern_insights']['identified_patterns'].append(
+                    f"Found {len(recurring)} recurring transaction type(s)"
+                )
+
+        return anomalies
+
+    except Exception as e:
+        logger.error(f"Error checking anomalies: {str(e)}")
+        return None
