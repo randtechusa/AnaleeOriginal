@@ -1,8 +1,10 @@
+
 """Database migrations configuration"""
 from flask import Flask
 from flask_migrate import Migrate
 from models import db
 from config import get_config
+import os
 
 def init_migrations():
     """Initialize database migrations with enhanced error handling"""
@@ -16,8 +18,10 @@ def init_migrations():
         migrate = Migrate(app, db)
 
         with app.app_context():
-            # Create database tables
-            db.create_all()
+            if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI']:
+                db.create_all()
+            else:
+                migrate.init()
 
         return app, migrate
     except Exception as e:

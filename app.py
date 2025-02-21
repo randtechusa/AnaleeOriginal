@@ -21,9 +21,14 @@ logger = logging.getLogger(__name__)
 def init_database(app):
     """Initialize database with comprehensive error handling"""
     logger.info("Starting database initialization...")
-    max_retries = 3
+    max_retries = 5
     retry_count = 0
-    base_delay = 2
+    base_delay = 1
+
+    if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI']:
+        with app.app_context():
+            db.create_all()
+            return True
 
     while retry_count < max_retries:
         try:
