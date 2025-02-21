@@ -1,17 +1,12 @@
-<replit_final_file>
 """
-AI-powered accounting assistant for processing financial transactions
-Enhanced with proper type checking, validation, and comprehensive features
+Enhanced iCountant module with improved transaction processing
 """
 import logging
-from typing import Dict, List, Optional, Tuple
-import datetime
-from decimal import Decimal
-from models import Transaction, Account # Assuming these models are defined elsewhere
-from predictive_features import PredictiveFeatures # Assuming this is defined elsewhere
+from typing import Dict, List, Tuple, Any
+from datetime import datetime
+from models import db, Transaction, Account
+from predictive_features import PredictiveFeatures
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class PredictiveFeatures:
@@ -60,68 +55,68 @@ class ICountant:
     def __init__(self, available_accounts: List[Dict]):
         self.available_accounts = available_accounts
         self.predictor = PredictiveFeatures()
+        self.min_confidence = 0.7
 
-    def process_transaction(self, transaction: Dict) -> Tuple[str, Dict]:
-        """Process a transaction and provide insights"""
+    def process_transaction(self, transaction: Dict) -> Tuple[bool, str, Dict]:
+        """Process a transaction with enhanced validation and insights"""
         try:
+            if not transaction.get('description'):
+                return False, "Transaction description is required", {}
+
             amount = transaction.get('amount', 0)
             description = transaction.get('description', '')
 
             # Get account suggestions
-            suggested_accounts = self.predictor.suggest_account(description)
+            account_suggestions = self.predictor.suggest_account(description)
 
             # Find similar transactions
             similar_result = self.predictor.find_similar_transactions(description)
             similar_transactions = similar_result.get('similar_transactions', []) if similar_result.get('success') else []
 
-            # Generate transaction insights
-            transaction_info = {
-                'insights': {
-                    'amount_formatted': f"${abs(amount):,.2f}",
-                    'transaction_type': 'income' if amount > 0 else 'expense',
-                    'ai_insights': self._generate_insights(description, amount),
-                    'suggested_accounts': suggested_accounts[:3],
-                    'similar_transactions': similar_transactions[:5]
-                }
+            # Generate insights
+            insights = {
+                'transaction_type': 'income' if amount > 0 else 'expense',
+                'amount_formatted': f"${abs(amount):,.2f}",
+                'suggested_accounts': account_suggestions,
+                'similar_transactions': similar_transactions,
+                'confidence_level': max([s.get('confidence', 0) for s in account_suggestions] + [0]),
+                'processing_date': datetime.now().isoformat()
             }
 
-            message = "Transaction processed successfully. Please select an account."
-            return message, transaction_info
+            return True, "Transaction processed successfully", insights
 
         except Exception as e:
             logger.error(f"Error processing transaction: {str(e)}")
-            return "Error processing transaction", {}
+            return False, f"Error processing transaction: {str(e)}", {}
 
-    def complete_transaction(self, transaction_id: int, selected_account: int) -> Tuple[bool, str, bool]:
-        """Complete a transaction with selected account"""
+    def complete_transaction(self, transaction_id: int, selected_account: int) -> Tuple[bool, str, Dict]:
+        """Complete a transaction with validation and rollback"""
         try:
             transaction = Transaction.query.get(transaction_id)
             account = Account.query.get(selected_account)
 
             if not transaction or not account:
-                return False, "Invalid transaction or account", False
+                return False, "Invalid transaction or account", {}
 
+            # Validate transaction hasn't been processed
+            if transaction.processed_date:
+                return False, "Transaction already processed", {}
+
+            # Update transaction
             transaction.account_id = account.id
-            transaction.processed_date = datetime.datetime.now()
+            transaction.processed_date = datetime.now()
 
-            return True, "Transaction processed successfully", True
+            try:
+                db.session.commit()
+                return True, "Transaction processed successfully", {
+                    'transaction_id': transaction.id,
+                    'account': account.name,
+                    'processed_date': transaction.processed_date.isoformat()
+                }
+            except Exception as db_error:
+                db.session.rollback()
+                raise db_error
 
         except Exception as e:
             logger.error(f"Error completing transaction: {str(e)}")
-            return False, f"Error: {str(e)}", False
-
-    def _generate_insights(self, description: str, amount: Decimal) -> str:
-        """Generate basic insights about the transaction"""
-        insights = []
-
-        # Add basic transaction analysis
-        if amount > 0:
-            insights.append(f"This appears to be an income transaction")
-        else:
-            insights.append(f"This appears to be an expense transaction")
-
-        # Add length-based analysis
-        if len(description.split()) > 5:
-            insights.append("This transaction has a detailed description")
-
-        return "<br>".join(insights)
+            return False, f"Error: {str(e)}", {}

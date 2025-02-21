@@ -1,9 +1,9 @@
-<replit_final_file>
+
 """
-Enhanced Predictive Features Module with improved explanation recognition
+Enhanced Predictive Features Module with improved validation and error handling
 """
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from difflib import SequenceMatcher
 import numpy as np
 from sqlalchemy import text
@@ -14,14 +14,21 @@ logger = logging.getLogger(__name__)
 class PredictiveFeatures:
     def __init__(self):
         self.confidence_threshold = 0.7
+        self.min_description_length = 3
 
-    def find_similar_transactions(self, description: str) -> Dict:
-        """Find similar transactions based on description"""
+    def find_similar_transactions(self, description: str) -> Dict[str, Any]:
+        """Find similar transactions based on description with enhanced validation"""
         try:
+            if not description or len(description.strip()) < self.min_description_length:
+                return {
+                    'success': False,
+                    'error': 'Description too short or empty'
+                }
+
             similar_transactions = []
-            # Get existing transactions with explanations
             transactions = Transaction.query.filter(
-                Transaction.explanation.isnot(None)
+                Transaction.explanation.isnot(None),
+                Transaction.description.isnot(None)
             ).all()
 
             for transaction in transactions:
@@ -36,7 +43,8 @@ class PredictiveFeatures:
                         'id': transaction.id,
                         'description': transaction.description,
                         'explanation': transaction.explanation,
-                        'confidence': similarity
+                        'confidence': round(similarity, 2),
+                        'account_id': transaction.account_id
                     })
 
             return {
@@ -45,20 +53,42 @@ class PredictiveFeatures:
                     similar_transactions,
                     key=lambda x: x['confidence'],
                     reverse=True
-                )
+                )[:5]  # Limit to top 5 matches
             }
         except Exception as e:
             logger.error(f"Error finding similar transactions: {str(e)}")
             return {'success': False, 'error': str(e)}
 
     def suggest_account(self, description: str, explanation: str = "") -> List[Dict]:
-        """Suggest accounts based on transaction details"""
+        """Suggest accounts based on transaction details with enhanced matching"""
         try:
+            if not description or len(description.strip()) < self.min_description_length:
+                return []
+
             suggestions = []
             accounts = Account.query.filter_by(is_active=True).all()
 
+            # Get historical matches
+            historical_matches = Transaction.query.filter(
+                Transaction.description.ilike(f"%{description}%"),
+                Transaction.account_id.isnot(None)
+            ).distinct(Transaction.account_id).all()
+
+            # Add historical matches first
+            for match in historical_matches:
+                if match.account:
+                    suggestions.append({
+                        'account': {
+                            'id': match.account.id,
+                            'name': match.account.name,
+                            'category': match.account.category
+                        },
+                        'confidence': 0.9,
+                        'reasoning': 'Based on historical transaction patterns'
+                    })
+
+            # Add pattern-based matches
             for account in accounts:
-                # Match against account name and category
                 name_similarity = SequenceMatcher(
                     None,
                     description.lower(),
@@ -71,21 +101,23 @@ class PredictiveFeatures:
                     account.category.lower()
                 ).ratio()
 
-                # Weight the similarities
                 confidence = (name_similarity * 0.7) + (category_similarity * 0.3)
 
                 if confidence >= self.confidence_threshold:
-                    suggestions.append({
+                    suggestion = {
                         'account': {
                             'id': account.id,
                             'name': account.name,
                             'category': account.category
                         },
-                        'confidence': confidence,
-                        'reasoning': f"Matched based on account name ({name_similarity:.0%}) and category ({category_similarity:.0%})"
-                    })
+                        'confidence': round(confidence, 2),
+                        'reasoning': f"Pattern match: name ({name_similarity:.0%}), category ({category_similarity:.0%})"
+                    }
+                    
+                    if suggestion not in suggestions:
+                        suggestions.append(suggestion)
 
-            return sorted(suggestions, key=lambda x: x['confidence'], reverse=True)
+            return sorted(suggestions, key=lambda x: x['confidence'], reverse=True)[:5]
 
         except Exception as e:
             logger.error(f"Error suggesting account: {str(e)}")
