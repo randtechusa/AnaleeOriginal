@@ -1352,3 +1352,15 @@ def get_anomalies():
     except Exception as e:
         logger.error(f"Error in anomaly API route: {str(e)}")
         return jsonify({'error': str(e)}), 500
+@app.route('/system-health')
+@login_required
+def system_health_dashboard():
+    monitor = MaintenanceMonitor()
+    dashboard_data = monitor.get_health_dashboard_data()
+    return render_template('system_maintenance.html', data=dashboard_data)
+
+@app.route('/api/health-metrics')
+@login_required
+def health_metrics_api():
+    monitor = MaintenanceMonitor()
+    return jsonify(monitor.get_health_dashboard_data())

@@ -1,3 +1,4 @@
+
 import logging
 import time
 from typing import Tuple, Optional, Dict
@@ -17,11 +18,13 @@ class DatabaseHealth:
         'consecutive_failures': 0,
         'total_checks': 0,
         'avg_response_time': 0,
-        'total_failures': 0
+        'total_failures': 0,
+        'failover_count': 0,
+        'last_failover': None
     }
 
     _instance = None
-
+    
     @staticmethod
     def get_instance():
         if DatabaseHealth._instance is None:
@@ -29,65 +32,94 @@ class DatabaseHealth:
         return DatabaseHealth._instance
 
     @staticmethod
-    def check_connection() -> Tuple[bool, Optional[str]]:
+    def check_connection(uri: Optional[str] = None) -> Tuple[bool, Optional[str]]:
         try:
             start_time = time.time()
-            db.session.execute(text('SELECT 1'))
-            db.session.commit()
+            if uri:
+                # Test specific connection string
+                from sqlalchemy import create_engine
+                engine = create_engine(uri, pool_pre_ping=True)
+                with engine.connect() as conn:
+                    conn.execute(text('SELECT 1'))
+            else:
+                # Test current connection
+                db.session.execute(text('SELECT 1'))
+                db.session.commit()
 
-            # Update metrics
             elapsed = time.time() - start_time
-            DatabaseHealth._health_metrics['avg_response_time'] = (
-                (DatabaseHealth._health_metrics['avg_response_time'] * 
-                 DatabaseHealth._health_metrics['total_checks'] + elapsed) /
-                (DatabaseHealth._health_metrics['total_checks'] + 1)
-            )
-            DatabaseHealth._health_metrics['total_checks'] += 1
-            DatabaseHealth._health_metrics['last_check'] = datetime.now()
-            DatabaseHealth._health_metrics['consecutive_failures'] = 0
-
+            DatabaseHealth._update_metrics(elapsed, success=True)
             return True, None
+
         except SQLAlchemyError as e:
             error_msg = f"Database health check failed: {str(e)}"
             logger.error(error_msg)
-            DatabaseHealth._health_metrics['consecutive_failures'] += 1
-            DatabaseHealth._health_metrics['total_failures'] += 1
+            DatabaseHealth._update_metrics(0, success=False)
             return False, error_msg
 
     @staticmethod
-    def perform_retry(operation, max_retries: int = 5, base_delay: float = 1.0) -> Tuple[bool, Optional[str]]:
-        """Execute operation with exponential backoff"""
-        for attempt in range(max_retries):
-            try:
-                operation()
+    def _update_metrics(elapsed: float, success: bool):
+        metrics = DatabaseHealth._health_metrics
+        metrics['last_check'] = datetime.now()
+        metrics['total_checks'] += 1
+        
+        if success:
+            metrics['consecutive_failures'] = 0
+            metrics['avg_response_time'] = (
+                (metrics['avg_response_time'] * (metrics['total_checks'] - 1) + elapsed) /
+                metrics['total_checks']
+            )
+        else:
+            metrics['consecutive_failures'] += 1
+            metrics['total_failures'] += 1
+
+    @staticmethod
+    def perform_failover() -> Tuple[bool, Optional[str]]:
+        """Execute database failover procedure"""
+        from config import Config
+        metrics = DatabaseHealth._health_metrics
+        
+        try:
+            backup_uri = Config.SQLALCHEMY_DATABASE_URI_BACKUP
+            if not backup_uri:
+                return False, "No backup database configured"
+
+            # Test backup connection
+            success, error = DatabaseHealth.check_connection(backup_uri)
+            if success:
+                # Update active connection
+                Config.SQLALCHEMY_DATABASE_URI = backup_uri
+                db.get_engine().dispose()
+                
+                metrics['failover_count'] += 1
+                metrics['last_failover'] = datetime.now()
+                
+                logger.info("Database failover executed successfully")
                 return True, None
-            except OperationalError as e:
-                delay = base_delay * (2 ** attempt)
-                logger.warning(f"Database operation failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            else:
+                return False, f"Backup database check failed: {error}"
 
-                if attempt < max_retries - 1:
-                    logger.info(f"Retrying in {delay} seconds...")
-                    time.sleep(delay)
-                else:
-                    error_msg = f"Operation failed after {max_retries} attempts"
-                    logger.error(error_msg)
-                    return False, error_msg
-            except Exception as e:
-                error_msg = f"Unexpected error: {str(e)}"
-                logger.error(error_msg)
-                return False, error_msg
-
-        return False, "Max retries exceeded"
+        except Exception as e:
+            error_msg = f"Failover failed: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
 
     @staticmethod
     def get_health_metrics() -> Dict:
         """Get current health metrics"""
-        return DatabaseHealth._health_metrics
+        metrics = DatabaseHealth._health_metrics.copy()
+        metrics['status'] = 'healthy' if metrics['consecutive_failures'] == 0 else 'degraded'
+        return metrics
 
     @staticmethod
     def should_failover() -> bool:
         """Determine if failover should be triggered"""
         metrics = DatabaseHealth._health_metrics
-        return (metrics['consecutive_failures'] >= 3 or
-                (metrics['last_check'] and 
-                 datetime.now() - metrics['last_check'] > timedelta(minutes=5)))
+        time_threshold = timedelta(minutes=5)
+        
+        return (
+            metrics['consecutive_failures'] >= 3 or
+            (metrics['last_check'] and datetime.now() - metrics['last_check'] > time_threshold) or
+            (metrics['last_failover'] and 
+             datetime.now() - metrics['last_failover'] > timedelta(hours=1) and
+             metrics['consecutive_failures'] > 0)
+        )

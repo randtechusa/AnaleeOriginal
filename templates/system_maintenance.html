@@ -1,82 +1,123 @@
+
 {% extends "base.html" %}
 
 {% block content %}
 <div class="container mt-4">
-    <h2>System Maintenance Dashboard</h2>
+    <h2>System Health Dashboard</h2>
     
-    <!-- Module Health Overview -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Module Health Status</h5>
+    <!-- Database Health -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Database Health</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <h6>Status</h6>
+                    <p class="status-badge {{ 'badge-success' if data.metrics.database.status == 'healthy' else 'badge-danger' }}">
+                        {{ data.metrics.database.status|title }}
+                    </p>
                 </div>
-                <div class="card-body">
-                    <div class="row">
-                        {% for module, metrics in health_metrics.items() %}
-                        <div class="col-md-3 mb-3">
-                            <div class="card h-100">
-                                <div class="card-body">
-                                    <h6 class="card-title">{{ module|title }}</h6>
-                                    <p class="card-text">
-                                        Status: 
-                                        <span class="badge {% if metrics.status == 'healthy' %}bg-success{% elif metrics.status == 'warning' %}bg-warning{% else %}bg-danger{% endif %}">
-                                            {{ metrics.status|title }}
-                                        </span>
-                                    </p>
-                                    {% if metrics.error_rate is defined %}
-                                    <p class="card-text small">Error Rate: {{ "%.2f"|format(metrics.error_rate) }}%</p>
-                                    {% endif %}
-                                    {% if metrics.response_time is defined %}
-                                    <p class="card-text small">Response Time: {{ metrics.response_time }}ms</p>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
+                <div class="col-md-4">
+                    <h6>Response Time</h6>
+                    <p>{{ "%.2f"|format(data.metrics.database.response_time) }}ms</p>
+                </div>
+                <div class="col-md-4">
+                    <h6>Failover Count</h6>
+                    <p>{{ data.metrics.database.failover_count }}</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Maintenance Recommendations -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Maintenance Recommendations</h5>
+    <!-- Error Rates -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Error Metrics</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Hourly Error Rate</h6>
+                    <p>{{ data.metrics.error_rate.hourly_rate }}</p>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Module</th>
-                                    <th>Priority</th>
-                                    <th>Issue</th>
-                                    <th>Recommendation</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for need in maintenance_needs %}
-                                <tr>
-                                    <td>{{ need.module|title }}</td>
-                                    <td>
-                                        <span class="badge {% if need.priority == 'high' %}bg-danger{% elif need.priority == 'medium' %}bg-warning{% else %}bg-info{% endif %}">
-                                            {{ need.priority|title }}
-                                        </span>
-                                    </td>
-                                    <td>{{ need.issue }}</td>
-                                    <td>{{ need.recommendation }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                <div class="col-md-6">
+                    <h6>Error Distribution</h6>
+                    <ul class="list-unstyled">
+                    {% for type, count in data.metrics.error_rate.error_distribution.items() %}
+                        <li>{{ type }}: {{ count }}</li>
+                    {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Maintenance Predictions -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Maintenance Predictions</h5>
+        </div>
+        <div class="card-body">
+            {% for prediction in data.predictions %}
+            <div class="alert alert-{{ 'danger' if prediction.priority == 'high' else 'warning' }}">
+                <h6>{{ prediction.component|title }}</h6>
+                <p><strong>Prediction:</strong> {{ prediction.prediction }}</p>
+                <p><strong>Recommendation:</strong> {{ prediction.recommendation }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Resource Usage -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Resource Usage</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <h6>CPU Usage</h6>
+                    <div class="progress">
+                        <div class="progress-bar" role="progressbar" style="width: {{ data.metrics.resource_usage.cpu_percent }}%">
+                            {{ data.metrics.resource_usage.cpu_percent }}%
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <h6>Memory Usage</h6>
+                    <div class="progress">
+                        <div class="progress-bar" role="progressbar" style="width: {{ data.metrics.resource_usage.memory_percent }}%">
+                            {{ data.metrics.resource_usage.memory_percent }}%
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <h6>Disk Usage</h6>
+                    <div class="progress">
+                        <div class="progress-bar" role="progressbar" style="width: {{ data.metrics.resource_usage.disk_percent }}%">
+                            {{ data.metrics.resource_usage.disk_percent }}%
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-refresh metrics every 30 seconds
+    setInterval(function() {
+        fetch('/api/health-metrics')
+            .then(response => response.json())
+            .then(data => updateDashboard(data));
+    }, 30000);
+});
+
+function updateDashboard(data) {
+    // Update dashboard with new data
+    // Implementation details here
+}
+</script>
 {% endblock %}

@@ -1,211 +1,147 @@
 """
 AI-Powered Financial Module Predictive Maintenance System
-Monitors financial modules health and predicts maintenance needs with enhanced protection
 """
-
 import logging
-import gc  # Added for garbage collection
+import gc
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-from sqlalchemy import func, text
-from sqlalchemy.exc import SQLAlchemyError
-from models import db, Transaction, Account, HistoricalData
-from ai_insights import FinancialInsightsGenerator
+from sqlalchemy import func
+from models import db, ErrorLog, Transaction, Account
+from utils.db_health import DatabaseHealth
 
-# Configure logging with proper format
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MaintenanceMonitor:
-    """
-    Monitors financial modules and predicts maintenance needs using AI
-    with enhanced protection for core functionalities
-    """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.insights_generator = FinancialInsightsGenerator()
         self.health_metrics = {}
         self.last_check = None
+        self.db_health = DatabaseHealth.get_instance()
 
-    def check_module_health(self, user_id: int) -> Dict:
-        """
-        Check health of financial modules with enhanced protection for core components
-
-        Args:
-            user_id: ID of the user whose data to check
-
-        Returns:
-            Dictionary containing health metrics for each module
-        """
+    def check_system_health(self) -> Dict:
+        """Comprehensive system health check"""
         try:
-            # Record start time for performance monitoring
             start_time = datetime.utcnow()
+            metrics = {
+                'database': self._check_database_health(),
+                'error_rate': self._calculate_error_rate(),
+                'performance': self._check_performance_metrics(),
+                'resource_usage': self._check_resource_usage(),
+                'timestamp': start_time
+            }
+
+            self.health_metrics = metrics
             self.last_check = start_time
 
-            # Initialize metrics with protected defaults
-            metrics = {
-                'analyze_data': {'status': 'protected', 'error_rate': 0.0},
-                'historical_data': {'status': 'protected', 'error_rate': 0.0},
-                'chart_of_accounts': {'status': 'protected', 'error_rate': 0.0},
-                'icountant': {'status': 'protected', 'error_rate': 0.0}
-            }
-
-            # Perform checks with enhanced protection and error handling
-            try:
-                # Check core modules with protection
-                metrics['analyze_data'] = self._check_analyze_module(user_id)
-                metrics['historical_data'] = self._check_historical_module(user_id)
-                metrics['chart_of_accounts'] = self._check_accounts_module(user_id)
-                metrics['icountant'] = self._check_icountant_module(user_id)
-
-                # Add performance metrics
-                execution_time = (datetime.utcnow() - start_time).total_seconds()
-                metrics['performance'] = {
-                    'execution_time': execution_time,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-
-                self.health_metrics = metrics
-                return metrics
-
-            except SQLAlchemyError as db_error:
-                self.logger.error(f"Database error in module health check: {str(db_error)}")
-                return {
-                    **metrics,
-                    'error': f"Database error: {str(db_error)}",
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-            except Exception as module_error:
-                self.logger.error(f"Error in module health check: {str(module_error)}")
-                return {
-                    **metrics,
-                    'error': str(module_error),
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-
+            return metrics
         except Exception as e:
-            self.logger.error(f"Critical error in health check: {str(e)}")
-            return {
-                'error': str(e),
-                'timestamp': datetime.utcnow().isoformat(),
-                'status': 'protected'
-            }
-        finally:
-            # Cleanup to prevent memory leaks
-            gc.collect()
-            db.session.remove()  # Properly close db session
+            logger.error(f"Health check failed: {str(e)}")
+            return {'status': 'error', 'message': str(e)}
 
-    def predict_maintenance_needs(self) -> List[Dict]:
-        """
-        Analyze health metrics and predict maintenance needs
+    def _check_database_health(self) -> Dict:
+        """Check database health status"""
+        db_metrics = self.db_health.get_health_metrics()
+        return {
+            'status': 'healthy' if db_metrics['consecutive_failures'] == 0 else 'degraded',
+            'response_time': db_metrics['avg_response_time'],
+            'failover_count': db_metrics['failover_count']
+        }
 
-        Returns:
-            List of maintenance recommendations
-        """
+    def _calculate_error_rate(self) -> Dict:
+        """Calculate system error rates"""
         try:
-            if not self.health_metrics:
-                return [{
-                    'module': 'all',
-                    'status': 'unknown',
-                    'message': 'No health metrics available'
-                }]
-
-            recommendations = []
-            for module, metrics in self.health_metrics.items():
-                if metrics.get('error_rate', 0) > 0.1:
-                    recommendations.append({
-                        'module': module,
-                        'priority': 'high',
-                        'issue': 'High error rate detected',
-                        'recommendation': 'Investigate error patterns and optimize error handling'
-                    })
-
-                if metrics.get('response_time', 0) > 2000:  # 2 seconds
-                    recommendations.append({
-                        'module': module,
-                        'priority': 'medium',
-                        'issue': 'Slow response time',
-                        'recommendation': 'Review and optimize database queries'
-                    })
-
-            return recommendations
-
-        except Exception as e:
-            self.logger.error(f"Error predicting maintenance needs: {str(e)}")
-            return [{
-                'module': 'system',
-                'priority': 'high',
-                'issue': 'Error in maintenance prediction',
-                'recommendation': 'Check system logs'
-            }]
-
-    def _check_analyze_module(self, user_id: int) -> Dict:
-        """Check health of analysis module"""
-        try:
-            # Check recent transactions
-            recent_count = Transaction.query.filter(
-                Transaction.user_id == user_id,
-                Transaction.date >= datetime.utcnow() - timedelta(days=30)
+            hour_ago = datetime.utcnow() - timedelta(hours=1)
+            total_errors = ErrorLog.query.filter(
+                ErrorLog.timestamp > hour_ago
             ).count()
 
+            error_types = db.session.query(
+                ErrorLog.error_type,
+                func.count(ErrorLog.id)
+            ).filter(
+                ErrorLog.timestamp > hour_ago
+            ).group_by(ErrorLog.error_type).all()
+
             return {
-                'status': 'healthy' if recent_count > 0 else 'warning',
-                'transaction_count': recent_count,
-                'error_rate': 0.0,
-                'response_time': 500,  # milliseconds
-                'last_check': datetime.utcnow()
+                'hourly_rate': total_errors,
+                'error_distribution': dict(error_types)
             }
         except Exception as e:
-            self.logger.error(f"Error checking analyze module: {str(e)}")
+            logger.error(f"Error rate calculation failed: {str(e)}")
             return {'status': 'error', 'message': str(e)}
 
-    def _check_historical_module(self, user_id: int) -> Dict:
-        """Check health of historical data module"""
+    def _check_performance_metrics(self) -> Dict:
+        """Check system performance metrics"""
         try:
-            # Check historical data integrity
-            historical_count = HistoricalData.query.filter_by(user_id=user_id).count()
-
-            return {
-                'status': 'healthy',
-                'record_count': historical_count,
-                'error_rate': 0.0,
-                'response_time': 600,  # milliseconds
-                'last_check': datetime.utcnow()
+            hour_ago = datetime.utcnow() - timedelta(hours=1)
+            metrics = {
+                'transaction_count': Transaction.query.filter(
+                    Transaction.created_at > hour_ago
+                ).count(),
+                'active_accounts': Account.query.filter_by(is_active=True).count()
             }
+            return metrics
         except Exception as e:
-            self.logger.error(f"Error checking historical module: {str(e)}")
+            logger.error(f"Performance check failed: {str(e)}")
             return {'status': 'error', 'message': str(e)}
 
-    def _check_accounts_module(self, user_id: int) -> Dict:
-        """Check health of chart of accounts module"""
+    def _check_resource_usage(self) -> Dict:
+        """Check system resource usage"""
         try:
-            # Check account structure
-            account_count = Account.query.filter_by(user_id=user_id).count()
-
+            import psutil
             return {
-                'status': 'healthy' if account_count > 0 else 'warning',
-                'account_count': account_count,
-                'error_rate': 0.0,
-                'response_time': 300,  # milliseconds
-                'last_check': datetime.utcnow()
+                'cpu_percent': psutil.cpu_percent(),
+                'memory_percent': psutil.virtual_memory().percent,
+                'disk_percent': psutil.disk_usage('/').percent
             }
-        except Exception as e:
-            self.logger.error(f"Error checking accounts module: {str(e)}")
-            return {'status': 'error', 'message': str(e)}
+        except ImportError:
+            return {'status': 'unavailable', 'message': 'psutil not installed'}
 
-    def _check_icountant_module(self, user_id: int) -> Dict:
-        """Check health of iCountant module"""
-        try:
-            return {
-                'status': 'healthy',
-                'ai_service': self.insights_generator.service_status.status if hasattr(self.insights_generator, 'service_status') else 'unknown',
-                'error_rate': 0.0,
-                'response_time': 800,  # milliseconds
-                'last_check': datetime.utcnow()
-            }
-        except Exception as e:
-            self.logger.error(f"Error checking iCountant module: {str(e)}")
-            return {'status': 'error', 'message': str(e)}
+    def predict_maintenance_needs(self) -> List[Dict]:
+        """Predict maintenance needs based on system metrics"""
+        if not self.health_metrics:
+            self.check_system_health()
+
+        predictions = []
+        metrics = self.health_metrics
+
+        # Database health predictions
+        if metrics['database']['status'] == 'degraded':
+            predictions.append({
+                'component': 'database',
+                'priority': 'high',
+                'prediction': 'Database performance degradation detected',
+                'recommendation': 'Schedule maintenance window for database optimization'
+            })
+
+        # Error rate predictions
+        error_rate = metrics.get('error_rate', {}).get('hourly_rate', 0)
+        if error_rate > 100:
+            predictions.append({
+                'component': 'application',
+                'priority': 'high',
+                'prediction': f'High error rate detected: {error_rate} errors/hour',
+                'recommendation': 'Investigate error patterns and implement fixes'
+            })
+
+        # Resource usage predictions
+        resource_metrics = metrics.get('resource_usage', {})
+        if resource_metrics.get('memory_percent', 0) > 80:
+            predictions.append({
+                'component': 'system',
+                'priority': 'medium',
+                'prediction': 'High memory usage detected',
+                'recommendation': 'Consider memory optimization or scaling'
+            })
+
+        return predictions
+
+    def get_health_dashboard_data(self) -> Dict:
+        """Get data for health dashboard"""
+        self.check_system_health()
+        return {
+            'metrics': self.health_metrics,
+            'predictions': self.predict_maintenance_needs(),
+            'last_update': datetime.utcnow().isoformat()
+        }
