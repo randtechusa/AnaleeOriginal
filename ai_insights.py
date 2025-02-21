@@ -1,6 +1,7 @@
 import os
 import logging
 import openai
+import time
 from datetime import datetime
 from typing import List, Dict, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -20,7 +21,7 @@ class ServiceStatus:
         self.error_count = 0
         self.last_success = None
         self.last_error = None
-        
+
     @classmethod
     def get_openai_client(cls):
         try:
@@ -37,30 +38,21 @@ class FinancialInsightsGenerator:
         self._initialize_client()
 
     def _initialize_client(self):
-        """Initialize OpenAI client with proper error handling"""
-        try:
-            logger.debug("Starting OpenAI client initialization in FinancialInsightsGenerator")
-            logger.debug(f"Previous client state: {self.client is not None}")
-            logger.debug(f"Previous error state: {self.client_error}")
-            
-            self.client = get_openai_client()
-            logger.debug(f"Client initialization result: {self.client is not None}")
-            
-            if self.client is None:
-                logger.error("get_openai_client() returned None")
-                logger.debug("Checking service status metrics")
-                logger.debug(f"Error count: {self.service_status.error_count}")
-                logger.debug(f"Consecutive failures: {self.service_status.consecutive_failures}")
-                raise ValueError("Failed to initialize OpenAI client")
-                
-            self.client_error = None
-            logger.info("OpenAI client initialized successfully in FinancialInsightsGenerator")
-            
-        except Exception as e:
-            self.client_error = str(e)
-            logger.error(f"Error initializing OpenAI client: {str(e)}", exc_info=True)
-            logger.debug(f"Client initialization error details - Type: {type(e).__name__}, Args: {e.args}")
-            self._log_error("OpenAI Client Initialization", str(e))
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                client = get_openai_client()
+                if client:
+                    return client
+                logger.warning(f"Client initialization attempt {attempt + 1} failed")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+            except Exception as e:
+                logger.error(f"Error initializing OpenAI client (attempt {attempt + 1}): {str(e)}")
+                if attempt == max_retries - 1:
+                    raise
+        raise ValueError("Failed to initialize OpenAI client after maximum retries")
+
 
     def _log_error(self, error_type, message):
         """Log error to database and update service status"""

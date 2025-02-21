@@ -29,12 +29,18 @@ class Config:
     if not SQLALCHEMY_DATABASE_URI:
         SQLALCHEMY_DATABASE_URI = init_sqlite()
     else:
-        success, tested_uri = test_db_connection(SQLALCHEMY_DATABASE_URI)
-        if not success:
-            print("Falling back to SQLite database")
-            SQLALCHEMY_DATABASE_URI = init_sqlite()
-        else:
-            SQLALCHEMY_DATABASE_URI = tested_uri
+        max_retries = 3
+        for attempt in range(max_retries):
+            success, tested_uri = test_db_connection(SQLALCHEMY_DATABASE_URI)
+            if success:
+                SQLALCHEMY_DATABASE_URI = tested_uri
+                break
+            if attempt == max_retries - 1:
+                print("Falling back to SQLite database after failed retries")
+                SQLALCHEMY_DATABASE_URI = init_sqlite()
+            else:
+                print(f"Connection attempt {attempt + 1} failed, retrying...")
+                time.sleep(2 ** attempt)
             
     # Configure SQLAlchemy pool settings
     SQLALCHEMY_ENGINE_OPTIONS = {

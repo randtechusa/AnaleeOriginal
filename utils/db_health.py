@@ -1,4 +1,3 @@
-
 import logging
 import time
 from typing import Tuple, Optional, Dict
@@ -24,7 +23,7 @@ class DatabaseHealth:
     }
 
     _instance = None
-    
+
     @staticmethod
     def get_instance():
         if DatabaseHealth._instance is None:
@@ -36,14 +35,18 @@ class DatabaseHealth:
         try:
             start_time = time.time()
             if uri:
-                # Test specific connection string
                 from sqlalchemy import create_engine
-                engine = create_engine(uri, pool_pre_ping=True)
+                engine = create_engine(uri, 
+                    pool_pre_ping=True,
+                    pool_recycle=3600,
+                    connect_args={'connect_timeout': 10}
+                )
                 with engine.connect() as conn:
                     conn.execute(text('SELECT 1'))
+                    conn.execute(text('SELECT version()'))
             else:
-                # Test current connection
                 db.session.execute(text('SELECT 1'))
+                db.session.execute(text('SELECT version()'))
                 db.session.commit()
 
             elapsed = time.time() - start_time
@@ -61,7 +64,7 @@ class DatabaseHealth:
         metrics = DatabaseHealth._health_metrics
         metrics['last_check'] = datetime.now()
         metrics['total_checks'] += 1
-        
+
         if success:
             metrics['consecutive_failures'] = 0
             metrics['avg_response_time'] = (
@@ -77,7 +80,7 @@ class DatabaseHealth:
         """Execute database failover procedure"""
         from config import Config
         metrics = DatabaseHealth._health_metrics
-        
+
         try:
             backup_uri = Config.SQLALCHEMY_DATABASE_URI_BACKUP
             if not backup_uri:
@@ -89,10 +92,10 @@ class DatabaseHealth:
                 # Update active connection
                 Config.SQLALCHEMY_DATABASE_URI = backup_uri
                 db.get_engine().dispose()
-                
+
                 metrics['failover_count'] += 1
                 metrics['last_failover'] = datetime.now()
-                
+
                 logger.info("Database failover executed successfully")
                 return True, None
             else:
@@ -115,7 +118,7 @@ class DatabaseHealth:
         """Determine if failover should be triggered"""
         metrics = DatabaseHealth._health_metrics
         time_threshold = timedelta(minutes=5)
-        
+
         return (
             metrics['consecutive_failures'] >= 3 or
             (metrics['last_check'] and datetime.now() - metrics['last_check'] > time_threshold) or
