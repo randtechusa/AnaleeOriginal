@@ -15,7 +15,7 @@ class Config:
     # Database configuration with enhanced connection handling
     # Try to use PostgreSQL connection from environment variables first
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
-    
+
     def init_sqlite():
         sqlite_path = os.path.join(os.getcwd(), 'instance', 'dev.db')
         os.makedirs('instance', exist_ok=True)
@@ -26,7 +26,7 @@ class Config:
         try:
             if isinstance(uri, str) and uri.startswith('postgres://'):
                 uri = uri.replace('postgres://', 'postgresql://')
-                
+
             # Create engine with appropriate parameters for the database type
             if isinstance(uri, str) and 'postgresql://' in uri:
                 # PostgreSQL connections
@@ -50,7 +50,7 @@ class Config:
         if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
             SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
             logger.info("Converted postgres:// to postgresql:// in connection string")
-        
+
         # Test PostgreSQL connection
         success, tested_uri = test_db_connection(SQLALCHEMY_DATABASE_URI)
         if success:
@@ -58,13 +58,13 @@ class Config:
         else:
             logger.warning("PostgreSQL connection failed - endpoint may be disabled. Using SQLite fallback.")
             SQLALCHEMY_DATABASE_URI = init_sqlite()
-            
+
         logger.info(f"Using database: {'PostgreSQL' if success else 'SQLite (fallback)'}")
-    
+
     # Ensure SQLite directory exists
     if 'sqlite' in SQLALCHEMY_DATABASE_URI:
         os.makedirs('instance', exist_ok=True)
-            
+
     # Define SQLAlchemy engine options directly as a class attribute (not a property)
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 5,             # Keep 5 connections ready
@@ -73,7 +73,7 @@ class Config:
         'pool_recycle': 1800,       # Recycle connections every 30 min
         'pool_pre_ping': True       # Verify connections before using
     }
-    
+
     # SQLite doesn't support all PostgreSQL connection arguments
     # These will be added conditionally in the Config initialization if needed
 
@@ -102,37 +102,33 @@ class ProductionConfig(Config):
 
 def get_config(config_name='development'):
     """Get configuration class based on environment"""
-    config_class = None
     config_classes = {
         'development': DevelopmentConfig,
         'production': ProductionConfig,
         'testing': TestingConfig,
         'default': DevelopmentConfig
     }
-    
+
     config_class = config_classes.get(config_name, DevelopmentConfig)
-    
+
     # Create a new instance to avoid modifying the class itself
     config_instance = config_class()
-    
+
     # Conditionally add PostgreSQL-specific connection args if we're using PostgreSQL
     # This ensures SQLite connections don't get incompatible options
     db_uri = getattr(config_instance, 'SQLALCHEMY_DATABASE_URI', '')
     if db_uri and isinstance(db_uri, str) and 'postgresql' in db_uri:
         if not hasattr(config_instance, 'SQLALCHEMY_ENGINE_OPTIONS'):
             config_instance.SQLALCHEMY_ENGINE_OPTIONS = {}
-        elif callable(getattr(config_instance.__class__, 'SQLALCHEMY_ENGINE_OPTIONS', None)):
-            # If it's a property, get its value
-            config_instance.SQLALCHEMY_ENGINE_OPTIONS = config_instance.SQLALCHEMY_ENGINE_OPTIONS.copy()
-        
+
         # Add PostgreSQL-specific connection args
         engine_options = config_instance.SQLALCHEMY_ENGINE_OPTIONS
         if 'connect_args' not in engine_options:
             engine_options['connect_args'] = {}
-            
+
         engine_options['connect_args'].update({
             'connect_timeout': 10,
             'application_name': 'icountant'
         })
-    
+
     return config_instance
