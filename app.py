@@ -56,9 +56,14 @@ def init_database(app):
             else:
                 logger.info("Falling back to SQLite database")
                 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/app.db'
+                # Completely close any existing connections before switching
+                db.get_engine().dispose()
                 try:
                     with app.app_context():
                         db.create_all()
+                        # Test with a simple query that doesn't need PostgreSQL
+                        db.session.execute(text('SELECT 1'))
+                        db.session.commit()
                         logger.info("Fallback to SQLite successful")
                         return True
                 except Exception as fallback_error:

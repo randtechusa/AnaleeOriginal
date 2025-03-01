@@ -50,7 +50,16 @@ class Config:
         if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
             SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
             logger.info("Converted postgres:// to postgresql:// in connection string")
-        logger.info("Using PostgreSQL database from environment")
+        
+        # Test PostgreSQL connection
+        success, tested_uri = test_db_connection(SQLALCHEMY_DATABASE_URI)
+        if success:
+            logger.info("Successfully connected to PostgreSQL database")
+        else:
+            logger.warning("PostgreSQL connection failed - endpoint may be disabled. Using SQLite fallback.")
+            SQLALCHEMY_DATABASE_URI = init_sqlite()
+            
+        logger.info(f"Using database: {'PostgreSQL' if success else 'SQLite (fallback)'}")
     
     # Ensure SQLite directory exists
     if 'sqlite' in SQLALCHEMY_DATABASE_URI:
