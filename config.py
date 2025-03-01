@@ -13,8 +13,8 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
 
     # Database configuration with enhanced connection handling
-    # Original database URI - temporarily commented out due to connection issues
-    # SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    # Try to use PostgreSQL connection from environment variables first
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     
     def init_sqlite():
         sqlite_path = os.path.join(os.getcwd(), 'instance', 'dev.db')
@@ -27,12 +27,13 @@ class Config:
             if isinstance(uri, str) and uri.startswith('postgres://'):
                 uri = uri.replace('postgres://', 'postgresql://')
                 
-            # Use connect_timeout only for PostgreSQL connections
-            connect_args = {}
+            # Create engine with appropriate parameters for the database type
             if isinstance(uri, str) and 'postgresql://' in uri:
-                connect_args = {'connect_timeout': 10}
-                
-            engine = create_engine(uri, pool_pre_ping=True, connect_args=connect_args)
+                # PostgreSQL connections
+                engine = create_engine(uri, pool_pre_ping=True)
+            else:
+                # SQLite or other connections
+                engine = create_engine(uri, pool_pre_ping=True)
             with engine.connect() as conn:
                 conn.execute(text('SELECT 1'))
             return True, uri
@@ -40,9 +41,16 @@ class Config:
             print(f"Database connection failed: {e}")
             return False, None
 
-    # Force use SQLite for development until PostgreSQL issue is resolved
-    SQLALCHEMY_DATABASE_URI = init_sqlite()
-    logger.info("Using SQLite for development (PostgreSQL temporarily disabled)")
+    # Try to use PostgreSQL first, fallback to SQLite if unavailable
+    if not SQLALCHEMY_DATABASE_URI:
+        SQLALCHEMY_DATABASE_URI = init_sqlite()
+        logger.info("No DATABASE_URL found, using SQLite for development")
+    else:
+        # Convert postgres:// to postgresql:// if needed (for compatibility)
+        if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
+            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://')
+            logger.info("Converted postgres:// to postgresql:// in connection string")
+        logger.info("Using PostgreSQL database from environment")
     
     # Ensure SQLite directory exists
     if 'sqlite' in SQLALCHEMY_DATABASE_URI:

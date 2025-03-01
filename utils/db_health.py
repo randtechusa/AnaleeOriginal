@@ -38,8 +38,7 @@ class DatabaseHealth:
                 from sqlalchemy import create_engine
                 engine = create_engine(uri, 
                     pool_pre_ping=True,
-                    pool_recycle=3600,
-                    connect_args={'connect_timeout': 10}
+                    pool_recycle=3600
                 )
                 with engine.connect() as conn:
                     conn.execute(text('SELECT 1'))
