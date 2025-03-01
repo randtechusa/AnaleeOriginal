@@ -1,3 +1,126 @@
+"""Database health monitoring and management utilities"""
+import logging
+import time
+import os
+import requests
+from sqlalchemy import create_engine, text
+from flask import current_app
+
+logger = logging.getLogger(__name__)
+
+class DatabaseHealth:
+    """Singleton class to monitor and manage database health"""
+    _instance = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = DatabaseHealth()
+        return cls._instance
+
+    def __init__(self):
+        self.consecutive_failures = 0
+        self.last_check_time = 0
+        self.max_failures_before_failover = 3
+        self.check_interval = 60  # seconds
+
+    def check_connection(self):
+        """Check if the database connection is healthy"""
+        try:
+            if not current_app:
+                logger.warning("No Flask app context available for DB health check")
+                return False, "No application context"
+
+            engine = current_app.extensions['sqlalchemy'].db.engine
+            with engine.connect() as conn:
+                conn.execute(text('SELECT 1'))
+                self.consecutive_failures = 0
+                return True, None
+        except Exception as e:
+            self.consecutive_failures += 1
+            error_message = str(e)
+            logger.error(f"Database health check failed: {error_message}")
+            return False, error_message
+
+    def should_failover(self):
+        """Determine if we should initiate failover to SQLite"""
+        return self.consecutive_failures >= self.max_failures_before_failover
+
+    def perform_failover(self):
+        """Switch database connection to SQLite fallback"""
+        try:
+            logger.warning("Initiating database failover to SQLite")
+
+            # Get current database URI
+            current_uri = current_app.config['SQLALCHEMY_DATABASE_URI']
+
+            # Only failover if not already using SQLite
+            if 'sqlite' in current_uri.lower():
+                logger.info("Already using SQLite database, no failover needed")
+                return True, None
+
+            # Setup SQLite database path
+            sqlite_path = os.path.join(os.getcwd(), 'instance', 'fallback.db')
+            os.makedirs('instance', exist_ok=True)
+
+            # Update configuration
+            current_app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{sqlite_path}"
+
+            # Get SQLAlchemy instance
+            db = current_app.extensions['sqlalchemy'].db
+
+            # Dispose existing connections
+            db.engine.dispose()
+
+            # Create tables in new database
+            db.create_all()
+
+            logger.info("Failover to SQLite complete")
+            return True, None
+        except Exception as e:
+            logger.error(f"Failover failed: {str(e)}")
+            return False, str(e)
+
+    def wake_up_endpoint(self, database_url):
+        """Attempt to wake up a sleeping PostgreSQL endpoint"""
+        try:
+            if not database_url or 'neon.tech' not in database_url.lower():
+                logger.info("Not a Neon database or no URL provided")
+                return False
+
+            logger.info("Attempting to wake up Neon database endpoint")
+
+            # Extract endpoint details
+            parts = database_url.split('@')[1].split('/')[0].split(':')[0]
+
+            # Construct engine with minimal settings for connection attempt
+            wake_engine = create_engine(
+                database_url,
+                pool_pre_ping=True,
+                pool_size=1,
+                max_overflow=0,
+                connect_args={'connect_timeout': 5}
+            )
+
+            # Try basic connection to wake up endpoint
+            try:
+                with wake_engine.connect() as conn:
+                    conn.execute(text('SELECT 1'))
+                    logger.info("Successfully woke up database endpoint")
+                    return True
+            except Exception as e:
+                logger.info(f"Initial wake attempt failed: {e}")
+
+                # If PostgreSQL serverless endpoint is disabled, we need to manually enable it
+                # For Neon specifically, we can't programmatically enable it without API access
+                logger.warning("Could not wake up endpoint automatically")
+                logger.info("Please enable the endpoint in your database provider's console")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error in wake_up_endpoint: {str(e)}")
+            return False
+
 import logging
 import time
 from typing import Tuple, Optional, Dict
@@ -10,6 +133,7 @@ logger = logging.getLogger(__name__)
 handler = logging.FileHandler('database.log')
 handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logger.addHandler(handler)
+
 
 class DatabaseHealth:
     _health_metrics = {
@@ -53,7 +177,7 @@ class DatabaseHealth:
 
         except SQLAlchemyError as e:
             error_msg = f"Database health check failed: {str(e)}"
-            
+
             # Special handling for endpoint disabled errors
             error_str = str(e).lower()
             if 'endpoint is disabled' in error_str:
@@ -61,7 +185,7 @@ class DatabaseHealth:
                 # Could trigger notification or auto-restart here
             elif 'connection' in error_str and ('timed out' in error_str or 'refused' in error_str):
                 logger.warning("Database connection timed out or was refused. The server may be under high load.")
-            
+
             logger.error(error_msg)
             DatabaseHealth._update_metrics(0, success=False)
             return False, error_msg
@@ -138,13 +262,13 @@ class DatabaseHealth:
     def wake_up_endpoint(uri: str) -> bool:
         """
         Attempt to wake up a disabled database endpoint
-        
+
         Neon and other serverless PostgreSQL providers automatically shut down
         inactive compute instances. This method will attempt several gentle
         reconnections to wake up the endpoint.
         """
         logger.info("Attempting to wake up database endpoint...")
-        
+
         # We'll try a few times with increasing delays
         for attempt in range(1, 4):
             try:
@@ -158,19 +282,19 @@ class DatabaseHealth:
                     # Use a longer timeout for wake-up
                     connect_args={'connect_timeout': 20}
                 )
-                
+
                 # Try to establish connection
                 with engine.connect() as conn:
                     conn.execute(text('SELECT 1'))
-                
+
                 logger.info(f"Successfully woke up database endpoint on attempt {attempt}")
                 return True
-                
+
             except Exception as e:
                 logger.warning(f"Wake-up attempt {attempt} failed: {str(e)}")
                 # Exponential backoff with jitter
                 delay = (2 ** attempt) + (time.time() % 1)
                 time.sleep(delay)
-        
+
         logger.error("Failed to wake up database endpoint after multiple attempts")
         return False

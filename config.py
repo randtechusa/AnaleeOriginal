@@ -65,62 +65,18 @@ class Config:
     if 'sqlite' in SQLALCHEMY_DATABASE_URI:
         os.makedirs('instance', exist_ok=True)
             
-    # Configure SQLAlchemy pool settings based on database type
-    @property
-    def SQLALCHEMY_ENGINE_OPTIONS(self):
-        """
-        Dynamic connection pool settings based on database type
-        
-        For PostgreSQL (especially serverless like Neon), we use smaller initial pool
-        with ability to overflow temporarily during traffic spikes.
-        
-        For SQLite, we use minimal pooling since it's file-based.
-        """
-        if hasattr(self, '_engine_options'):
-            return self._engine_options
-            
-        uri = self.SQLALCHEMY_DATABASE_URI
-        
-        if 'sqlite' in uri.lower():
-            # SQLite needs minimal pooling
-            self._engine_options = {
-                'pool_size': 1,
-                'max_overflow': 2,
-                'pool_timeout': 20,
-                'pool_recycle': 3600,
-                'pool_pre_ping': True,
-            }
-        else:
-            # PostgreSQL settings - optimized for serverless
-            self._engine_options = {
-                'pool_size': 5,             # Keep 5 connections ready
-                'max_overflow': 10,         # Allow up to 10 more during spikes
-                'pool_timeout': 30,         # Wait up to 30 sec for connection
-                'pool_recycle': 1800,       # Recycle connections every 30 min
-                'pool_pre_ping': True,      # Verify connections before using
-                'connect_args': {
-                    'connect_timeout': 10,  # Connect timeout in seconds
-                    'application_name': 'icountant'  # Help identify app in db logs
-                }
-            }
-            
-            # If this is a Neon database, try to use their connection pooler
-            if 'neon.tech' in uri.lower():
-                # Convert to use Neon's connection pooling if not already
-                if '-pooler.' not in uri.lower():
-                    uri_parts = uri.split('.')
-                    # Format: region.aws.neon.tech -> region-pooler.aws.neon.tech
-                    for i, part in enumerate(uri_parts):
-                        if '.neon.tech' in part:
-                            uri_parts[i-1] = uri_parts[i-1] + '-pooler'
-                            break
-                    self.SQLALCHEMY_DATABASE_URI = '.'.join(uri_parts)
-                    logger.info("Enabled Neon connection pooling")
-                    
-                # Use higher concurrency for Neon's built-in pooler
-                self._engine_options['pool_size'] = 10
-                
-        return self._engine_options
+    # Define SQLAlchemy engine options directly as a dictionary instead of property
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 5,             # Keep 5 connections ready
+        'max_overflow': 10,         # Allow up to 10 more during spikes
+        'pool_timeout': 30,         # Wait up to 30 sec for connection
+        'pool_recycle': 1800,       # Recycle connections every 30 min
+        'pool_pre_ping': True,      # Verify connections before using
+        'connect_args': {
+            'connect_timeout': 10,  # Connect timeout in seconds
+            'application_name': 'icountant'  # Help identify app in db logs
+        }
+    }
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
