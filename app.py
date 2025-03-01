@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 def init_database(app):
     """Initialize database with comprehensive error handling and health monitoring"""
-    from utils.db_health import DatabaseHealth
     import time
     from sqlalchemy import text
 
@@ -29,15 +28,13 @@ def init_database(app):
     if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI'].lower():
         logger.info("Using SQLite database")
         try:
+            # Create tables within app context - db.init_app is already called in init_extensions
             with app.app_context():
-                db.session.remove()  # Ensure no existing transactions
                 db.create_all()
-                db.session.execute(text('SELECT 1'))
-                db.session.commit()
+                logger.info("SQLite database tables created successfully")
                 return True
         except Exception as e:
             logger.error(f"SQLite initialization failed: {e}")
-            db.session.rollback()
             return False
 
     max_retries = 3
@@ -59,11 +56,15 @@ def init_database(app):
             else:
                 logger.info("Falling back to SQLite database")
                 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/app.db'
-                with app.app_context():
-                    db.create_all()
-                    return True
-        return False
-
+                try:
+                    with app.app_context():
+                        db.create_all()
+                        logger.info("Fallback to SQLite successful")
+                        return True
+                except Exception as fallback_error:
+                    logger.error(f"SQLite fallback failed: {fallback_error}")
+                    return False
+    
     logger.critical("Failed to initialize database after maximum retries")
     return False
 
@@ -124,7 +125,8 @@ def create_app(config_name=None):
 if __name__ == '__main__':
     app = create_app()
     if app:
-        port = int(os.environ.get('PORT', 8080))
-        app.run(host='0.0.0.0', port=port)
+        # Always use port 5000 on Replit, which is the non-firewalled port
+        port = int(os.environ.get('PORT', 5000))
+        app.run(host='0.0.0.0', port=port, debug=True)
     else:
         logger.error("Failed to create application")

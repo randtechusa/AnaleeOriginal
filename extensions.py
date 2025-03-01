@@ -16,31 +16,41 @@ def init_extensions(app):
     from sqlalchemy.engine import Engine
     import logging
     import time
-    from utils.db_health import DatabaseHealth
-
+    import os
+    
     logger = logging.getLogger('database')
-    db_health = DatabaseHealth.get_instance()
+    
+    # Only configure event listeners for PostgreSQL connections
+    # SQLite connections can cause issues with these listeners
+    if 'sqlite' not in app.config['SQLALCHEMY_DATABASE_URI'].lower():
+        try:
+            from utils.db_health import DatabaseHealth
+            db_health = DatabaseHealth.get_instance()
+            
+            @event.listens_for(Engine, "engine_connect")
+            def engine_connect(conn, branch):
+                if not branch:
+                    try:
+                        conn.execute(text('SELECT 1'))
+                    except Exception as e:
+                        logger.error(f"Connection test failed: {e}")
+                        raise
 
-    @event.listens_for(Engine, "engine_connect")
-    def engine_connect(conn, branch):
-        if not branch:
-            try:
-                conn.execute(text('SELECT 1'))
-            except Exception as e:
-                logger.error(f"Connection test failed: {e}")
-                raise
+            @event.listens_for(Engine, "before_cursor_execute")
+            def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+                conn.info.setdefault('query_start_time', []).append(time.time())
+                logger.debug("Starting Query: %s", statement)
 
-    @event.listens_for(Engine, "before_cursor_execute")
-    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
-        conn.info.setdefault('query_start_time', []).append(time.time())
-        logger.debug("Starting Query: %s", statement)
-
-    @event.listens_for(Engine, "after_cursor_execute")
-    def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
-        total = time.time() - conn.info['query_start_time'].pop()
-        logger.debug("Query Complete! Time: %f", total)
-        if total > 1.0:  # Log slow queries
-            logger.warning("Slow Query Detected: %s", statement)
+            @event.listens_for(Engine, "after_cursor_execute")
+            def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+                total = time.time() - conn.info['query_start_time'].pop()
+                logger.debug("Query Complete! Time: %f", total)
+                if total > 1.0:  # Log slow queries
+                    logger.warning("Slow Query Detected: %s", statement)
+        except Exception as e:
+            logger.warning(f"Failed to set up database monitoring: {e}")
+    else:
+        logger.info("Using SQLite backend - database monitoring reduced")
 
     # Initialize SQLAlchemy with monitoring
     db.init_app(app)

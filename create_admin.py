@@ -11,6 +11,12 @@ logger = logging.getLogger(__name__)
 def create_admin_user():
     """Create admin user if it doesn't exist"""
     app = create_app()
+    
+    # Check if app was created successfully
+    if app is None:
+        logger.error("Failed to create application for admin user setup")
+        return False
+        
     with app.app_context():
         try:
             # Check if admin exists

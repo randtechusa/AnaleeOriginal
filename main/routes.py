@@ -5,7 +5,9 @@ from werkzeug.utils import secure_filename
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app, abort
 from flask_login import login_required, current_user
 from models import db, Account, AdminChartOfAccounts, Transaction, UploadedFile
-from icountant import ICountant, PredictiveFeatures
+from icountant import ICountant
+from utils.hybrid_predictor import HybridPredictor
+from predictive_features import PredictiveFeatures
 
 logger = logging.getLogger(__name__)
 
@@ -67,111 +69,6 @@ def analyze_list():
 @bp.route('/analyze/<int:file_id>')
 @login_required
 def analyze(file_id):
-    """Enhanced analyze endpoint with predictive features"""
-    try:
-        file = UploadedFile.query.filter_by(
-            id=file_id,
-            user_id=current_user.id
-        ).first_or_404()
-        
-        predictor = PredictiveFeatures()
-
-        # Get related transactions with enhanced querying
-        transactions = Transaction.query.filter_by(
-            user_id=current_user.id,
-            file_id=file_id
-        ).order_by(Transaction.date.desc()).all()
-
-        if not transactions:
-            flash('No transactions found in this file', 'info')
-            return redirect(url_for('main.analyze_list'))
-
-        # Get available accounts
-        accounts = Account.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).order_by(Account.category, Account.name).all()
-
-        # Pre-analyze transactions
-        analyzed_transactions = []
-        for transaction in transactions:
-            similar = predictor.find_similar_transactions(transaction.description)
-            suggestions = predictor.suggest_account(
-                transaction.description,
-                transaction.explanation
-            )
-            
-            analyzed_transactions.append({
-                'transaction': transaction,
-                'similar_transactions': similar.get('similar_transactions', []),
-                'account_suggestions': suggestions,
-                'analysis_score': similar.get('analysis', {}).get('confidence_avg', 0)
-            })
-
-        # Get anomaly insights
-        anomalies = check_anomalies(analyzed_transactions) if analyzed_transactions else None
-
-        return render_template('analyze.html',
-                           file=file,
-                           analyzed_transactions=analyzed_transactions,
-                           accounts=accounts,
-                           anomalies=anomalies,
-                           ai_available=True)
-    except Exception as e:
-        logger.error(f"Error in analyze route: {str(e)}")
-        flash('Error accessing file for analysis', 'error')
-        return redirect(url_for('main.analyze_list'))
-            id=file_id,
-            user_id=current_user.id
-        ).first_or_404()
-        
-        predictor = PredictiveFeatures()
-
-        # Get related transactions with enhanced querying
-        transactions = Transaction.query.filter_by(
-            user_id=current_user.id,
-            file_id=file_id
-        ).order_by(Transaction.date.desc()).all()
-
-        if not transactions:
-            flash('No transactions found in this file', 'info')
-            return redirect(url_for('main.analyze_list'))
-
-        # Get available accounts
-        accounts = Account.query.filter_by(
-            user_id=current_user.id,
-            is_active=True
-        ).order_by(Account.category, Account.name).all()
-
-        # Pre-analyze transactions
-        analyzed_transactions = []
-        for transaction in transactions:
-            similar = predictor.find_similar_transactions(transaction.description)
-            suggestions = predictor.suggest_account(
-                transaction.description,
-                transaction.explanation
-            )
-            
-            analyzed_transactions.append({
-                'transaction': transaction,
-                'similar_transactions': similar.get('similar_transactions', []),
-                'account_suggestions': suggestions,
-                'analysis_score': similar.get('analysis', {}).get('confidence_avg', 0)
-            })
-
-        # Get anomaly insights
-        anomalies = check_anomalies(analyzed_transactions) if analyzed_transactions else None
-
-        return render_template('analyze.html',
-                           file=file,
-                           analyzed_transactions=analyzed_transactions,
-                           accounts=accounts,
-                           anomalies=anomalies,
-                           ai_available=True)
-    except Exception as e:
-        logger.error(f"Error in analyze route: {str(e)}")
-        flash('Error accessing file for analysis', 'error')
-        return redirect(url_for('main.analyze_list'))
     """Enhanced analyze endpoint with predictive features"""
     try:
         file = UploadedFile.query.filter_by(
