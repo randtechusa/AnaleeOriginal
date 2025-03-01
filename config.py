@@ -65,7 +65,7 @@ class Config:
     if 'sqlite' in SQLALCHEMY_DATABASE_URI:
         os.makedirs('instance', exist_ok=True)
             
-    # Define SQLAlchemy engine options directly as a dictionary instead of as a property
+    # Define SQLAlchemy engine options directly as a class attribute (not a property)
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 5,             # Keep 5 connections ready
         'max_overflow': 10,         # Allow up to 10 more during spikes
@@ -112,19 +112,27 @@ def get_config(config_name='development'):
     
     config_class = config_classes.get(config_name, DevelopmentConfig)
     
+    # Create a new instance to avoid modifying the class itself
+    config_instance = config_class()
+    
     # Conditionally add PostgreSQL-specific connection args if we're using PostgreSQL
     # This ensures SQLite connections don't get incompatible options
-    if hasattr(config_class, 'SQLALCHEMY_DATABASE_URI') and 'postgresql' in config_class.SQLALCHEMY_DATABASE_URI:
-        if not hasattr(config_class, 'SQLALCHEMY_ENGINE_OPTIONS'):
-            config_class.SQLALCHEMY_ENGINE_OPTIONS = {}
+    db_uri = getattr(config_instance, 'SQLALCHEMY_DATABASE_URI', '')
+    if db_uri and isinstance(db_uri, str) and 'postgresql' in db_uri:
+        if not hasattr(config_instance, 'SQLALCHEMY_ENGINE_OPTIONS'):
+            config_instance.SQLALCHEMY_ENGINE_OPTIONS = {}
+        elif callable(getattr(config_instance.__class__, 'SQLALCHEMY_ENGINE_OPTIONS', None)):
+            # If it's a property, get its value
+            config_instance.SQLALCHEMY_ENGINE_OPTIONS = config_instance.SQLALCHEMY_ENGINE_OPTIONS.copy()
         
         # Add PostgreSQL-specific connection args
-        if 'connect_args' not in config_class.SQLALCHEMY_ENGINE_OPTIONS:
-            config_class.SQLALCHEMY_ENGINE_OPTIONS['connect_args'] = {}
+        engine_options = config_instance.SQLALCHEMY_ENGINE_OPTIONS
+        if 'connect_args' not in engine_options:
+            engine_options['connect_args'] = {}
             
-        config_class.SQLALCHEMY_ENGINE_OPTIONS['connect_args'].update({
+        engine_options['connect_args'].update({
             'connect_timeout': 10,
             'application_name': 'icountant'
         })
-        
-    return config_class
+    
+    return config_instance

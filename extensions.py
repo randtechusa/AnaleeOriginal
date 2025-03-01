@@ -20,6 +20,10 @@ def init_extensions(app):
     
     logger = logging.getLogger('database')
     
+    # Make sure the SQLALCHEMY_ENGINE_OPTIONS is properly initialized
+    if 'SQLALCHEMY_ENGINE_OPTIONS' not in app.config:
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
+    
     # Only configure event listeners for PostgreSQL connections
     # SQLite connections can cause issues with these listeners
     if 'sqlite' not in app.config['SQLALCHEMY_DATABASE_URI'].lower():
@@ -51,6 +55,13 @@ def init_extensions(app):
             logger.warning(f"Failed to set up database monitoring: {e}")
     else:
         logger.info("Using SQLite backend - database monitoring reduced")
+        # Make sure SQLite engine options don't include PostgreSQL-specific options
+        if 'SQLALCHEMY_ENGINE_OPTIONS' in app.config:
+            sqlite_compatible_options = {}
+            for key, value in app.config['SQLALCHEMY_ENGINE_OPTIONS'].items():
+                if key not in ['pool_size', 'max_overflow']:
+                    sqlite_compatible_options[key] = value
+            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = sqlite_compatible_options
 
     # Initialize SQLAlchemy with monitoring
     db.init_app(app)
