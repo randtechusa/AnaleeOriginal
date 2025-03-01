@@ -65,18 +65,17 @@ class Config:
     if 'sqlite' in SQLALCHEMY_DATABASE_URI:
         os.makedirs('instance', exist_ok=True)
             
-    # Define SQLAlchemy engine options directly as a dictionary instead of property
+    # Define SQLAlchemy engine options directly as a dictionary instead of as a property
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 5,             # Keep 5 connections ready
         'max_overflow': 10,         # Allow up to 10 more during spikes
         'pool_timeout': 30,         # Wait up to 30 sec for connection
         'pool_recycle': 1800,       # Recycle connections every 30 min
-        'pool_pre_ping': True,      # Verify connections before using
-        'connect_args': {
-            'connect_timeout': 10,  # Connect timeout in seconds
-            'application_name': 'icountant'  # Help identify app in db logs
-        }
+        'pool_pre_ping': True       # Verify connections before using
     }
+    
+    # SQLite doesn't support all PostgreSQL connection arguments
+    # These will be added conditionally in the Config initialization if needed
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
@@ -103,10 +102,29 @@ class ProductionConfig(Config):
 
 def get_config(config_name='development'):
     """Get configuration class based on environment"""
+    config_class = None
     config_classes = {
         'development': DevelopmentConfig,
         'production': ProductionConfig,
         'testing': TestingConfig,
         'default': DevelopmentConfig
     }
-    return config_classes.get(config_name, DevelopmentConfig)
+    
+    config_class = config_classes.get(config_name, DevelopmentConfig)
+    
+    # Conditionally add PostgreSQL-specific connection args if we're using PostgreSQL
+    # This ensures SQLite connections don't get incompatible options
+    if hasattr(config_class, 'SQLALCHEMY_DATABASE_URI') and 'postgresql' in config_class.SQLALCHEMY_DATABASE_URI:
+        if not hasattr(config_class, 'SQLALCHEMY_ENGINE_OPTIONS'):
+            config_class.SQLALCHEMY_ENGINE_OPTIONS = {}
+        
+        # Add PostgreSQL-specific connection args
+        if 'connect_args' not in config_class.SQLALCHEMY_ENGINE_OPTIONS:
+            config_class.SQLALCHEMY_ENGINE_OPTIONS['connect_args'] = {}
+            
+        config_class.SQLALCHEMY_ENGINE_OPTIONS['connect_args'].update({
+            'connect_timeout': 10,
+            'application_name': 'icountant'
+        })
+        
+    return config_class
