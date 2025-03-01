@@ -38,7 +38,8 @@ class DatabaseHealth:
                 from sqlalchemy import create_engine
                 engine = create_engine(uri, 
                     pool_pre_ping=True,
-                    pool_recycle=3600
+                    pool_recycle=3600,
+                    connect_args={'connect_timeout': 10}  # Add timeout
                 )
                 with engine.connect() as conn:
                     conn.execute(text('SELECT 1'))
@@ -52,6 +53,15 @@ class DatabaseHealth:
 
         except SQLAlchemyError as e:
             error_msg = f"Database health check failed: {str(e)}"
+            
+            # Special handling for endpoint disabled errors
+            error_str = str(e).lower()
+            if 'endpoint is disabled' in error_str:
+                logger.warning("PostgreSQL endpoint is disabled. This is normal for serverless databases after periods of inactivity.")
+                # Could trigger notification or auto-restart here
+            elif 'connection' in error_str and ('timed out' in error_str or 'refused' in error_str):
+                logger.warning("Database connection timed out or was refused. The server may be under high load.")
+            
             logger.error(error_msg)
             DatabaseHealth._update_metrics(0, success=False)
             return False, error_msg
@@ -123,3 +133,44 @@ class DatabaseHealth:
              datetime.now() - metrics['last_failover'] > timedelta(hours=1) and
              metrics['consecutive_failures'] > 0)
         )
+
+    @staticmethod
+    def wake_up_endpoint(uri: str) -> bool:
+        """
+        Attempt to wake up a disabled database endpoint
+        
+        Neon and other serverless PostgreSQL providers automatically shut down
+        inactive compute instances. This method will attempt several gentle
+        reconnections to wake up the endpoint.
+        """
+        logger.info("Attempting to wake up database endpoint...")
+        
+        # We'll try a few times with increasing delays
+        for attempt in range(1, 4):
+            try:
+                from sqlalchemy import create_engine
+                engine = create_engine(
+                    uri,
+                    pool_pre_ping=True,
+                    # Small pool for wake-up attempts
+                    pool_size=1,
+                    max_overflow=0,
+                    # Use a longer timeout for wake-up
+                    connect_args={'connect_timeout': 20}
+                )
+                
+                # Try to establish connection
+                with engine.connect() as conn:
+                    conn.execute(text('SELECT 1'))
+                
+                logger.info(f"Successfully woke up database endpoint on attempt {attempt}")
+                return True
+                
+            except Exception as e:
+                logger.warning(f"Wake-up attempt {attempt} failed: {str(e)}")
+                # Exponential backoff with jitter
+                delay = (2 ** attempt) + (time.time() % 1)
+                time.sleep(delay)
+        
+        logger.error("Failed to wake up database endpoint after multiple attempts")
+        return False
