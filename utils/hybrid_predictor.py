@@ -63,11 +63,11 @@ class HybridPredictor:
             self.logger.error(f"Error in keyword suggestions: {str(e)}")
             return []
     
-    async def get_suggestions(self, 
-                          description: str,
-                          amount: float,
-                          historical_data: List[Dict],
-                          available_accounts: List[Dict]) -> List[Dict]:
+    def get_suggestions(self, 
+                  description: str,
+                  amount: float,
+                  historical_data: List[Dict],
+                  available_accounts: List[Dict]) -> List[Dict]:
         """
         Get suggestions using hybrid approach:
         1. Try pattern matching first

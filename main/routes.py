@@ -477,22 +477,17 @@ class PredictiveFeatures:
     def suggest_account(self, description: str, explanation: str = ""):
         """Suggest account based on transaction description and explanation"""
         try:
-            # Get pattern-based suggestions
-            pattern_suggestions = self.hybrid_predictor.get_suggestions(
-                description=description,
-                amount=0.0,  # Default amount for pattern matching
-                historical_data=[],
-                available_accounts=[]
-            )
-
+            # Use synchronous keyword suggestions instead of async method
+            keyword_suggestions = self.hybrid_predictor.get_keyword_suggestions(description)
+            
             # Convert to standard format
             suggestions = []
-            for suggestion in pattern_suggestions:
+            for suggestion in keyword_suggestions:
                 suggestions.append({
-                    'account': suggestion.get('account_name', ''),
+                    'account': suggestion.get('category', ''),
                     'confidence': suggestion.get('confidence', 0),
-                    'reasoning': suggestion.get('reasoning', ''),
-                    'source': suggestion.get('source', 'hybrid')
+                    'reasoning': 'Based on keyword matching',
+                    'source': 'keyword'
                 })
 
             return suggestions
@@ -528,7 +523,7 @@ class PredictiveFeatures:
 
         except Exception as e:
             logger.error(f"Error finding similar transactions: {str(e)}")
-            return {'success': False, 'error': str(e)}
+            return {'success': False, 'error': str(e), 'similar_transactions': []}
 def check_anomalies(analyzed_transactions):
     """Check for anomalies in analyzed transactions"""
     try:
