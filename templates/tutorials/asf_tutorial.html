@@ -1,0 +1,59 @@
+{% macro asf_tutorial() %}
+<div class="card tutorial-card mb-4">
+    <div class="card-header bg-success text-white">
+        <h5 class="card-title mb-0">
+            <i class="fas fa-bullseye me-2"></i>Account Suggestion Feature (ASF)
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="feature-highlight">
+            <h6>How It Works:</h6>
+            <p>The Account Suggestion Feature (ASF) intelligently recommends the most appropriate account for each transaction.</p>
+            
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0"><i class="fas fa-cogs me-2"></i>What It Does</h6>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled">
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Analyzes transaction descriptions</li>
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Uses historical account selections</li>
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Considers transaction patterns</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0"><i class="fas fa-lightbulb me-2"></i>Benefits</h6>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled">
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Speeds up transaction processing</li>
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Reduces categorization errors</li>
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Increases consistency in accounting</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h6>How to Use:</h6>
+            <ol>
+                <li>View the transaction details and description</li>
+                <li>ASF will automatically suggest the most appropriate account</li>
+                <li>See the confidence level and reason for each suggestion</li>
+                <li>Either accept the suggestion or select a different account</li>
+            </ol>
+            
+            <div class="alert alert-info mt-3">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>Pro Tip:</strong> ASF improves over time as you process more transactions, learning from your account selections to make better suggestions.
+            </div>
+        </div>
+    </div>
+</div>
+{% endmacro %}

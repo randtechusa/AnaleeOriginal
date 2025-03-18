@@ -1,0 +1,59 @@
+{% macro erf_tutorial() %}
+<div class="card tutorial-card mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="card-title mb-0">
+            <i class="fas fa-magic me-2"></i>Explanation Recognition Feature (ERF)
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="feature-highlight">
+            <h6>How It Works:</h6>
+            <p>The Explanation Recognition Feature (ERF) automatically finds transactions with similar descriptions in your records.</p>
+            
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0"><i class="fas fa-search me-2"></i>What It Does</h6>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled">
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Identifies transactions with 70%+ text similarity</li>
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Groups similar transactions together</li>
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Automatically suggests matching explanations</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0"><i class="fas fa-lightbulb me-2"></i>Benefits</h6>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled">
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Saves time on repetitive entries</li>
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Ensures consistent explanations</li>
+                                <li><i class="fas fa-check-circle text-success me-2"></i>Reduces manual data entry errors</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h6>How to Use:</h6>
+            <ol>
+                <li>Enter an explanation for any transaction</li>
+                <li>Similar transactions will be identified automatically</li>
+                <li>Click on a similar transaction to apply the same explanation</li>
+                <li>Confirm to update all similar transactions at once</li>
+            </ol>
+            
+            <div class="alert alert-info mt-3">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>Pro Tip:</strong> ERF works best with detailed explanations that include specific keywords relevant to the transaction.
+            </div>
+        </div>
+    </div>
+</div>
+{% endmacro %}
