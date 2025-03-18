@@ -182,6 +182,10 @@ def create_app(config_name=None):
             # Initialize audit service
             from utils.audit_service import audit_service
             audit_service.init_app(app)
+            
+            # Initialize scheduler for automated tasks
+            from utils.scheduler import init_scheduler
+            init_scheduler(app)
 
             from reports import reports as reports_bp
             app.register_blueprint(reports_bp, url_prefix='/reports')

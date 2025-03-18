@@ -364,3 +364,24 @@ class AuditFinding(db.Model):
     status = db.Column(db.String(50), nullable=False, default='open')  # open, resolved, in_progress
     resolved_at = db.Column(db.DateTime, nullable=True)
     resolution_notes = db.Column(db.Text, nullable=True)
+    details = db.Column(db.Text, nullable=True)  # JSON formatted additional details
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ScheduledJob(db.Model):
+    """Model for storing scheduled job information"""
+    __tablename__ = 'scheduled_jobs'
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.String(200))
+    enabled = db.Column(db.Boolean, default=True)
+    last_run = db.Column(db.DateTime)
+    last_status = db.Column(db.String(20))  # success, failed
+    last_error = db.Column(db.Text)
+    success_count = db.Column(db.Integer, default=0)
+    error_count = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<ScheduledJob {self.job_id}>"
