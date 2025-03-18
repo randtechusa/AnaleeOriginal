@@ -37,14 +37,16 @@ def setup_scheduled_audits(app):
     try:
         # Create a job for daily audit at 8:00 PM Eastern Time
         eastern = pytz.timezone('US/Eastern')
-        app.scheduler.add_job(
+        from utils.scheduler import add_scheduled_job
+        
+        # Use our enhanced scheduler function
+        add_scheduled_job(
             id='daily_system_audit',
             func=run_daily_audit,
             trigger='cron',
             hour=20,  # 8:00 PM
             minute=0,
-            timezone=eastern,
-            replace_existing=True
+            timezone=eastern
         )
         
         logger.info("Scheduled daily audit configured for 8:00 PM ET")
@@ -78,6 +80,9 @@ def run_daily_audit():
     Returns:
         tuple: (success_flag, message, audit_id)
     """
+    # Define audit_id at the beginning to avoid 'possibly unbound' errors
+    audit_id = None
+    
     try:
         # Create audit record
         audit = SystemAudit(
