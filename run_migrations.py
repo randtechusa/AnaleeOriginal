@@ -7,6 +7,7 @@ from flask import Flask
 from flask_migrate import Migrate, upgrade
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 import logging
+import importlib
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -20,25 +21,32 @@ def init_migrations(retry_count=3, retry_delay=5):
         retry_delay: Seconds to wait between retries
     """
     try:
-        from models import db
-        from config import Config, DevelopmentConfig
+        # First, make sure we have the models initialized
+        try:
+            from models import db
+        except ImportError as e:
+            logger.error(f"Failed to import database models: {e}")
+            return False
         
+        # Create a Flask app for migration
         app = Flask(__name__)
         
-        # Try to use the environment-specific config, fall back to development if not found
-        config_name = os.environ.get('FLASK_ENV', 'development')
-        if config_name == 'development':
-            app.config.from_object(DevelopmentConfig)
-        else:
+        # Configure the app using the config module
+        try:
+            from config import Config
             app.config.from_object(Config)
+        except ImportError as e:
+            logger.error(f"Failed to import configuration: {e}")
+            return False
         
         # Override database URI from env if available
         if os.environ.get('DATABASE_URL'):
             app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
         
-        logger.info(f"Using database: {app.config['SQLALCHEMY_DATABASE_URI']}")
-        
+        # Initialize the db with this app
         db.init_app(app)
+        
+        # Initialize migrations with this app and db
         migrate = Migrate(app, db)
         
         with app.app_context():
@@ -47,13 +55,13 @@ def init_migrations(retry_count=3, retry_delay=5):
                     # Ensure instance directory exists
                     os.makedirs('instance', exist_ok=True)
                     
+                    # Get the current database URI
+                    current_db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+                    logger.info(f"Using database: {current_db_uri}")
+                    
                     # Attempt to connect to the database
                     db.engine.connect()
                     logger.info("Database connection successful")
-                    
-                    # Create database tables
-                    db.create_all()
-                    logger.info("Tables created successfully")
                     
                     # Run migrations
                     logger.info("Starting database migrations...")
@@ -63,12 +71,31 @@ def init_migrations(retry_count=3, retry_delay=5):
                     return True
                     
                 except OperationalError as e:
-                    if 'endpoint is disabled' in str(e):
+                    error_str = str(e).lower()
+                    if 'endpoint is disabled' in error_str:
                         logger.warning("PostgreSQL endpoint is disabled, may need to be woken up")
-                        # Fall back to SQLite if needed
-                        if attempt == retry_count - 1:
-                            logger.warning("Falling back to SQLite database")
+                        
+                        # Try to wake up the endpoint using the wake_up_endpoint method from db_health
+                        current_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+                        if current_uri and 'sqlite' not in current_uri.lower() and attempt < retry_count - 1:
+                            try:
+                                from utils.db_health import DatabaseHealth
+                                db_health = DatabaseHealth.get_instance()
+                                wake_result = db_health.wake_up_endpoint(current_uri)
+                                if wake_result:
+                                    logger.info("Successfully woke up the database endpoint")
+                                    continue
+                            except Exception as we:
+                                logger.error(f"Error trying to wake up endpoint: {we}")
+                        
+                        # Fall back to SQLite if this is our last attempt
+                        current_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+                        if attempt == retry_count - 1 and current_uri and 'sqlite' not in current_uri.lower():
+                            logger.warning("Falling back to SQLite database for migrations")
                             app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
+                            # Dispose existing connections and reconnect
+                            db.engine.dispose()
+                            # Re-initialize with new URI
                             db.init_app(app)
                             continue
                     
@@ -89,6 +116,7 @@ def init_migrations(retry_count=3, retry_delay=5):
                     
                 except Exception as e:
                     logger.error(f"Migration error (attempt {attempt+1}/{retry_count}): {e}")
+                    logger.error(f"Error details: {type(e).__name__}: {str(e)}")
                     if attempt < retry_count - 1:
                         logger.info(f"Retrying in {retry_delay} seconds...")
                         time.sleep(retry_delay)
