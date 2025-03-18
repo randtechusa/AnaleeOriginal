@@ -89,14 +89,50 @@ class ICountant:
         return insights
 
     def _suggest_accounts(self, description, amount):
-        """Suggest appropriate accounts"""
+        """Suggest appropriate accounts with confidence ranking"""
         suggestions = []
-        for account in self.available_accounts:
-            if self._matches_account(description, account):
-                suggestions.append({
-                    'account': account,
-                    'reason': f"Matches typical {account['category']} transaction pattern"
-                })
+        
+        # First try to use PredictiveFeatures for more sophisticated matching
+        try:
+            predictor_suggestions = self.predictor.suggest_account(description)
+            if predictor_suggestions:
+                for sugg in predictor_suggestions[:3]:  # Limit to top 3
+                    # Format suggestion for UI display
+                    account_info = {}
+                    for acc in self.available_accounts:
+                        if acc.get('id') == sugg.get('account_id') or acc.get('name') == sugg.get('account'):
+                            account_info = acc
+                            break
+                            
+                    if account_info:
+                        suggestions.append({
+                            'account': account_info,
+                            'reason': sugg.get('reasoning', 'Suggested by pattern analysis'),
+                            'confidence': sugg.get('confidence', 0.7),
+                            'source': sugg.get('source', 'ai_prediction')
+                        })
+        except Exception as e:
+            logger.warning(f"Error using predictor for suggestions: {str(e)}")
+        
+        # If we don't have enough suggestions from predictor, use direct matching
+        if len(suggestions) < 3:
+            for account in self.available_accounts:
+                # Skip accounts already suggested by predictor
+                if any(s['account'].get('id') == account.get('id') for s in suggestions):
+                    continue
+                    
+                if self._matches_account(description, account):
+                    # Add basic suggestion
+                    category = account.get('category', account.get('type', 'unknown'))
+                    suggestions.append({
+                        'account': account,
+                        'reason': f"Matches typical {category} transaction pattern",
+                        'confidence': 0.8,
+                        'source': 'rule_based'
+                    })
+        
+        # Sort by confidence and limit
+        suggestions.sort(key=lambda x: x.get('confidence', 0), reverse=True)
         return suggestions[:3]  # Return top 3 suggestions
 
     def _categorize_transaction(self, description: str) -> str:
@@ -112,33 +148,59 @@ class ICountant:
 
     def _matches_account(self, description: str, account: Dict) -> bool:
         """Match transaction description to account with enhanced logic"""
-        # Handle case where account has no keywords
-        if not account.get('keywords') and not isinstance(account.get('keywords'), list):
-            # Use the account name and category as fallback keywords
-            account_name = account.get('name', '').lower()
-            account_category = account.get('category', '').lower()
-            
-            # Check if account name or category appears in the description
-            description_lower = description.lower()
-            if account_name and account_name in description_lower:
-                return True
-            if account_category and account_category in description_lower:
-                return True
-                
-            # If no direct match, use basic keyword extraction
-            common_expense_terms = ['payment', 'purchase', 'bill', 'fee', 'expense']
-            common_income_terms = ['deposit', 'salary', 'income', 'revenue', 'refund']
-            
-            # Check if this is expense or income account and match accordingly
-            if account_category == 'expense':
-                return any(term in description_lower for term in common_expense_terms)
-            elif account_category == 'income' or account_category == 'revenue':
-                return any(term in description_lower for term in common_income_terms)
-                
-            return False
+        description_lower = description.lower()
         
-        # If account has keywords, use them for matching
-        return any(keyword.lower() in description.lower() for keyword in account.get('keywords', []))
+        # Get account properties
+        account_name = account.get('name', '').lower()
+        account_type = account.get('type', '').lower()
+        account_category = account.get('category', '').lower() 
+        account_code = account.get('code', '').lower() if account.get('code') else ''
+        account_keywords = account.get('keywords', [])
+        
+        # Direct matches with account name, code or type/category
+        if account_name and account_name in description_lower:
+            logger.info(f"Account match found: {account_name} in '{description}'")
+            return True
+            
+        if account_code and account_code in description_lower:
+            logger.info(f"Account match found: code {account_code} in '{description}'")
+            return True
+            
+        if account_type and account_type in description_lower:
+            logger.info(f"Account match found: type {account_type} in '{description}'")
+            return True
+            
+        if account_category and account_category in description_lower:
+            logger.info(f"Account match found: category {account_category} in '{description}'")
+            return True
+        
+        # Keyword matching if available
+        if isinstance(account_keywords, list) and account_keywords:
+            for keyword in account_keywords:
+                keyword_lower = str(keyword).lower()
+                if keyword_lower and keyword_lower in description_lower:
+                    logger.info(f"Account match found: keyword '{keyword}' in '{description}'")
+                    return True
+        
+        # Pattern matching for common transaction types
+        common_patterns = {
+            'expense': ['payment', 'purchase', 'bill', 'fee', 'expense', 'cost', 'paid', 'buy'],
+            'income': ['deposit', 'salary', 'income', 'revenue', 'refund', 'sale', 'received'],
+            'asset': ['acquisition', 'buy', 'invest', 'purchase', 'asset'],
+            'liability': ['loan', 'debt', 'credit', 'financing', 'borrow', 'mortgage']
+        }
+        
+        effective_type = account_type or account_category
+        if effective_type in common_patterns:
+            pattern_words = common_patterns[effective_type]
+            matching_words = [word for word in pattern_words if word in description_lower]
+            
+            if matching_words:
+                logger.info(f"Pattern match found: {', '.join(matching_words)} in '{description}' for {effective_type} account")
+                return True
+        
+        # No match found
+        return False
 
     def complete_transaction(self, transaction_id: int, selected_account: int) -> Tuple[bool, str, Dict]:
         try:
