@@ -48,16 +48,44 @@ def get_openai_client() -> Optional[OpenAI]:
         # Initialize new client with proper configuration
         _openai_client = OpenAI(api_key=api_key)
 
-        # Validate client with a test call
-        try:
-            _openai_client.models.list(limit=1)
-            logger.info("OpenAI client initialized and tested successfully")
-            _last_client_error = None
-            return _openai_client
-        except Exception as e:
-            logger.error(f"Client validation failed: {str(e)}")
-            _openai_client = None
-            _last_client_error = str(e)
+        # Validate client with a test call and proper retry mechanism
+        max_retries = 3
+        retry_count = 0
+        backoff_factor = 2
+        
+        while retry_count < max_retries:
+            try:
+                # Use a simple, lightweight API call to test the connection
+                _openai_client.models.list(limit=1)
+                logger.info("OpenAI client initialized and tested successfully")
+                _last_client_error = None
+                return _openai_client
+            except RateLimitError as e:
+                retry_count += 1
+                wait_time = backoff_factor ** retry_count
+                logger.warning(f"Rate limit hit, retrying in {wait_time} seconds (attempt {retry_count}/{max_retries})")
+                time.sleep(wait_time)
+            except APIError as e:
+                if "invalid_api_key" in str(e).lower():
+                    logger.error(f"Invalid API key: {str(e)}")
+                    _openai_client = None
+                    _last_client_error = f"Invalid API key: {str(e)}"
+                    # No point in retrying with same invalid key
+                    return None
+                retry_count += 1
+                wait_time = backoff_factor ** retry_count
+                logger.warning(f"API error, retrying in {wait_time} seconds (attempt {retry_count}/{max_retries}): {str(e)}")
+                time.sleep(wait_time)
+            except Exception as e:
+                retry_count += 1
+                wait_time = backoff_factor ** retry_count
+                logger.error(f"Client validation failed: {str(e)}, retrying in {wait_time} seconds (attempt {retry_count}/{max_retries})")
+                time.sleep(wait_time)
+        
+        # If we've exhausted all retries
+        logger.error(f"Failed to initialize OpenAI client after {max_retries} attempts")
+        _openai_client = None
+        _last_client_error = "Failed to initialize after multiple attempts"
             return None
 
     except Exception as e:
