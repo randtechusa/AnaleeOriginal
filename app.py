@@ -89,7 +89,8 @@ def init_database(app):
                 if endpoint_disabled:
                     logger.info("Consider enabling the PostgreSQL endpoint in the Replit Database panel")
                 
-                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/app.db'
+                # Use instance/dev.db for consistency with the rest of the application
+                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
                 # Completely close any existing connections before switching
                 db.get_engine().dispose()
                 
