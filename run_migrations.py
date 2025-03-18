@@ -92,18 +92,27 @@ def init_migrations(retry_count=3, retry_delay=5):
                             # Dispose existing connections and reconnect
                             db.engine.dispose()
                             
-                            # Create a new application with SQLite configuration to avoid conflicts
-                            sqlite_app = Flask(f"{__name__}_sqlite")
-                            sqlite_app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
-                            sqlite_app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-                            
-                            # Initialize db with this new app
-                            db.init_app(sqlite_app)
-                            migrate.init_app(sqlite_app, db)
-                            
-                            # Use the SQLite app context instead
-                            app = sqlite_app
-                            continue
+                            # Create tables directly for SQLite - no need for migrations
+                            logger.info("Creating tables directly for SQLite database")
+                            try:
+                                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
+                                
+                                # Re-initialize with the new URI but using the same application
+                                db.init_app(app)
+                                
+                                # Create all tables directly
+                                with app.app_context():
+                                    db.create_all()
+                                    # Verify it works
+                                    from sqlalchemy import text
+                                    db.session.execute(text('SELECT 1'))
+                                    db.session.commit()
+                                    
+                                logger.info("SQLite tables created successfully")
+                                return True  # Exit the function with success
+                            except Exception as e:
+                                logger.error(f"Failed to create SQLite tables: {e}")
+                                return False  # Exit with failure
                     
                     logger.error(f"Database operation failed (attempt {attempt+1}/{retry_count}): {e}")
                     if attempt < retry_count - 1:
