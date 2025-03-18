@@ -111,8 +111,34 @@ class ICountant:
             return "uncategorized transaction"
 
     def _matches_account(self, description: str, account: Dict) -> bool:
-        # Placeholder for more robust matching logic
-        return any(keyword in description.lower() for keyword in account.get('keywords', []))
+        """Match transaction description to account with enhanced logic"""
+        # Handle case where account has no keywords
+        if not account.get('keywords') and not isinstance(account.get('keywords'), list):
+            # Use the account name and category as fallback keywords
+            account_name = account.get('name', '').lower()
+            account_category = account.get('category', '').lower()
+            
+            # Check if account name or category appears in the description
+            description_lower = description.lower()
+            if account_name and account_name in description_lower:
+                return True
+            if account_category and account_category in description_lower:
+                return True
+                
+            # If no direct match, use basic keyword extraction
+            common_expense_terms = ['payment', 'purchase', 'bill', 'fee', 'expense']
+            common_income_terms = ['deposit', 'salary', 'income', 'revenue', 'refund']
+            
+            # Check if this is expense or income account and match accordingly
+            if account_category == 'expense':
+                return any(term in description_lower for term in common_expense_terms)
+            elif account_category == 'income' or account_category == 'revenue':
+                return any(term in description_lower for term in common_income_terms)
+                
+            return False
+        
+        # If account has keywords, use them for matching
+        return any(keyword.lower() in description.lower() for keyword in account.get('keywords', []))
 
     def complete_transaction(self, transaction_id: int, selected_account: int) -> Tuple[bool, str, Dict]:
         try:

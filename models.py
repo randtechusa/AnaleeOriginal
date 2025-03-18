@@ -56,6 +56,14 @@ class Transaction(db.Model):
     date = db.Column(db.DateTime, nullable=False)
     amount = db.Column(db.Numeric(10, 2), nullable=False)
     description = db.Column(db.String(200))
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True)
+    
+    # Processing status
+    processed_date = db.Column(db.DateTime, nullable=True)
+    is_processed = db.Column(db.Boolean, default=False)
+    
+    # The file this transaction was uploaded from (if applicable)
+    file_id = db.Column(db.Integer, db.ForeignKey('uploaded_files.id'), nullable=True)
 
     # AI-enhanced fields
     explanation = db.Column(db.String(500))
@@ -65,9 +73,11 @@ class Transaction(db.Model):
 
     # Metadata
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     user = db.relationship('User', backref=db.backref('transactions', lazy=True))
+    account = db.relationship('Account', backref=db.backref('transactions', lazy=True))
     similar_transaction = db.relationship('Transaction', remote_side=[id])
 
 class RiskAssessment(db.Model):
