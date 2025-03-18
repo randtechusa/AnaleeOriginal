@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+
+{% block title %}System Audits{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>System Audits</h2>
+        <div>
+            <a href="{{ url_for('audit.run_audit') }}" class="btn btn-primary me-2">
+                <i class="fas fa-play-circle me-1"></i> Run New Audit
+            </a>
+            <a href="{{ url_for('audit.index') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+    
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Filters</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <label for="type" class="form-label">Audit Type</label>
+                    <select name="type" id="type" class="form-select">
+                        <option value="">All Types</option>
+                        <option value="security" {% if request.args.get('type') == 'security' %}selected{% endif %}>Security</option>
+                        <option value="performance" {% if request.args.get('type') == 'performance' %}selected{% endif %}>Performance</option>
+                        <option value="data-integrity" {% if request.args.get('type') == 'data-integrity' %}selected{% endif %}>Data Integrity</option>
+                        <option value="comprehensive" {% if request.args.get('type') == 'comprehensive' %}selected{% endif %}>Comprehensive</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="status" class="form-label">Status</label>
+                    <select name="status" id="status" class="form-select">
+                        <option value="">All Statuses</option>
+                        <option value="passed" {% if request.args.get('status') == 'passed' %}selected{% endif %}>Passed</option>
+                        <option value="warning" {% if request.args.get('status') == 'warning' %}selected{% endif %}>Warning</option>
+                        <option value="failed" {% if request.args.get('status') == 'failed' %}selected{% endif %}>Failed</option>
+                        <option value="running" {% if request.args.get('status') == 'running' %}selected{% endif %}>Running</option>
+                        <option value="error" {% if request.args.get('status') == 'error' %}selected{% endif %}>Error</option>
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter me-1"></i> Apply Filters
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Audits Table -->
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                            <th>User</th>
+                            <th>Findings</th>
+                            <th>Duration</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if audits.items %}
+                            {% for audit in audits.items %}
+                            <tr>
+                                <td>#{{ audit.id }}</td>
+                                <td>{{ audit.audit_type|replace('-', ' ')|title }}</td>
+                                <td>
+                                    {% if audit.status == 'passed' %}
+                                        <span class="badge bg-success">Passed</span>
+                                    {% elif audit.status == 'warning' %}
+                                        <span class="badge bg-warning text-dark">Warning</span>
+                                    {% elif audit.status == 'failed' %}
+                                        <span class="badge bg-danger">Failed</span>
+                                    {% elif audit.status == 'running' %}
+                                        <span class="badge bg-info">Running</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ audit.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ audit.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>{{ audit.user.username if audit.user else 'System' }}</td>
+                                <td>
+                                    {% set critical = namespace(count=0) %}
+                                    {% set high = namespace(count=0) %}
+                                    {% set medium = namespace(count=0) %}
+                                    {% set low = namespace(count=0) %}
+                                    
+                                    {% for finding in audit.findings %}
+                                        {% if finding.severity == 'critical' %}
+                                            {% set critical.count = critical.count + 1 %}
+                                        {% elif finding.severity == 'high' %}
+                                            {% set high.count = high.count + 1 %}
+                                        {% elif finding.severity == 'medium' %}
+                                            {% set medium.count = medium.count + 1 %}
+                                        {% elif finding.severity == 'low' %}
+                                            {% set low.count = low.count + 1 %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    
+                                    {% if critical.count > 0 %}
+                                        <span class="badge bg-danger me-1">{{ critical.count }} Critical</span>
+                                    {% endif %}
+                                    
+                                    {% if high.count > 0 %}
+                                        <span class="badge bg-warning text-dark me-1">{{ high.count }} High</span>
+                                    {% endif %}
+                                    
+                                    {% if medium.count > 0 %}
+                                        <span class="badge bg-info text-dark me-1">{{ medium.count }} Med</span>
+                                    {% endif %}
+                                    
+                                    {% if low.count > 0 %}
+                                        <span class="badge bg-secondary me-1">{{ low.count }} Low</span>
+                                    {% endif %}
+                                    
+                                    {% if critical.count + high.count + medium.count + low.count == 0 %}
+                                        <span class="text-muted">No findings</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ audit.duration|round(2) }} sec</td>
+                                <td>
+                                    {% if audit.status == 'running' %}
+                                        <a href="{{ url_for('audit.run_audit_progress', audit_id=audit.id) }}" class="btn btn-sm btn-outline-info">
+                                            <i class="fas fa-spinner fa-spin"></i> View Progress
+                                        </a>
+                                    {% else %}
+                                        <a href="{{ url_for('audit.audit_detail', audit_id=audit.id) }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-search"></i> View Details
+                                        </a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center">No audits match the current filters</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            {% if audits.pages > 1 %}
+            <nav aria-label="Page navigation" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if audits.has_prev %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('audit.audits', page=audits.prev_num, type=request.args.get('type'), status=request.args.get('status')) }}">Previous</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">Previous</span>
+                    </li>
+                    {% endif %}
+                    
+                    {% for page_num in audits.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                        {% if page_num %}
+                            {% if page_num == audits.page %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ page_num }}</span>
+                            </li>
+                            {% else %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('audit.audits', page=page_num, type=request.args.get('type'), status=request.args.get('status')) }}">{{ page_num }}</a>
+                            </li>
+                            {% endif %}
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if audits.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('audit.audits', page=audits.next_num, type=request.args.get('type'), status=request.args.get('status')) }}">Next</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">Next</span>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

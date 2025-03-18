@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+
+{% block title %}Audit Progress{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Audit Progress</h2>
+        <a href="{{ url_for('audit.index') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+        </a>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">{{ audit.audit_type|replace('-', ' ')|title }} Audit</h5>
+                </div>
+                <div class="card-body">
+                    {% if audit.status == 'running' %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-spinner fa-spin me-2"></i>
+                            Audit is currently running. This can take a few minutes to complete.
+                        </div>
+                        
+                        <div class="progress mb-3">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                        </div>
+                        
+                        <p class="text-center">
+                            Please wait while the audit is being performed...
+                        </p>
+                        
+                        <script>
+                            // Auto-refresh the page every 5 seconds to check for completion
+                            setTimeout(function() {
+                                window.location.reload();
+                            }, 5000);
+                        </script>
+                    {% elif audit.status in ['passed', 'warning', 'failed'] %}
+                        <div class="alert 
+                            {% if audit.status == 'passed' %}alert-success
+                            {% elif audit.status == 'warning' %}alert-warning
+                            {% elif audit.status == 'failed' %}alert-danger
+                            {% else %}alert-info{% endif %}">
+                            <i class="fas 
+                                {% if audit.status == 'passed' %}fa-check-circle
+                                {% elif audit.status == 'warning' %}fa-exclamation-triangle
+                                {% elif audit.status == 'failed' %}fa-times-circle
+                                {% else %}fa-info-circle{% endif %} me-2"></i>
+                            Audit completed with status: <strong>{{ audit.status|upper }}</strong>
+                        </div>
+                        
+                        <div class="mt-3 mb-4">
+                            <h6>Summary:</h6>
+                            <p>{{ audit.summary }}</p>
+                        </div>
+                        
+                        <div class="mt-3 mb-4">
+                            <h6>Details:</h6>
+                            <p><strong>Duration:</strong> {{ audit.duration|round(2) }} seconds</p>
+                            <p><strong>Started:</strong> {{ audit.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                            <p><strong>Completed:</strong> {{ audit.completed_at.strftime('%Y-%m-%d %H:%M:%S') if audit.completed_at else 'N/A' }}</p>
+                        </div>
+                        
+                        <div class="text-center">
+                            <a href="{{ url_for('audit.audit_detail', audit_id=audit.id) }}" class="btn btn-primary">
+                                <i class="fas fa-search me-1"></i> View Detailed Report
+                            </a>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-circle me-2"></i>
+                            Audit failed with status: <strong>{{ audit.status }}</strong>
+                        </div>
+                        
+                        <div class="mt-3 mb-4">
+                            <h6>Error:</h6>
+                            <p>{{ audit.summary }}</p>
+                        </div>
+                        
+                        <div class="text-center">
+                            <a href="{{ url_for('audit.run_audit') }}" class="btn btn-primary">
+                                <i class="fas fa-redo me-1"></i> Try Again
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

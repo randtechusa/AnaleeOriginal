@@ -1,0 +1,200 @@
+{% extends 'base.html' %}
+
+{% block title %}Audit Details{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Audit Details</h2>
+        <a href="{{ url_for('audit.audits') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Audits
+        </a>
+    </div>
+    
+    <!-- Audit Summary -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Audit Summary</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table table-sm table-borderless">
+                        <tr>
+                            <th style="width: 150px;">Audit ID:</th>
+                            <td>#{{ audit.id }}</td>
+                        </tr>
+                        <tr>
+                            <th>Date:</th>
+                            <td>{{ audit.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        </tr>
+                        <tr>
+                            <th>Type:</th>
+                            <td>{{ audit.audit_type }}</td>
+                        </tr>
+                        <tr>
+                            <th>Performed By:</th>
+                            <td>{{ audit.user.username if audit.user else 'System' }}</td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <table class="table table-sm table-borderless">
+                        <tr>
+                            <th style="width: 150px;">Status:</th>
+                            <td>
+                                {% if audit.status == 'passed' %}
+                                    <span class="badge bg-success">Passed</span>
+                                {% elif audit.status == 'warning' %}
+                                    <span class="badge bg-warning text-dark">Warning</span>
+                                {% elif audit.status == 'failed' %}
+                                    <span class="badge bg-danger">Failed</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ audit.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Duration:</th>
+                            <td>{{ audit.duration|round(2) }} seconds</td>
+                        </tr>
+                        <tr>
+                            <th>Findings:</th>
+                            <td>{{ findings|length }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="mt-3">
+                <h6>Summary:</h6>
+                <p class="mb-0">{{ audit.summary }}</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Audit Findings -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Audit Findings</h5>
+        </div>
+        <div class="card-body">
+            {% if findings %}
+                <div class="accordion" id="findingsAccordion">
+                    {% for finding in findings %}
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="heading{{ finding.id }}">
+                                <button class="accordion-button {% if finding.severity != 'critical' %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ finding.id }}" aria-expanded="{{ 'true' if finding.severity == 'critical' else 'false' }}" aria-controls="collapse{{ finding.id }}">
+                                    {% if finding.severity == 'critical' %}
+                                        <span class="badge bg-danger me-2">Critical</span>
+                                    {% elif finding.severity == 'high' %}
+                                        <span class="badge bg-warning text-dark me-2">High</span>
+                                    {% elif finding.severity == 'medium' %}
+                                        <span class="badge bg-info text-dark me-2">Medium</span>
+                                    {% elif finding.severity == 'low' %}
+                                        <span class="badge bg-secondary me-2">Low</span>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark me-2">{{ finding.severity }}</span>
+                                    {% endif %}
+                                    
+                                    <strong>{{ finding.title }}</strong>
+                                    <span class="ms-2 text-muted">({{ finding.category }})</span>
+                                    
+                                    <span class="ms-auto badge {% if finding.status == 'open' %}bg-danger{% elif finding.status == 'in_progress' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                        {{ finding.status.replace('_', ' ').title() }}
+                                    </span>
+                                </button>
+                            </h2>
+                            <div id="collapse{{ finding.id }}" class="accordion-collapse collapse {% if finding.severity == 'critical' %}show{% endif %}" aria-labelledby="heading{{ finding.id }}" data-bs-parent="#findingsAccordion">
+                                <div class="accordion-body">
+                                    <div class="row">
+                                        <div class="col-md-8">
+                                            <h6>Description:</h6>
+                                            <p>{{ finding.description }}</p>
+                                            
+                                            {% if finding.recommendation %}
+                                                <h6>Recommendation:</h6>
+                                                <p>{{ finding.recommendation }}</p>
+                                            {% endif %}
+                                            
+                                            {% if finding.status == 'resolved' and finding.resolution_notes %}
+                                                <h6>Resolution Notes:</h6>
+                                                <p>{{ finding.resolution_notes }}</p>
+                                                <p class="text-muted"><small>Resolved on: {{ finding.resolved_at.strftime('%Y-%m-%d %H:%M:%S') }}</small></p>
+                                            {% endif %}
+                                        </div>
+                                        
+                                        <div class="col-md-4">
+                                            {% if finding.status != 'resolved' %}
+                                                <div class="card">
+                                                    <div class="card-header bg-light">
+                                                        <h6 class="mb-0">Update Status</h6>
+                                                    </div>
+                                                    <div class="card-body">
+                                                        <form action="{{ url_for('audit.update_finding', finding_id=finding.id) }}" method="post">
+                                                            <div class="mb-3">
+                                                                <label for="status{{ finding.id }}" class="form-label">Status</label>
+                                                                <select name="status" id="status{{ finding.id }}" class="form-select">
+                                                                    <option value="open" {% if finding.status == 'open' %}selected{% endif %}>Open</option>
+                                                                    <option value="in_progress" {% if finding.status == 'in_progress' %}selected{% endif %}>In Progress</option>
+                                                                    <option value="resolved" {% if finding.status == 'resolved' %}selected{% endif %}>Resolved</option>
+                                                                </select>
+                                                            </div>
+                                                            <div class="mb-3">
+                                                                <label for="resolution_notes{{ finding.id }}" class="form-label">Resolution Notes</label>
+                                                                <textarea name="resolution_notes" id="resolution_notes{{ finding.id }}" class="form-control" rows="3">{{ finding.resolution_notes or '' }}</textarea>
+                                                            </div>
+                                                            <button type="submit" class="btn btn-primary">Update</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    No findings were reported for this audit.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Audit Details -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Detailed Metrics</h5>
+        </div>
+        <div class="card-body">
+            {% if details %}
+                <div class="accordion" id="detailsAccordion">
+                    {% for category, metrics in details.items() %}
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="heading-{{ category }}">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ category }}" aria-expanded="false" aria-controls="collapse-{{ category }}">
+                                    {{ category|replace('_', ' ')|title }} Metrics
+                                </button>
+                            </h2>
+                            <div id="collapse-{{ category }}" class="accordion-collapse collapse" aria-labelledby="heading-{{ category }}" data-bs-parent="#detailsAccordion">
+                                <div class="accordion-body">
+                                    <pre class="bg-light p-3 rounded"><code>{{ metrics|tojson(indent=2) }}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    No detailed metrics available for this audit.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

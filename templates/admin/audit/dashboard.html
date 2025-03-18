@@ -1,0 +1,254 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Audit Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <h2 class="mb-4">System Audit Dashboard</h2>
+    
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>Admin-Only Area:</strong> This dashboard provides system-wide audit information and self-audit capabilities.
+            </div>
+        </div>
+    </div>
+    
+    <!-- Action buttons -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <a href="{{ url_for('audit.run_audit') }}" class="btn btn-primary me-2">
+                <i class="fas fa-play-circle me-1"></i> Run New Audit
+            </a>
+            <a href="{{ url_for('audit.logs') }}" class="btn btn-secondary me-2">
+                <i class="fas fa-list me-1"></i> View Audit Logs
+            </a>
+            <a href="{{ url_for('audit.audits') }}" class="btn btn-secondary me-2">
+                <i class="fas fa-clipboard-check me-1"></i> View Audit Reports
+            </a>
+            <a href="{{ url_for('audit.findings') }}" class="btn btn-secondary me-2">
+                <i class="fas fa-exclamation-triangle me-1"></i> View Findings
+            </a>
+            <a href="{{ url_for('audit.errors') }}" class="btn btn-secondary">
+                <i class="fas fa-bug me-1"></i> Error Logs
+            </a>
+        </div>
+    </div>
+    
+    <!-- Stats cards -->
+    <div class="row">
+        <div class="col-md-3 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Audit Statistics</h5>
+                    <div class="d-flex justify-content-between mb-3">
+                        <span>Total Audits:</span>
+                        <strong>{{ total_audits }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-3">
+                        <span>Total Findings:</span>
+                        <strong>{{ total_findings }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-3">
+                        <span>Open Findings:</span>
+                        <strong>{{ open_findings }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Total Activity Logs:</span>
+                        <strong>{{ total_logs }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-9 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Recent Audit Logs</h5>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>Resource</th>
+                                    <th>Status</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if recent_logs %}
+                                    {% for log in recent_logs %}
+                                    <tr>
+                                        <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                        <td>{{ log.user.username if log.user else 'System' }}</td>
+                                        <td>{{ log.action }}</td>
+                                        <td>{{ log.resource_type }}{% if log.resource_id %} #{{ log.resource_id }}{% endif %}</td>
+                                        <td>
+                                            {% if log.status == 'success' %}
+                                                <span class="badge bg-success">Success</span>
+                                            {% elif log.status == 'failure' %}
+                                                <span class="badge bg-danger">Failed</span>
+                                            {% elif log.status == 'warning' %}
+                                                <span class="badge bg-warning text-dark">Warning</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ log.status }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ log.description or '-' }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="6" class="text-center">No audit logs found</td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-2 text-end">
+                        <a href="{{ url_for('audit.logs') }}" class="btn btn-sm btn-outline-primary">View All Logs</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Recent System Audits</h5>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Findings</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if recent_audits %}
+                                    {% for audit in recent_audits %}
+                                    <tr>
+                                        <td>{{ audit.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                        <td>{{ audit.audit_type }}</td>
+                                        <td>
+                                            {% if audit.status == 'passed' %}
+                                                <span class="badge bg-success">Passed</span>
+                                            {% elif audit.status == 'warning' %}
+                                                <span class="badge bg-warning text-dark">Warning</span>
+                                            {% elif audit.status == 'failed' %}
+                                                <span class="badge bg-danger">Failed</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ audit.status }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ audit.findings|length }}</td>
+                                        <td>
+                                            <a href="{{ url_for('audit.audit_detail', audit_id=audit.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="5" class="text-center">No audits found</td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-2 text-end">
+                        <a href="{{ url_for('audit.audits') }}" class="btn btn-sm btn-outline-primary">View All Audits</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Critical Open Findings</h5>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Severity</th>
+                                    <th>Category</th>
+                                    <th>Title</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if critical_findings %}
+                                    {% for finding in critical_findings %}
+                                    <tr>
+                                        <td>
+                                            {% if finding.severity == 'critical' %}
+                                                <span class="badge bg-danger">Critical</span>
+                                            {% elif finding.severity == 'high' %}
+                                                <span class="badge bg-warning text-dark">High</span>
+                                            {% elif finding.severity == 'medium' %}
+                                                <span class="badge bg-info text-dark">Medium</span>
+                                            {% elif finding.severity == 'low' %}
+                                                <span class="badge bg-secondary">Low</span>
+                                            {% else %}
+                                                <span class="badge bg-light text-dark">{{ finding.severity }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ finding.category }}</td>
+                                        <td>{{ finding.title }}</td>
+                                        <td>
+                                            <a href="{{ url_for('audit.audit_detail', audit_id=finding.audit_id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="4" class="text-center">No critical findings</td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-2 text-end">
+                        <a href="{{ url_for('audit.findings') }}" class="btn btn-sm btn-outline-primary">View All Findings</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Real-time updates for audit logs
+    function refreshAuditLogs() {
+        fetch("{{ url_for('audit.api_recent_activity') }}")
+            .then(response => response.json())
+            .then(data => {
+                // Update would go here in a production app
+                console.log("Got latest audit activity");
+            })
+            .catch(error => console.error("Error fetching audit logs:", error));
+    }
+    
+    // Refresh every 30 seconds
+    setInterval(refreshAuditLogs, 30000);
+    
+    // Get dashboard stats
+    fetch("{{ url_for('audit.api_stats') }}")
+        .then(response => response.json())
+        .then(data => {
+            // Update would go here in a production app
+            console.log("Got audit stats");
+        })
+        .catch(error => console.error("Error fetching stats:", error));
+</script>
+{% endblock %}

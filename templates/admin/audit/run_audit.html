@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}Run System Audit{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Run System Audit</h2>
+        <a href="{{ url_for('audit.index') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+        </a>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Select Audit Type</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        <div class="mb-4">
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="audit_type" id="security_audit" value="security" checked>
+                                <label class="form-check-label" for="security_audit">
+                                    <strong>Security Audit</strong>
+                                    <p class="text-muted mb-0">Checks user access, permissions, and security configurations</p>
+                                </label>
+                            </div>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="audit_type" id="performance_audit" value="performance">
+                                <label class="form-check-label" for="performance_audit">
+                                    <strong>Performance Audit</strong>
+                                    <p class="text-muted mb-0">Analyzes database performance, query efficiency, and response times</p>
+                                </label>
+                            </div>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="audit_type" id="data_integrity_audit" value="data-integrity">
+                                <label class="form-check-label" for="data_integrity_audit">
+                                    <strong>Data Integrity Audit</strong>
+                                    <p class="text-muted mb-0">Verifies database integrity, data consistency, and validation</p>
+                                </label>
+                            </div>
+                            
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="audit_type" id="comprehensive_audit" value="comprehensive">
+                                <label class="form-check-label" for="comprehensive_audit">
+                                    <strong>Comprehensive Audit</strong>
+                                    <p class="text-muted mb-0">Runs all audit types (may take longer to complete)</p>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Note:</strong> Depending on the audit type and database size, this process may take several minutes to complete.
+                        </div>
+                        
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-play-circle me-1"></i> Run Audit
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

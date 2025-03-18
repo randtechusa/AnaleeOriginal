@@ -287,3 +287,80 @@ class AlertHistory(db.Model):
 
     user = db.relationship('User', backref=db.backref('alert_history', lazy=True))
     alert_config = db.relationship('AlertConfiguration', backref=db.backref('alert_history', lazy=True))
+
+class AuditLog(db.Model):
+    """Audit log model for tracking system activities for administrative review"""
+    __tablename__ = 'audit_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    action = db.Column(db.String(100), nullable=False)  # login, logout, create, update, delete, etc.
+    resource_type = db.Column(db.String(100), nullable=False)  # user, transaction, account, etc.
+    resource_id = db.Column(db.String(100), nullable=True)  # ID of the affected resource
+    description = db.Column(db.Text, nullable=True)  # Detailed description of activity
+    ip_address = db.Column(db.String(45), nullable=True)  # IPv6 compatibility
+    user_agent = db.Column(db.String(255), nullable=True)  # Browser/client info
+    status = db.Column(db.String(50), nullable=False, default='success')  # success, failure, warning
+    additional_data = db.Column(db.Text, nullable=True)  # JSON string for additional metadata
+    
+    user = db.relationship('User', backref=db.backref('audit_logs', lazy=True))
+    
+    def __repr__(self):
+        return f'<AuditLog {self.id}: {self.action} on {self.resource_type}>'
+    
+    @classmethod
+    def log_activity(cls, user_id, action, resource_type, resource_id=None, 
+                    description=None, ip_address=None, user_agent=None, 
+                    status='success', additional_data=None):
+        """Helper method to create an audit log entry"""
+        log = cls(
+            user_id=user_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=str(resource_id) if resource_id is not None else None,
+            description=description,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            status=status,
+            additional_data=additional_data
+        )
+        db.session.add(log)
+        try:
+            db.session.commit()
+            return True
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error creating audit log: {str(e)}")
+            return False
+
+class SystemAudit(db.Model):
+    """Model for storing system self-audit results"""
+    __tablename__ = 'system_audits'
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    audit_type = db.Column(db.String(100), nullable=False)  # security, performance, data-integrity
+    status = db.Column(db.String(50), nullable=False)  # passed, failed, warning
+    summary = db.Column(db.Text, nullable=False)
+    details = db.Column(db.Text, nullable=True)  # JSON formatted details
+    performed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    duration = db.Column(db.Float, nullable=True)  # Audit duration in seconds
+    
+    user = db.relationship('User', backref=db.backref('system_audits', lazy=True))
+    findings = db.relationship('AuditFinding', backref='audit', lazy=True, cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<SystemAudit {self.id}: {self.audit_type} - {self.status}>'
+
+class AuditFinding(db.Model):
+    """Model for storing specific findings from system audits"""
+    __tablename__ = 'audit_findings'
+    id = db.Column(db.Integer, primary_key=True)
+    audit_id = db.Column(db.Integer, db.ForeignKey('system_audits.id'), nullable=False)
+    category = db.Column(db.String(100), nullable=False)  # database, security, performance, etc.
+    severity = db.Column(db.String(50), nullable=False)  # critical, high, medium, low, info
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    recommendation = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(50), nullable=False, default='open')  # open, resolved, in_progress
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    resolution_notes = db.Column(db.Text, nullable=True)

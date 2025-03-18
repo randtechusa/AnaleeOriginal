@@ -174,6 +174,14 @@ def create_app(config_name=None):
 
             from admin import bp as admin_bp
             app.register_blueprint(admin_bp, url_prefix='/admin')
+            
+            # Register audit blueprint
+            from admin.audit import audit_bp
+            app.register_blueprint(audit_bp)
+            
+            # Initialize audit service
+            from utils.audit_service import audit_service
+            audit_service.init_app(app)
 
             from reports import reports as reports_bp
             app.register_blueprint(reports_bp, url_prefix='/reports')

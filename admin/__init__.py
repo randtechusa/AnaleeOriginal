@@ -44,3 +44,6 @@ def restrict_admin_access():
 
 # Import routes after blueprint creation to avoid circular imports
 from . import routes
+
+# Import audit module
+from . import audit
