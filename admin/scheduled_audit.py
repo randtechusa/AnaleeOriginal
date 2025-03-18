@@ -1,178 +1,470 @@
 """
-Scheduled audit service for running automated system audits and code analysis
+Scheduled Audit Module
+
+Provides automated audit functionality with code analysis and system health monitoring.
+This module runs daily comprehensive audits at 8:00 PM ET.
 """
+
 import logging
-import json
-import traceback
-from datetime import datetime
 from flask import current_app
 from sqlalchemy.exc import SQLAlchemyError
+import traceback
+import psutil
+from datetime import datetime, timedelta
+import pytz
+import os
+import json
 
-from models import SystemAudit, AuditFinding, User, db
-from utils.system_auditor import run_system_audit
-from utils.code_analyzer import analyze_code
-from utils.audit_service import audit_service
+from models import db, SystemAudit, AuditFinding
+from utils.code_analyzer import CodeAnalyzer
+from utils.system_auditor import SystemAuditor
+from utils.audit_service import AuditService
 
-# Configure logging
 logger = logging.getLogger(__name__)
+audit_service = AuditService()
+
+def setup_scheduled_audits(app):
+    """
+    Setup scheduled audit jobs
+    
+    Args:
+        app: Flask application instance
+    """
+    if not hasattr(app, 'scheduler'):
+        logger.warning("No scheduler available - scheduled audits not configured")
+        return
+    
+    try:
+        # Create a job for daily audit at 8:00 PM Eastern Time
+        eastern = pytz.timezone('US/Eastern')
+        app.scheduler.add_job(
+            id='daily_system_audit',
+            func=run_daily_audit,
+            trigger='cron',
+            hour=20,  # 8:00 PM
+            minute=0,
+            timezone=eastern,
+            replace_existing=True
+        )
+        
+        logger.info("Scheduled daily audit configured for 8:00 PM ET")
+        
+        # Log setup
+        audit_service.log_activity(
+            user_id=None,
+            action='configure',
+            resource_type='scheduled_audit',
+            resource_id=None,
+            description="Configured daily system audit for 8:00 PM ET",
+            status='success'
+        )
+    except Exception as e:
+        logger.error(f"Error setting up scheduled audit: {str(e)}")
+        
+        # Log error
+        audit_service.log_activity(
+            user_id=None,
+            action='configure',
+            resource_type='scheduled_audit',
+            resource_id=None,
+            description=f"Failed to configure scheduled audit: {str(e)}",
+            status='failure'
+        )
 
 def run_daily_audit():
     """
-    Run comprehensive daily audit at 8:00 PM ET
-    This function:
-    1. Performs a system health check
-    2. Analyses code for bugs and inefficiencies
-    3. Checks for security vulnerabilities
-    4. Creates a detailed audit report with findings
-    """
-    logger.info("Starting daily automated audit")
+    Run the daily comprehensive audit
     
+    Returns:
+        tuple: (success_flag, message, audit_id)
+    """
     try:
-        # Record the audit start time
-        start_time = datetime.utcnow()
-        
-        # Create an audit record
+        # Create audit record
         audit = SystemAudit(
             audit_type='daily_comprehensive',
+            user_id=None,  # System-generated
             status='running',
-            summary='Automated daily audit in progress',
-            timestamp=start_time,
-            # No user ID since this is automated
-            performed_by=None
+            summary='Daily automated audit in progress',
+            duration=0.0
         )
         
         db.session.add(audit)
         db.session.commit()
         audit_id = audit.id
         
-        logger.info(f"Created audit record with ID: {audit_id}")
-        
-        # Run system audit
-        system_audit_results = run_system_audit(current_app, db)
-        
-        # Run code analysis
-        code_analysis_results = analyze_code()
-        
-        # Process findings from system audit
-        findings_count = 0
-        if 'findings' in system_audit_results:
-            for finding in system_audit_results['findings']:
-                # Map severity to our format
-                severity_map = {
-                    'critical': 'critical',
-                    'high': 'high', 
-                    'medium': 'medium',
-                    'low': 'low',
-                    'info': 'info'
-                }
-                
-                severity = severity_map.get(finding['severity'].lower(), 'medium')
-                
-                # Create finding record
-                audit_finding = AuditFinding(
-                    audit_id=audit_id,
-                    category=finding['category'],
-                    severity=severity,
-                    title=finding['title'],
-                    description=finding['description'],
-                    recommendation=finding.get('recommendation', 'No specific recommendation provided.'),
-                    status='open'
-                )
-                
-                db.session.add(audit_finding)
-                findings_count += 1
-        
-        # Process findings from code analysis
-        code_issues = code_analysis_results.get('stats', {}).get('issues_found', 0)
-        severe_issues = (
-            code_analysis_results.get('stats', {}).get('critical_issues', 0) +
-            code_analysis_results.get('stats', {}).get('high_issues', 0)
-        )
-        
-        # Combine results for the audit summary
-        summary = (
-            f"Daily automated audit completed with {findings_count} system findings and "
-            f"{code_issues} code issues ({severe_issues} severe). "
-            f"System CPU: {system_audit_results.get('stats', {}).get('cpu_usage', 'N/A')}%, "
-            f"Memory: {system_audit_results.get('stats', {}).get('memory_usage', 'N/A')}%, "
-            f"Disk: {system_audit_results.get('stats', {}).get('disk_usage', 'N/A')}%"
-        )
-        
-        # Calculate audit duration
-        end_time = datetime.utcnow()
-        duration = (end_time - start_time).total_seconds()
-        
-        # Update the audit record
-        audit.status = 'completed'
-        audit.summary = summary
-        audit.duration = duration
-        audit.details = json.dumps({
-            'system_stats': system_audit_results.get('stats', {}),
-            'code_stats': code_analysis_results.get('stats', {})
-        })
-        
-        db.session.commit()
-        
-        # Log the activity
+        # Log start
         audit_service.log_activity(
             user_id=None,
-            action='complete',
-            resource_type='audit',
+            action='start',
+            resource_type='scheduled_audit',
             resource_id=audit_id,
-            description=f"Completed automated daily audit: {findings_count} findings",
+            description="Started daily automated system audit",
             status='success'
         )
         
-        logger.info(f"Daily audit completed successfully in {duration:.2f} seconds")
-        return True, f"Audit completed with {findings_count} findings", audit_id
+        # Perform the audit
+        start_time = datetime.utcnow()
         
-    except Exception as e:
-        error_msg = f"Error during daily audit: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
+        # Call different audit modules
+        findings = []
+        results = {}
         
-        # Try to update the audit record if it was created
-        try:
-            if 'audit_id' in locals():
-                audit = SystemAudit.query.get(audit_id)
-                if audit:
-                    audit.status = 'failed'
-                    audit.summary = f"Audit failed: {str(e)}"
-                    db.session.commit()
-                    
-                    # Log the failure
-                    audit_service.log_activity(
-                        user_id=None,
-                        action='fail',
-                        resource_type='audit',
-                        resource_id=audit_id,
-                        description=f"Automated daily audit failed: {str(e)}",
-                        status='failure'
-                    )
-        except Exception as commit_error:
-            logger.error(f"Error updating failed audit: {str(commit_error)}")
+        # 1. Code quality audit
+        code_results, code_findings = perform_code_quality_audit(audit_id)
+        findings.extend(code_findings)
+        results['code_quality'] = code_results
         
-        return False, error_msg, None
-
-def register_scheduled_audits(scheduler):
-    """
-    Register scheduled audit jobs with the provided scheduler
-    
-    Args:
-        scheduler: The APScheduler instance to register jobs with
-    """
-    try:
-        # Add daily audit job at 8:00 PM Eastern Time
-        scheduler.add_scheduled_job(
-            id='daily_system_audit',
-            func=run_daily_audit,
-            trigger='cron',
-            hour=20,  # 8:00 PM
-            minute=0
+        # 2. System health audit  
+        system_results, system_findings = perform_system_health_audit(audit_id)
+        findings.extend(system_findings)
+        results['system_health'] = system_results
+        
+        # 3. Database audit
+        db_results, db_findings = perform_database_audit(audit_id)
+        findings.extend(db_findings)
+        results['database'] = db_results
+        
+        # Calculate duration
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
+        
+        # Determine status
+        if any(f.severity == 'critical' for f in findings):
+            status = 'failed'
+        elif any(f.severity in ['high', 'medium'] for f in findings):
+            status = 'warning'
+        else:
+            status = 'passed'
+            
+        # Generate summary
+        critical_count = sum(1 for f in findings if f.severity == 'critical')
+        high_count = sum(1 for f in findings if f.severity == 'high')
+        medium_count = sum(1 for f in findings if f.severity == 'medium')
+        low_count = sum(1 for f in findings if f.severity == 'low')
+        
+        summary = f"Daily audit completed with {len(findings)} findings. "
+        
+        if critical_count:
+            summary += f"{critical_count} critical, "
+        if high_count:
+            summary += f"{high_count} high, "
+        if medium_count:
+            summary += f"{medium_count} medium, "
+        if low_count:
+            summary += f"{low_count} low "
+            
+        summary += "severity issues found."
+        
+        # Update audit record
+        audit.status = status
+        audit.summary = summary
+        audit.duration = duration
+        audit.details = json.dumps(results)
+        audit.completed_at = end_time
+        
+        db.session.commit()
+        
+        # Log completion
+        audit_service.log_activity(
+            user_id=None,
+            action='complete',
+            resource_type='scheduled_audit',
+            resource_id=audit_id,
+            description=f"Completed daily audit with status: {status}",
+            status='success'
         )
         
-        logger.info("Scheduled daily system audit for 8:00 PM ET")
-        return True
+        return True, f"Audit completed: {summary}", audit_id
+    
     except Exception as e:
-        logger.error(f"Failed to register scheduled audit: {str(e)}")
-        return False
+        logger.exception(f"Error in scheduled audit: {str(e)}")
+        
+        # Try to update audit record if it was created
+        try:
+            if audit_id:
+                audit = SystemAudit.query.get(audit_id)
+                if audit:
+                    audit.status = 'error'
+                    audit.summary = f"Audit failed due to error: {str(e)}"
+                    audit.completed_at = datetime.utcnow()
+                    db.session.commit()
+        except:
+            logger.exception("Error updating audit record after failure")
+        
+        # Log error
+        audit_service.log_activity(
+            user_id=None, 
+            action='error',
+            resource_type='scheduled_audit',
+            resource_id=audit_id if 'audit_id' in locals() else None,
+            description=f"Scheduled audit failed: {str(e)}",
+            status='failure'
+        )
+        
+        return False, f"Audit failed: {str(e)}", audit_id if 'audit_id' in locals() else None
+
+def perform_code_quality_audit(audit_id):
+    """
+    Perform code quality analysis
+    
+    Args:
+        audit_id: ID of the audit record
+        
+    Returns:
+        tuple: (results_dict, findings_list)
+    """
+    results = {}
+    findings = []
+    
+    try:
+        # Initialize code analyzer
+        analyzer = CodeAnalyzer()
+        
+        # Run code analysis
+        analysis_result = analyzer.analyze_project()
+        
+        # Extract results
+        issues = analysis_result.get_summary()
+        
+        # Record metrics
+        results = {
+            'files_analyzed': issues.get('total_files', 0),
+            'issues_found': issues.get('total_issues', 0),
+            'critical_issues': issues.get('critical_count', 0),
+            'high_issues': issues.get('high_count', 0),
+            'medium_issues': issues.get('medium_count', 0),
+            'low_issues': issues.get('low_count', 0)
+        }
+        
+        # Create findings
+        for issue in issues.get('issues', []):
+            # Only create findings for medium severity and above
+            if issue['severity'] in ['critical', 'high', 'medium']:
+                finding = AuditFinding(
+                    audit_id=audit_id,
+                    title=issue['issue_type'],
+                    category='code-quality',
+                    description=f"Found in {issue['file_path']} at line {issue['line_number']}: {issue['description']}",
+                    recommendation=issue.get('recommendation', 'Review and fix the identified issue.'),
+                    severity=issue['severity'],
+                    status='open',
+                    details=json.dumps({
+                        'file_path': issue['file_path'],
+                        'line_number': issue['line_number'],
+                        'issue_type': issue['issue_type']
+                    })
+                )
+                db.session.add(finding)
+                findings.append(finding)
+        
+        db.session.commit()
+        logger.info(f"Code quality audit completed: found {len(findings)} significant issues")
+        
+    except Exception as e:
+        logger.exception(f"Error in code quality audit: {str(e)}")
+        # Create an error finding
+        error_finding = AuditFinding(
+            audit_id=audit_id,
+            title="Code Analysis Error",
+            category='code-quality',
+            description=f"Failed to analyze code: {str(e)}",
+            recommendation="Review error message and fix the code analyzer.",
+            severity='medium',
+            status='open',
+            details=json.dumps({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+        )
+        db.session.add(error_finding)
+        findings.append(error_finding)
+        db.session.commit()
+        
+        results = {
+            'error': str(e),
+            'files_analyzed': 0,
+            'issues_found': 1
+        }
+    
+    return results, findings
+
+def perform_system_health_audit(audit_id):
+    """
+    Perform system health audit
+    
+    Args:
+        audit_id: ID of the audit record
+        
+    Returns:
+        tuple: (results_dict, findings_list)
+    """
+    results = {}
+    findings = []
+    
+    try:
+        # Initialize system auditor
+        auditor = SystemAuditor()
+        
+        # Run system audit
+        audit_result = auditor.audit_system()
+        
+        # Extract results
+        checks = audit_result.get_results()
+        
+        # Record metrics
+        results = {
+            'cpu_usage': checks.get('cpu_usage', 0),
+            'memory_usage': checks.get('memory_usage', 0),
+            'disk_usage': checks.get('disk_usage', 0),
+            'database_connection': checks.get('database_connection', 'unknown'),
+            'response_time': checks.get('response_time', 0),
+            'issues_found': len(checks.get('issues', []))
+        }
+        
+        # Create findings
+        for issue in checks.get('issues', []):
+            finding = AuditFinding(
+                audit_id=audit_id,
+                title=issue['title'],
+                category='system-health',
+                description=issue['description'],
+                recommendation=issue.get('recommendation', 'Review system health metrics.'),
+                severity=issue['severity'],
+                status='open',
+                details=json.dumps({
+                    'component': issue.get('component', 'unknown'),
+                    'metric': issue.get('metric', 'unknown'),
+                    'value': issue.get('value', 'unknown'),
+                    'threshold': issue.get('threshold', 'unknown')
+                })
+            )
+            db.session.add(finding)
+            findings.append(finding)
+        
+        db.session.commit()
+        logger.info(f"System health audit completed: found {len(findings)} issues")
+        
+    except Exception as e:
+        logger.exception(f"Error in system health audit: {str(e)}")
+        # Create an error finding
+        error_finding = AuditFinding(
+            audit_id=audit_id,
+            title="System Health Audit Error",
+            category='system-health',
+            description=f"Failed to analyze system health: {str(e)}",
+            recommendation="Review error message and fix the system health monitor.",
+            severity='medium',
+            status='open',
+            details=json.dumps({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+        )
+        db.session.add(error_finding)
+        findings.append(error_finding)
+        db.session.commit()
+        
+        results = {
+            'error': str(e),
+            'issues_found': 1
+        }
+    
+    return results, findings
+
+def perform_database_audit(audit_id):
+    """
+    Perform database audit
+    
+    Args:
+        audit_id: ID of the audit record
+        
+    Returns:
+        tuple: (results_dict, findings_list)
+    """
+    results = {}
+    findings = []
+    
+    try:
+        # Basic database health checks
+        # Note: This would be expanded in a real implementation
+        connection_success = True
+        try:
+            # Try a simple query
+            db.session.execute("SELECT 1").fetchone()
+        except SQLAlchemyError as e:
+            connection_success = False
+            db_error = str(e)
+        
+        # Database size/record counts (demo simplified)
+        table_counts = {}
+        for table_name in ['users', 'accounts', 'transactions', 'audit_logs']:
+            try:
+                count = db.session.execute(f"SELECT COUNT(*) FROM {table_name}").scalar()
+                table_counts[table_name] = count
+            except SQLAlchemyError:
+                table_counts[table_name] = "error"
+        
+        # Record metrics
+        results = {
+            'connection_success': connection_success,
+            'error': None if connection_success else db_error,
+            'table_counts': table_counts
+        }
+        
+        # Create findings for database issues
+        if not connection_success:
+            finding = AuditFinding(
+                audit_id=audit_id,
+                title="Database Connection Failure",
+                category='database',
+                description=f"Failed to connect to database: {db_error}",
+                recommendation="Check database connection settings and ensure database is running.",
+                severity='critical',
+                status='open',
+                details=json.dumps({
+                    'error': db_error
+                })
+            )
+            db.session.add(finding)
+            findings.append(finding)
+        
+        db.session.commit()
+        logger.info(f"Database audit completed: found {len(findings)} issues")
+        
+    except Exception as e:
+        logger.exception(f"Error in database audit: {str(e)}")
+        # Create an error finding
+        error_finding = AuditFinding(
+            audit_id=audit_id,
+            title="Database Audit Error",
+            category='database',
+            description=f"Failed to perform database audit: {str(e)}",
+            recommendation="Review error message and fix the database audit module.",
+            severity='medium',
+            status='open',
+            details=json.dumps({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+        )
+        db.session.add(error_finding)
+        findings.append(error_finding)
+        db.session.commit()
+        
+        results = {
+            'error': str(e),
+            'issues_found': 1
+        }
+    
+    return results, findings
+
+def get_eastern_time(datetime_obj=None):
+    """Convert UTC time to Eastern Time"""
+    eastern = pytz.timezone('US/Eastern')
+    if datetime_obj is None:
+        datetime_obj = datetime.utcnow()
+    
+    if datetime_obj.tzinfo is None:
+        datetime_obj = pytz.utc.localize(datetime_obj)
+        
+    return datetime_obj.astimezone(eastern)
