@@ -1,0 +1,305 @@
+{% from 'tutorials/erf_tutorial.html' import erf_tutorial %}
+{% from 'tutorials/asf_tutorial.html' import asf_tutorial %}
+{% from 'tutorials/esf_tutorial.html' import esf_tutorial %}
+
+{% macro feature_popup_tutorial() %}
+<style>
+    .tutorial-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 1050;
+        display: none;
+    }
+
+    .tutorial-modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        max-width: 650px;
+        width: 90%;
+        z-index: 1051;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .tutorial-step {
+        display: none;
+    }
+
+    .tutorial-step.active {
+        display: block;
+    }
+
+    .progress-dots {
+        display: flex;
+        justify-content: center;
+        margin: 1.5rem 0;
+        gap: 8px;
+    }
+
+    .progress-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--bs-gray-400);
+        transition: background-color 0.3s ease;
+    }
+
+    .progress-dot.active {
+        background: var(--bs-primary);
+    }
+    
+    .tutorial-help-btn {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: var(--bs-primary);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        cursor: pointer;
+        z-index: 1049;
+        transition: all 0.3s ease;
+    }
+    
+    .tutorial-help-btn:hover {
+        transform: scale(1.1);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+</style>
+
+<!-- Tutorial Help Button -->
+<div class="tutorial-help-btn" id="tutorialHelpBtn">
+    <i class="fas fa-question"></i>
+</div>
+
+<!-- Tutorial Modal -->
+<div id="tutorialOverlay" class="tutorial-overlay">
+    <div class="tutorial-modal">
+        <div class="tutorial-step active" data-step="welcome">
+            <h4 class="mb-3">Smart Features Guide <i class="fas fa-magic ms-2"></i></h4>
+            <p>Select a feature to learn more about how it works:</p>
+            
+            <div class="list-group mt-4">
+                <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                        onclick="showTutorialStep('erf')">
+                    <div>
+                        <strong><i class="fas fa-search me-2"></i>Explanation Recognition (ERF)</strong>
+                        <p class="mb-0 text-muted small">Find similar transactions automatically</p>
+                    </div>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                
+                <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                        onclick="showTutorialStep('asf')">
+                    <div>
+                        <strong><i class="fas fa-bullseye me-2"></i>Account Suggestion (ASF)</strong>
+                        <p class="mb-0 text-muted small">Get intelligent account recommendations</p>
+                    </div>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                
+                <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                        onclick="showTutorialStep('esf')">
+                    <div>
+                        <strong><i class="fas fa-lightbulb me-2"></i>Explanation Suggestion (ESF)</strong>
+                        <p class="mb-0 text-muted small">Generate professional explanations</p>
+                    </div>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+            
+            <div class="text-end mt-4">
+                <button class="btn btn-secondary" onclick="dismissTutorial()">Close Guide</button>
+            </div>
+        </div>
+
+        <div class="tutorial-step" data-step="erf">
+            {{ erf_tutorial() }}
+            <div class="text-end mt-3">
+                <button class="btn btn-secondary" onclick="showTutorialStep('welcome')">Back to Menu</button>
+                <button class="btn btn-primary" onclick="showTutorialStep('asf')">Next Feature</button>
+            </div>
+        </div>
+        
+        <div class="tutorial-step" data-step="asf">
+            {{ asf_tutorial() }}
+            <div class="text-end mt-3">
+                <button class="btn btn-secondary" onclick="showTutorialStep('erf')">Previous</button>
+                <button class="btn btn-primary" onclick="showTutorialStep('esf')">Next Feature</button>
+            </div>
+        </div>
+        
+        <div class="tutorial-step" data-step="esf">
+            {{ esf_tutorial() }}
+            <div class="text-end mt-3">
+                <button class="btn btn-secondary" onclick="showTutorialStep('asf')">Previous</button>
+                <button class="btn btn-primary" onclick="dismissTutorial()">Finish</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tutorialOverlay = document.getElementById('tutorialOverlay');
+    const tutorialHelpBtn = document.getElementById('tutorialHelpBtn');
+    
+    // Show tutorial when help button is clicked
+    tutorialHelpBtn.addEventListener('click', function() {
+        tutorialOverlay.style.display = 'block';
+        showTutorialStep('welcome');
+    });
+    
+    // Close tutorial when clicking outside the modal
+    tutorialOverlay.addEventListener('click', function(e) {
+        if (e.target === tutorialOverlay) {
+            dismissTutorial();
+        }
+    });
+    
+    // Check for tutorial parameter in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('tutorial')) {
+        const tutorialParam = urlParams.get('tutorial');
+        if (['erf', 'asf', 'esf'].includes(tutorialParam)) {
+            tutorialOverlay.style.display = 'block';
+            showTutorialStep(tutorialParam);
+        }
+    }
+});
+
+function showTutorialStep(step) {
+    // Hide all steps
+    document.querySelectorAll('.tutorial-step').forEach(el => {
+        el.classList.remove('active');
+    });
+    
+    // Show requested step
+    const stepElement = document.querySelector(`.tutorial-step[data-step="${step}"]`);
+    if (stepElement) {
+        stepElement.classList.add('active');
+    }
+}
+
+function dismissTutorial() {
+    document.getElementById('tutorialOverlay').style.display = 'none';
+}
+</script>
+{% endmacro %}
+
+{% macro feature_inline_tutorials() %}
+<div class="row mt-4 mb-4">
+    <div class="col-md-4">
+        {{ erf_tutorial() }}
+    </div>
+    <div class="col-md-4">
+        {{ asf_tutorial() }}
+    </div>
+    <div class="col-md-4">
+        {{ esf_tutorial() }}
+    </div>
+</div>
+{% endmacro %}
+
+{% macro feature_tooltip_indicators() %}
+<style>
+    .feature-indicator {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--bs-primary);
+        color: white;
+        text-align: center;
+        line-height: 20px;
+        font-size: 12px;
+        margin-left: 5px;
+        cursor: help;
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add tooltip indicators next to feature elements
+    
+    // ERF indicators - next to explanation fields
+    document.querySelectorAll('.explanation-input').forEach(el => {
+        const indicator = document.createElement('span');
+        indicator.className = 'feature-indicator';
+        indicator.innerHTML = '<i class="fas fa-search"></i>';
+        indicator.title = 'Explanation Recognition Feature - Click to learn more';
+        indicator.setAttribute('data-bs-toggle', 'tooltip');
+        indicator.setAttribute('data-feature', 'erf');
+        el.parentNode.insertBefore(indicator, el.nextSibling);
+        
+        indicator.addEventListener('click', function() {
+            showFeatureTutorial('erf');
+        });
+    });
+    
+    // ASF indicators - next to account selection
+    document.querySelectorAll('select[name="selected_account"]').forEach(el => {
+        const indicator = document.createElement('span');
+        indicator.className = 'feature-indicator';
+        indicator.style.backgroundColor = 'var(--bs-success)';
+        indicator.innerHTML = '<i class="fas fa-bullseye"></i>';
+        indicator.title = 'Account Suggestion Feature - Click to learn more';
+        indicator.setAttribute('data-bs-toggle', 'tooltip');
+        indicator.setAttribute('data-feature', 'asf');
+        el.parentNode.insertBefore(indicator, el.nextSibling);
+        
+        indicator.addEventListener('click', function() {
+            showFeatureTutorial('asf');
+        });
+    });
+    
+    // ESF indicators - next to suggested explanations
+    document.querySelectorAll('.similar-transactions').forEach(el => {
+        const indicator = document.createElement('span');
+        indicator.className = 'feature-indicator';
+        indicator.style.backgroundColor = 'var(--bs-info)';
+        indicator.innerHTML = '<i class="fas fa-lightbulb"></i>';
+        indicator.title = 'Explanation Suggestion Feature - Click to learn more';
+        indicator.setAttribute('data-bs-toggle', 'tooltip');
+        indicator.setAttribute('data-feature', 'esf');
+        el.parentNode.insertBefore(indicator, el.nextSibling);
+        
+        indicator.addEventListener('click', function() {
+            showFeatureTutorial('esf');
+        });
+    });
+    
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+});
+
+function showFeatureTutorial(feature) {
+    const tutorialOverlay = document.getElementById('tutorialOverlay');
+    if (tutorialOverlay) {
+        tutorialOverlay.style.display = 'block';
+        showTutorialStep(feature);
+    } else {
+        // If tutorial overlay isn't loaded yet, redirect with parameter
+        window.location.href = window.location.pathname + '?tutorial=' + feature;
+    }
+}
+</script>
+{% endmacro %}

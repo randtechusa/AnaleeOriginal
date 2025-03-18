@@ -1,6 +1,9 @@
 {% extends "base.html" %}
+{% from 'tutorials/feature_tutorials.html' import feature_popup_tutorial, feature_tooltip_indicators %}
 
 {% block content %}
+{{ feature_popup_tutorial() }}
+{{ feature_tooltip_indicators() }}
 <div class="container mt-4">
     <h2>iCountant - AI Accounting Assistant</h2>
 
