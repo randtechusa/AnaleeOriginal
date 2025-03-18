@@ -21,13 +21,6 @@ def init_migrations(retry_count=3, retry_delay=5):
         retry_delay: Seconds to wait between retries
     """
     try:
-        # First, make sure we have the models initialized
-        try:
-            from models import db
-        except ImportError as e:
-            logger.error(f"Failed to import database models: {e}")
-            return False
-        
         # Create a Flask app for migration
         app = Flask(__name__)
         
@@ -43,11 +36,14 @@ def init_migrations(retry_count=3, retry_delay=5):
         if os.environ.get('DATABASE_URL'):
             app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
         
-        # Initialize the db with this app
+        # Import db from extensions to ensure we use the same SQLAlchemy instance
+        from extensions import db, migrate
+        
+        # Initialize db with this app
         db.init_app(app)
         
-        # Initialize migrations with this app and db
-        migrate = Migrate(app, db)
+        # Initialize migrations with this app and db (no need to create a new Migrate instance)
+        migrate.init_app(app, db)
         
         with app.app_context():
             for attempt in range(retry_count):
@@ -95,8 +91,18 @@ def init_migrations(retry_count=3, retry_delay=5):
                             app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
                             # Dispose existing connections and reconnect
                             db.engine.dispose()
-                            # Re-initialize with new URI
-                            db.init_app(app)
+                            
+                            # Create a new application with SQLite configuration to avoid conflicts
+                            sqlite_app = Flask(f"{__name__}_sqlite")
+                            sqlite_app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
+                            sqlite_app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+                            
+                            # Initialize db with this new app
+                            db.init_app(sqlite_app)
+                            migrate.init_app(sqlite_app, db)
+                            
+                            # Use the SQLite app context instead
+                            app = sqlite_app
                             continue
                     
                     logger.error(f"Database operation failed (attempt {attempt+1}/{retry_count}): {e}")
