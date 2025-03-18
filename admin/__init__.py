@@ -32,7 +32,7 @@ def maintenance_check(f):
             flash('System is currently in maintenance mode. Please try again later.', 'warning')
             return redirect(url_for('main.dashboard'))
         return f(*args, **kwargs)
-    return maintenance_check
+    return decorated_function
 
 # Protect all admin routes with admin_required decorator
 @bp.before_request
@@ -45,5 +45,12 @@ def restrict_admin_access():
 # Import routes after blueprint creation to avoid circular imports
 from . import routes
 
-# Import audit module
+# Import audit modules
 from . import audit
+from .audit_dashboard import audit_dashboard_bp
+
+# Register audit dashboard blueprint
+def register_audit_blueprint(app):
+    """Register audit dashboard blueprint with app"""
+    app.register_blueprint(audit_dashboard_bp)
+    logger.info("Registered audit dashboard blueprint")

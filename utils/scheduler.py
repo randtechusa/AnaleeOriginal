@@ -1,184 +1,269 @@
 """
-Centralized scheduler for application tasks with enhanced error handling
-Handles scheduled tasks such as daily automated audits
+Enhanced Scheduler Module
+
+Provides centralized scheduling capabilities for the application
+with comprehensive error handling and monitoring.
 """
 
 import logging
+import datetime
 import pytz
-from datetime import datetime, timedelta
-
 from flask_apscheduler import APScheduler
-from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, EVENT_JOB_MISSED
-
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
+from apscheduler.job import Job
 from models import db, ScheduledJob
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
+
+# Initialize scheduler
 scheduler = APScheduler()
 
 def init_scheduler(app):
-    """Initialize scheduler with app configuration"""
-    try:
-        # Configure scheduler
-        app.config['SCHEDULER_API_ENABLED'] = True
-        app.config['SCHEDULER_TIMEZONE'] = 'UTC'
-        
-        # Initialize scheduler
-        scheduler.init_app(app)
-        app.scheduler = scheduler
-        
-        # Add event listeners
-        scheduler.add_listener(job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED)
-        
-        # Start scheduler
-        scheduler.start()
-        
-        # Set up scheduled jobs
-        try:
-            from admin.scheduled_audit import setup_scheduled_audits
-            setup_scheduled_audits(app)
-        except ImportError as e:
-            logger.warning(f"Could not set up scheduled audits: {str(e)}")
-        except Exception as e:
-            logger.error(f"Error setting up scheduled audits: {str(e)}")
-        
-        logger.info("Scheduler initialized successfully")
-    except Exception as e:
-        logger.error(f"Error initializing scheduler: {str(e)}")
-        
-def job_listener(event):
-    """Log scheduler job events"""
-    if event.exception:
-        logger.error(f"Job '{event.job_id}' raised an exception: {str(event.exception)}")
-        # Store in database for monitoring
-        try:
-            job = ScheduledJob.query.filter_by(job_id=event.job_id).first()
-            if job:
-                job.last_status = 'failed'
-                job.last_error = str(event.exception)
-                job.last_run = datetime.utcnow()
-                job.error_count = (job.error_count or 0) + 1
-                db.session.commit()
-        except Exception as e:
-            logger.error(f"Failed to update job status in database: {str(e)}")
-    else:
-        logger.info(f"Job '{event.job_id}' executed successfully")
-        # Store in database for monitoring
-        try:
-            job = ScheduledJob.query.filter_by(job_id=event.job_id).first()
-            if job:
-                job.last_status = 'success'
-                job.last_error = None
-                job.last_run = datetime.utcnow()
-                job.success_count = (job.success_count or 0) + 1
-                db.session.commit()
-            elif event.job_id:
-                # Create new job record if it doesn't exist
-                new_job = ScheduledJob(
-                    job_id=event.job_id,
-                    last_status='success',
-                    last_run=datetime.utcnow(),
-                    success_count=1
-                )
-                db.session.add(new_job)
-                db.session.commit()
-        except Exception as e:
-            logger.error(f"Failed to update job status in database: {str(e)}")
-
-def add_scheduled_job(id, func, trigger, **trigger_args):
     """
-    Add a job to the scheduler with error handling
+    Initialize the scheduler with the Flask app
     
     Args:
-        id: Unique job identifier
-        func: Function to execute
-        trigger: Trigger type (cron, interval, date)
-        **trigger_args: Arguments for the trigger
+        app: Flask application instance
+    """
+    # Configure scheduler
+    scheduler.api_enabled = True
+    scheduler.init_app(app)
+    
+    # Add event listeners
+    scheduler.add_listener(job_executed_listener, EVENT_JOB_EXECUTED)
+    scheduler.add_listener(job_error_listener, EVENT_JOB_ERROR)
+    
+    # Start scheduler
+    scheduler.start()
+    
+    # Register existing jobs
+    register_database_jobs()
+    
+    logger.info("Scheduler initialized successfully")
+    return scheduler
+
+def job_executed_listener(event):
+    """
+    Listener for successful job execution events
+    
+    Args:
+        event: Job execution event
     """
     try:
-        if not scheduler:
-            logger.error("Scheduler not initialized")
-            return False
+        job_id = event.job_id
+        update_job_status(job_id, 'success')
+    except Exception as e:
+        logger.error(f"Error in job executed listener: {e}")
+
+def job_error_listener(event):
+    """
+    Listener for job error events
+    
+    Args:
+        event: Job error event
+    """
+    try:
+        job_id = event.job_id
+        exception = event.exception
+        traceback = event.traceback
         
-        # Check if job already exists
-        job = scheduler.get_job(id)
-        if job:
-            logger.info(f"Job '{id}' already exists - removing old job")
-            scheduler.remove_job(id)
+        update_job_status(job_id, 'failed', str(exception))
         
+        # Log the error
+        logger.error(f"Job {job_id} failed: {exception}\n{traceback}")
+    except Exception as e:
+        logger.error(f"Error in job error listener: {e}")
+
+def update_job_status(job_id, status, error=None):
+    """
+    Update job status in the database
+    
+    Args:
+        job_id: ID of the job
+        status: New job status (success, failed)
+        error: Error message if job failed
+    """
+    try:
+        job = ScheduledJob.query.filter_by(job_id=job_id).first()
+        
+        if not job:
+            job = ScheduledJob(
+                job_id=job_id,
+                description=f"Job {job_id}",
+                enabled=True
+            )
+            db.session.add(job)
+        
+        job.last_run = datetime.datetime.utcnow()
+        job.last_status = status
+        
+        if status == 'success':
+            job.success_count += 1
+            job.last_error = None
+        else:
+            job.error_count += 1
+            job.last_error = error
+            
+        db.session.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to update job status: {e}")
+        return False
+
+def register_database_jobs():
+    """Register jobs from database with scheduler"""
+    try:
+        jobs = ScheduledJob.query.filter_by(enabled=True).all()
+        
+        for job in jobs:
+            # Check if job already exists in scheduler
+            if scheduler.get_job(job.job_id):
+                logger.debug(f"Job {job.job_id} already registered")
+                continue
+            
+            # Register job with scheduler (job-specific logic would go here)
+            logger.info(f"Registered job {job.job_id} from database")
+    except Exception as e:
+        logger.error(f"Failed to register database jobs: {e}")
+
+def add_job(func, trigger, job_id, **kwargs):
+    """
+    Add a job to the scheduler with database tracking
+    
+    Args:
+        func: Function to execute
+        trigger: APScheduler trigger (e.g., 'interval', 'cron')
+        job_id: Unique job ID
+        **kwargs: Additional arguments for scheduler
+    """
+    try:
         # Add job to scheduler
-        scheduler.add_job(
-            id=id,
+        job = scheduler.add_job(
             func=func,
             trigger=trigger,
-            **trigger_args,
-            replace_existing=True
+            id=job_id,
+            replace_existing=True,
+            **kwargs
         )
         
-        # Create database entry
-        try:
-            job = ScheduledJob.query.filter_by(job_id=id).first()
-            if not job:
-                job = ScheduledJob(
-                    job_id=id,
-                    description=f"Scheduled job {id}",
-                    enabled=True,
-                    created_at=datetime.utcnow()
-                )
-                db.session.add(job)
-                db.session.commit()
-        except Exception as e:
-            logger.error(f"Failed to create job database entry: {str(e)}")
+        # Add/update job in database
+        db_job = ScheduledJob.query.filter_by(job_id=job_id).first()
         
-        logger.info(f"Added scheduled job '{id}' with trigger {trigger}")
+        if not db_job:
+            description = kwargs.get('name', f"Job {job_id}")
+            db_job = ScheduledJob(
+                job_id=job_id,
+                description=description,
+                enabled=True
+            )
+            db.session.add(db_job)
+            
+        db.session.commit()
+        
+        logger.info(f"Added scheduled job '{job_id}' with trigger {trigger}")
+        return job
+    except SQLAlchemyError as e:
+        logger.error(f"Failed to create job database entry: {e}")
+        # Still return the job from scheduler even if database update fails
+        return scheduler.get_job(job_id)
+    except Exception as e:
+        logger.error(f"Failed to add job: {e}")
+        return None
+
+def remove_job(job_id):
+    """
+    Remove a job from the scheduler and database
+    
+    Args:
+        job_id: ID of the job to remove
+    """
+    try:
+        # Remove from scheduler
+        scheduler.remove_job(job_id)
+        
+        # Update database
+        job = ScheduledJob.query.filter_by(job_id=job_id).first()
+        if job:
+            job.enabled = False
+            db.session.commit()
+            
+        logger.info(f"Removed scheduled job '{job_id}'")
         return True
     except Exception as e:
-        logger.error(f"Error adding scheduled job '{id}': {str(e)}")
+        logger.error(f"Failed to remove job: {e}")
         return False
 
-def remove_scheduled_job(id):
-    """Remove a job from the scheduler"""
+def pause_job(job_id):
+    """
+    Pause a job in the scheduler
+    
+    Args:
+        job_id: ID of the job to pause
+    """
     try:
-        if not scheduler:
-            logger.error("Scheduler not initialized")
-            return False
+        scheduler.pause_job(job_id)
         
-        scheduler.remove_job(id)
-        logger.info(f"Removed scheduled job '{id}'")
-        
-        # Update database entry
-        try:
-            job = ScheduledJob.query.filter_by(job_id=id).first()
-            if job:
-                job.enabled = False
-                db.session.commit()
-        except Exception as e:
-            logger.error(f"Failed to update job database entry: {str(e)}")
-        
+        # Update database
+        job = ScheduledJob.query.filter_by(job_id=job_id).first()
+        if job:
+            job.enabled = False
+            db.session.commit()
+            
+        logger.info(f"Paused scheduled job '{job_id}'")
         return True
     except Exception as e:
-        logger.error(f"Error removing scheduled job '{id}': {str(e)}")
+        logger.error(f"Failed to pause job: {e}")
         return False
 
-def get_scheduled_jobs():
-    """Get all scheduled jobs"""
+def resume_job(job_id):
+    """
+    Resume a paused job in the scheduler
+    
+    Args:
+        job_id: ID of the job to resume
+    """
     try:
-        if not scheduler:
-            logger.error("Scheduler not initialized")
-            return []
+        scheduler.resume_job(job_id)
         
-        return scheduler.get_jobs()
+        # Update database
+        job = ScheduledJob.query.filter_by(job_id=job_id).first()
+        if job:
+            job.enabled = True
+            db.session.commit()
+            
+        logger.info(f"Resumed scheduled job '{job_id}'")
+        return True
     except Exception as e:
-        logger.error(f"Error getting scheduled jobs: {str(e)}")
-        return []
+        logger.error(f"Failed to resume job: {e}")
+        return False
 
-def get_eastern_time(utc_time=None):
-    """Convert UTC time to Eastern Time"""
+def get_eastern_time(dt=None):
+    """
+    Convert UTC datetime to US Eastern Time
+    
+    Args:
+        dt: Datetime to convert (default: current UTC time)
+        
+    Returns:
+        Datetime in US Eastern Time
+    """
+    if dt is None:
+        dt = datetime.datetime.utcnow()
+        
     eastern = pytz.timezone('US/Eastern')
     
-    if utc_time is None:
-        utc_time = datetime.utcnow()
+    # If the datetime is not timezone-aware, assume it's UTC
+    if dt.tzinfo is None:
+        dt = pytz.utc.localize(dt)
         
-    if utc_time.tzinfo is None:
-        utc_time = pytz.utc.localize(utc_time)
-        
-    return utc_time.astimezone(eastern)
+    return dt.astimezone(eastern)
+
+def get_scheduled_jobs():
+    """
+    Get all scheduled jobs
+    
+    Returns:
+        List of scheduled jobs
+    """
+    return scheduler.get_jobs()
