@@ -2,36 +2,88 @@
 {% block content %}
 <div class="container mt-4">
     <h2>Admin Dashboard</h2>
+    
+    <!-- Error Monitoring and System Health Cards -->
+    <div class="row mt-4 mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">System Monitoring</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <a href="{{ url_for('errors.error_dashboard') }}" class="btn btn-outline-primary btn-lg w-100 h-100 d-flex flex-column justify-content-center align-items-center p-4">
+                                <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                                <span>Error Dashboard</span>
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <a href="{{ url_for('audit.index') }}" class="btn btn-outline-primary btn-lg w-100 h-100 d-flex flex-column justify-content-center align-items-center p-4">
+                                <i class="fas fa-clipboard-check fa-2x mb-2"></i>
+                                <span>Audit Dashboard</span>
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <a href="{{ url_for('audit.findings') }}" class="btn btn-outline-primary btn-lg w-100 h-100 d-flex flex-column justify-content-center align-items-center p-4">
+                                <i class="fas fa-bug fa-2x mb-2"></i>
+                                <span>Audit Findings</span>
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <a href="{{ url_for('audit.errors') }}" class="btn btn-outline-primary btn-lg w-100 h-100 d-flex flex-column justify-content-center align-items-center p-4">
+                                <i class="fas fa-file-alt fa-2x mb-2"></i>
+                                <span>Error Logs</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- User Statistics Cards -->
     <div class="row mt-4">
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Total Users</h5>
-                    <p class="card-text display-4">{{ total_users }}</p>
+        <div class="col-12 mb-3">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">User Statistics</h5>
                 </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Active Subscribers</h5>
-                    <p class="card-text display-4">{{ active_users }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Pending Users</h5>
-                    <p class="card-text display-4">{{ pending_users }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Deactivated Users</h5>
-                    <p class="card-text display-4">{{ deactivated_users }}</p>
+                <div class="card-body p-0">
+                    <div class="row g-0">
+                        <div class="col-md-3">
+                            <div class="card border-0">
+                                <div class="card-body text-center">
+                                    <h5 class="card-title text-muted">Total Users</h5>
+                                    <p class="card-text display-4">{{ total_users }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-0">
+                                <div class="card-body text-center">
+                                    <h5 class="card-title text-muted">Active Subscribers</h5>
+                                    <p class="card-text display-4">{{ active_users }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-0">
+                                <div class="card-body text-center">
+                                    <h5 class="card-title text-muted">Pending Users</h5>
+                                    <p class="card-text display-4">{{ pending_users }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-0">
+                                <div class="card-body text-center">
+                                    <h5 class="card-title text-muted">Deactivated Users</h5>
+                                    <p class="card-text display-4">{{ deactivated_users }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
