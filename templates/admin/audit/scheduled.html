@@ -1,0 +1,178 @@
+{% extends 'admin/layout.html' %}
+
+{% block title %}Scheduled Audits{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Scheduled System Audits</h5>
+                    <form action="{{ url_for('audit.run_scheduled_audit') }}" method="post" class="ml-auto">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-play mr-1"></i> Run Audit Now
+                        </button>
+                    </form>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        Automated daily system audits are scheduled to run at <strong>8:00 PM ET</strong> to detect code issues, inefficiencies, and security vulnerabilities.
+                    </div>
+                    
+                    <h6 class="mt-3 text-muted">Scheduled Audit Status</h6>
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>Schedule</th>
+                                    <th>Next Run</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <i class="fas fa-calendar-check mr-1"></i> Daily System Audit (8:00 PM ET)
+                                    </td>
+                                    <td>
+                                        {% if scheduled_job and scheduled_job.next_run %}
+                                            {{ scheduled_job.next_run.strftime('%Y-%m-%d %H:%M:%S') }} ET
+                                        {% else %}
+                                            <span class="text-muted">Not available</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if scheduled_job and scheduled_job.active %}
+                                            <span class="badge badge-success">Active</span>
+                                        {% else %}
+                                            <span class="badge badge-warning">Not Configured</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <h6 class="mt-4 text-muted">Features Checked During Automated Audits</h6>
+                    <div class="row mt-3">
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-code text-primary mr-2"></i>
+                                        Code Quality Analysis
+                                    </h6>
+                                    <ul class="list-unstyled">
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> Syntax errors and bugs</li>
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> Inefficient patterns</li>
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> Resource leaks</li>
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> Code complexity</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-shield-alt text-danger mr-2"></i>
+                                        Security Analysis
+                                    </h6>
+                                    <ul class="list-unstyled">
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> SQL injection vulnerabilities</li>
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> XSS vulnerabilities</li>
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> Authentication issues</li>
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> Hardcoded credentials</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-tachometer-alt text-warning mr-2"></i>
+                                        Performance Monitoring
+                                    </h6>
+                                    <ul class="list-unstyled">
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> CPU & memory usage</li>
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> Database performance</li>
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> Query efficiency</li>
+                                        <li><i class="fas fa-check-circle text-success mr-1"></i> Response time analysis</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h6 class="mt-4 text-muted">Recent Automated Audits</h6>
+                    {% if automated_audits %}
+                    <div class="table-responsive mt-3">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date & Time</th>
+                                    <th>Type</th>
+                                    <th>Duration</th>
+                                    <th>Status</th>
+                                    <th>Findings</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for audit in automated_audits %}
+                                <tr>
+                                    <td>{{ audit.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                    <td>{{ audit.audit_type }}</td>
+                                    <td>
+                                        {% if audit.duration %}
+                                            {{ "%.2f"|format(audit.duration) }} sec
+                                        {% else %}
+                                            --
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if audit.status == 'passed' %}
+                                            <span class="badge badge-success">Passed</span>
+                                        {% elif audit.status == 'warning' %}
+                                            <span class="badge badge-warning">Warning</span>
+                                        {% elif audit.status == 'failed' %}
+                                            <span class="badge badge-danger">Failed</span>
+                                        {% elif audit.status == 'running' %}
+                                            <span class="badge badge-info">Running</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">{{ audit.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if audit.findings|length > 0 %}
+                                            {{ audit.findings|length }} findings
+                                        {% else %}
+                                            <span class="text-muted">No findings</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{{ url_for('audit.audit_detail', audit_id=audit.id) }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-search"></i> View Details
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-light mt-3">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        No automated audits have run yet. Scheduled audits will appear here once they've been executed.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

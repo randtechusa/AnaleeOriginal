@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from flask import Blueprint, render_template, request, redirect, url_for, jsonify, flash
+from flask import Blueprint, render_template, request, redirect, url_for, jsonify, flash, current_app
 from flask_login import login_required, current_user
 from functools import wraps
 from sqlalchemy import desc
@@ -356,6 +356,64 @@ def api_recent_activity():
     } for log in logs]
     
     return jsonify(log_data)
+
+@audit_bp.route('/scheduled')
+@login_required
+@admin_required
+def scheduled_audits():
+    """View scheduled audit configuration"""
+    # Get scheduled job info if available
+    scheduled_job = None
+    if hasattr(current_app, 'scheduler'):
+        try:
+            jobs = current_app.scheduler.get_jobs()
+            for job in jobs:
+                if job.id == 'daily_system_audit':
+                    # Get next run time in Eastern Time
+                    from utils.scheduler import get_eastern_time
+                    next_run = job.next_run_time
+                    scheduled_job = {
+                        'id': job.id,
+                        'next_run': next_run,
+                        'active': job.next_run_time is not None
+                    }
+                    break
+        except Exception as e:
+            logger.error(f"Error getting scheduled job info: {str(e)}")
+    
+    # Get recent automated audits
+    automated_audits = SystemAudit.query.filter(
+        SystemAudit.audit_type == 'daily_comprehensive',
+        SystemAudit.user_id.is_(None)  # Automated audits have no user ID
+    ).order_by(desc(SystemAudit.timestamp)).limit(5).all()
+    
+    return render_template('admin/audit/scheduled.html',
+                        scheduled_job=scheduled_job,
+                        automated_audits=automated_audits)
+
+@audit_bp.route('/run_scheduled_audit', methods=['POST'])
+@login_required
+@admin_required
+def run_scheduled_audit():
+    """Manually trigger a scheduled audit"""
+    try:
+        from admin.scheduled_audit import run_daily_audit
+        
+        # Run the audit
+        success, message, audit_id = run_daily_audit()
+        
+        if success:
+            flash(f"Scheduled audit triggered successfully: {message}", "success")
+            if audit_id:
+                return redirect(url_for('audit.audit_detail', audit_id=audit_id))
+        else:
+            flash(f"Failed to run scheduled audit: {message}", "danger")
+            
+    except Exception as e:
+        flash(f"Error triggering scheduled audit: {str(e)}", "danger")
+        logger.exception("Error running scheduled audit")
+    
+    return redirect(url_for('audit.scheduled_audits'))
 
 def perform_audit(audit):
     """Perform the actual audit operations
