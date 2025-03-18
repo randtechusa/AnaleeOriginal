@@ -1,12 +1,13 @@
 import logging
 import os
 import subprocess
+import sqlite3
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from flask_apscheduler import APScheduler
 from sqlalchemy import create_engine, text
-import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +34,15 @@ class DatabaseBackupManager:
         """Parse database URL into components"""
         try:
             engine = create_engine(url)
+            
+            # Check if this is a SQLite URL
+            if 'sqlite' in url.lower():
+                return {
+                    'database': 'sqlite',
+                    'path': engine.url.database
+                }
+            
+            # For PostgreSQL and other database types
             return {
                 'host': engine.url.host,
                 'port': engine.url.port or 5432,
@@ -48,48 +58,96 @@ class DatabaseBackupManager:
         """Create a new database backup"""
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_file = self.backup_dir / f"backup_{timestamp}.sql"
             
-            # Prepare pg_dump command
-            cmd = [
-                'pg_dump',
-                '--clean',
-                '--if-exists',
-                f"--host={self.db_info['host']}",
-                f"--port={self.db_info['port']}",
-                f"--username={self.db_info['user']}",
-                f"--dbname={self.db_info['database']}",
-                '--format=c',
-                '--file', str(backup_file)
-            ]
-            
-            # Set environment for authentication
-            env = os.environ.copy()
-            env['PGPASSWORD'] = self.db_info['password']
-            
-            # Execute backup
-            result = subprocess.run(cmd, env=env, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                # Create metadata file
-                metadata = {
-                    'timestamp': timestamp,
-                    'database': self.db_info['database'],
-                    'size': os.path.getsize(backup_file)
-                }
+            # Check if this is SQLite or PostgreSQL
+            if 'database' in self.db_info and self.db_info['database'] == 'sqlite':
+                # Handle SQLite backup
+                sqlite_path = self.db_info.get('path')
+                if not sqlite_path:
+                    logger.error("SQLite path not found in database info")
+                    return None
                 
-                metadata_file = self.backup_dir / f"backup_{timestamp}_metadata.json"
-                with open(metadata_file, 'w') as f:
-                    json.dump(metadata, f)
+                # For SQLite, use the .db extension
+                backup_file = self.backup_dir / f"backup_{timestamp}.db"
                 
-                logger.info(f"Backup created successfully: {backup_file}")
-                return {
-                    'file': str(backup_file),
-                    'metadata': metadata
-                }
+                # Use SQLite's built-in backup functionality
+                try:
+                    # Connect to source database
+                    src_conn = sqlite3.connect(sqlite_path)
+                    # Connect to destination (backup) database
+                    dst_conn = sqlite3.connect(str(backup_file))
+                    # Perform backup
+                    src_conn.backup(dst_conn)
+                    # Close connections
+                    src_conn.close()
+                    dst_conn.close()
+                    
+                    # Create metadata
+                    metadata = {
+                        'timestamp': timestamp,
+                        'database': 'sqlite',
+                        'path': sqlite_path,
+                        'size': os.path.getsize(backup_file)
+                    }
+                    
+                    metadata_file = self.backup_dir / f"backup_{timestamp}_metadata.json"
+                    with open(metadata_file, 'w') as f:
+                        json.dump(metadata, f)
+                    
+                    logger.info(f"SQLite backup created successfully: {backup_file}")
+                    return {
+                        'file': str(backup_file),
+                        'metadata': metadata
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"SQLite backup failed: {str(e)}")
+                    return None
+            
             else:
-                logger.error(f"Backup failed: {result.stderr}")
-                return None
+                # Handle PostgreSQL backup
+                backup_file = self.backup_dir / f"backup_{timestamp}.sql"
+                
+                # Prepare pg_dump command
+                cmd = [
+                    'pg_dump',
+                    '--clean',
+                    '--if-exists',
+                    f"--host={self.db_info['host']}",
+                    f"--port={self.db_info['port']}",
+                    f"--username={self.db_info['user']}",
+                    f"--dbname={self.db_info['database']}",
+                    '--format=c',
+                    '--file', str(backup_file)
+                ]
+                
+                # Set environment for authentication
+                env = os.environ.copy()
+                env['PGPASSWORD'] = self.db_info['password']
+                
+                # Execute backup
+                result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    # Create metadata file
+                    metadata = {
+                        'timestamp': timestamp,
+                        'database': self.db_info['database'],
+                        'size': os.path.getsize(backup_file)
+                    }
+                    
+                    metadata_file = self.backup_dir / f"backup_{timestamp}_metadata.json"
+                    with open(metadata_file, 'w') as f:
+                        json.dump(metadata, f)
+                    
+                    logger.info(f"PostgreSQL backup created successfully: {backup_file}")
+                    return {
+                        'file': str(backup_file),
+                        'metadata': metadata
+                    }
+                else:
+                    logger.error(f"PostgreSQL backup failed: {result.stderr}")
+                    return None
                 
         except Exception as e:
             logger.error(f"Error creating backup: {str(e)}")
@@ -117,29 +175,62 @@ class DatabaseBackupManager:
                 logger.error(f"Backup file not found: {backup_file}")
                 return False
             
-            # Prepare pg_restore command
-            cmd = [
-                'pg_restore',
-                '--clean',
-                '--if-exists',
-                f"--host={self.db_info['host']}",
-                f"--port={self.db_info['port']}",
-                f"--username={self.db_info['user']}",
-                f"--dbname={self.db_info['database']}",
-                str(backup_file)
-            ]
+            # Check if this is a SQLite or PostgreSQL backup
+            database_type = backup['metadata'].get('database', '')
             
-            env = os.environ.copy()
-            env['PGPASSWORD'] = self.db_info['password']
-            
-            result = subprocess.run(cmd, env=env, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                logger.info(f"Successfully restored to backup from {backup['metadata']['timestamp']}")
-                return True
+            if database_type == 'sqlite':
+                # Handle SQLite restoration
+                try:
+                    # Determine destination path - use the path in metadata or fallback to default
+                    dest_path = backup['metadata'].get('path')
+                    if not dest_path:
+                        dest_path = os.path.join(os.getcwd(), 'instance', 'dev.db')
+                    
+                    # Make sure the directory exists
+                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                    
+                    # Connect to backup
+                    backup_conn = sqlite3.connect(str(backup_file))
+                    # Connect to destination (may or may not exist yet)
+                    dest_conn = sqlite3.connect(dest_path)
+                    
+                    # Backup from source to destination (reverse of create_backup)
+                    backup_conn.backup(dest_conn)
+                    
+                    # Close connections
+                    backup_conn.close()
+                    dest_conn.close()
+                    
+                    logger.info(f"Successfully restored SQLite DB from backup: {backup['metadata']['timestamp']}")
+                    return True
+                except Exception as e:
+                    logger.error(f"SQLite restoration failed: {str(e)}")
+                    return False
             else:
-                logger.error(f"Restore failed: {result.stderr}")
-                return False
+                # Handle PostgreSQL restoration
+                # Prepare pg_restore command
+                cmd = [
+                    'pg_restore',
+                    '--clean',
+                    '--if-exists',
+                    f"--host={self.db_info['host']}",
+                    f"--port={self.db_info['port']}",
+                    f"--username={self.db_info['user']}",
+                    f"--dbname={self.db_info['database']}",
+                    str(backup_file)
+                ]
+                
+                env = os.environ.copy()
+                env['PGPASSWORD'] = self.db_info['password']
+                
+                result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    logger.info(f"Successfully restored PostgreSQL DB from backup: {backup['metadata']['timestamp']}")
+                    return True
+                else:
+                    logger.error(f"PostgreSQL restore failed: {result.stderr}")
+                    return False
                 
         except Exception as e:
             logger.error(f"Error during restoration: {str(e)}")
@@ -207,7 +298,24 @@ class DatabaseBackupManager:
                 with open(metadata_file, 'r') as f:
                     metadata = json.load(f)
                 
-                backup_file = self.backup_dir / f"backup_{metadata['timestamp']}.sql"
+                # Check if this is SQLite or PostgreSQL backup
+                database_type = metadata.get('database', '')
+                
+                if database_type == 'sqlite':
+                    # For SQLite backups, check .db extension
+                    backup_file = self.backup_dir / f"backup_{metadata['timestamp']}.db"
+                else:
+                    # For PostgreSQL backups, check .sql extension
+                    backup_file = self.backup_dir / f"backup_{metadata['timestamp']}.sql"
+                
+                # Also check for alternative naming - for backward compatibility
+                if not backup_file.exists():
+                    # Try sqlite_backup_ prefix for SQLite backups
+                    alt_backup_file = self.backup_dir / f"sqlite_backup_{metadata['timestamp']}.db"
+                    if alt_backup_file.exists():
+                        backup_file = alt_backup_file
+                
+                # Only add if the backup file actually exists
                 if backup_file.exists():
                     backups.append({
                         'file': str(backup_file),
