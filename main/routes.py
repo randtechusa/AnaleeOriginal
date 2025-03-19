@@ -36,20 +36,102 @@ def dashboard():
 
         total_income = sum(t.amount for t in transactions if t.amount > 0)
         total_expenses = sum(abs(t.amount) for t in transactions if t.amount < 0)
+        
+        # Initialize chart data with default empty values
+        monthly_labels = []
+        monthly_income = []
+        monthly_expenses = []
+        category_labels = []
+        category_amounts = []
+        
+        # Add data for charts if we have transactions
+        if transactions:
+            # Generate monthly data for the line chart (last 6 months)
+            from datetime import datetime, timedelta
+            
+            # Get last 6 months
+            today = datetime.today()
+            months = []
+            for i in range(5, -1, -1):
+                month = today.replace(day=1) - timedelta(days=i*30)
+                months.append(month)
+            
+            monthly_labels = [m.strftime("%b %Y") for m in months]
+            
+            # Calculate income and expenses for each month
+            monthly_income = []
+            monthly_expenses = []
+            
+            for month in months:
+                next_month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+                
+                # Get transactions for this month
+                month_transactions = [t for t in transactions if month <= t.date < next_month]
+                
+                # Calculate income and expenses
+                income = sum(t.amount for t in month_transactions if t.amount > 0)
+                expense = sum(abs(t.amount) for t in month_transactions if t.amount < 0)
+                
+                monthly_income.append(float(income))
+                monthly_expenses.append(float(expense))
+            
+            # Generate category data for the pie chart
+            # Group by account.type or use basic categories
+            category_data = {}
+            for t in transactions:
+                if t.amount < 0:  # Only consider expenses for the category chart
+                    category = t.account.type if t.account else 'Uncategorized'
+                    if category not in category_data:
+                        category_data[category] = 0
+                    category_data[category] += abs(t.amount)
+            
+            # Sort by amount
+            sorted_categories = sorted(category_data.items(), key=lambda x: x[1], reverse=True)
+            
+            # Take top 5 categories
+            top_categories = sorted_categories[:5]
+            
+            # If there are more, add "Other" category
+            if len(sorted_categories) > 5:
+                other_total = sum(amount for _, amount in sorted_categories[5:])
+                top_categories.append(('Other', other_total))
+            
+            category_labels = [c[0] for c in top_categories]
+            category_amounts = [float(c[1]) for c in top_categories]
+        
+        # Get financial years for dropdown
+        from datetime import datetime
+        current_year = datetime.now().year
+        financial_years = list(range(current_year - 2, current_year + 1))
 
         return render_template('dashboard.html',
-                           total_income=total_income,
-                           total_expenses=total_expenses,
-                           transaction_count=len(transactions),
-                           transactions=transactions[:5])  # Latest 5 transactions
+                            total_income=total_income,
+                            total_expenses=total_expenses,
+                            transaction_count=len(transactions),
+                            transactions=transactions[:5],  # Latest 5 transactions
+                            monthly_labels=monthly_labels,
+                            monthly_income=monthly_income,
+                            monthly_expenses=monthly_expenses,
+                            category_labels=category_labels,
+                            category_amounts=category_amounts,
+                            financial_years=financial_years,
+                            current_year=current_year)
     except Exception as e:
         logger.error(f"Error in dashboard route: {str(e)}")
         flash('Error loading dashboard data', 'error')
+        # Provide empty data for the charts in case of error
         return render_template('dashboard.html',
-                           total_income=0,
-                           total_expenses=0,
-                           transaction_count=0,
-                           transactions=[])
+                            total_income=0,
+                            total_expenses=0,
+                            transaction_count=0,
+                            transactions=[],
+                            monthly_labels=[],
+                            monthly_income=[],
+                            monthly_expenses=[],
+                            category_labels=[],
+                            category_amounts=[],
+                            financial_years=[datetime.now().year],
+                            current_year=datetime.now().year)
 
 @bp.route('/analyze_list')
 @login_required
