@@ -54,11 +54,11 @@ def main():
         print(f"Medium: {summary['severity_counts']['medium']}")
         print(f"Low: {summary['severity_counts']['low']}")
         
-        # Print critical and high issues
-        if summary['severity_counts']['critical'] > 0 or summary['severity_counts']['high'] > 0:
-            print("\n=== Critical and High Priority Issues ===")
+        # Print critical, high, and medium issues
+        if summary['severity_counts']['critical'] > 0 or summary['severity_counts']['high'] > 0 or summary['severity_counts']['medium'] > 0:
+            print("\n=== Critical, High, and Medium Priority Issues ===")
             for issue in final_result.issues:
-                if issue.severity in ['critical', 'high']:
+                if issue.severity in ['critical', 'high', 'medium']:
                     print(f"{issue}")
                     if issue.recommendation:
                         print(f"  Recommendation: {issue.recommendation}")
