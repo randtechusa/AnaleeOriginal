@@ -45,7 +45,7 @@ class DatabaseHealth:
 
     def check_connection(self, uri: Optional[str] = None) -> Tuple[bool, Optional[str]]:
         """
-        Check database connection health
+        Check database connection health with enhanced diagnostics
         
         Args:
             uri: Optional database URI to check. If None, uses the current application's database.
@@ -58,11 +58,43 @@ class DatabaseHealth:
             
             if uri:
                 # Check specific URI
-                engine = create_engine(uri, 
-                    pool_pre_ping=True,
-                    pool_recycle=3600,
-                    connect_args={'connect_timeout': 10}
-                )
+                # Check database type for specialized handling
+                is_neon_db = 'neon.tech' in uri.lower()
+                is_postgresql = 'postgresql' in uri.lower()
+                is_sqlite = 'sqlite' in uri.lower()
+                
+                # Log database type for diagnostics
+                db_type = "SQLite" if is_sqlite else "PostgreSQL (Neon)" if is_neon_db else "PostgreSQL" if is_postgresql else "Unknown"
+                logger.info(f"Checking connection to {db_type} database")
+                
+                # Set engine parameters based on database type
+                engine_opts = {
+                    'pool_pre_ping': True,
+                    'pool_recycle': 3600,
+                    'pool_size': 1,
+                    'max_overflow': 0
+                }
+                
+                # Add PostgreSQL-specific options
+                if is_postgresql:
+                    engine_opts['connect_args'] = {'connect_timeout': 10}
+                
+                engine = create_engine(uri, **engine_opts)
+                
+                # If it's a Neon database, log endpoint info
+                if is_neon_db:
+                    try:
+                        from urllib.parse import urlparse
+                        parsed_uri = urlparse(uri)
+                        endpoint_host = parsed_uri.hostname
+                        if endpoint_host:  # Check if hostname is not None
+                            endpoint_id = endpoint_host.split('.')[0]  # First part may contain endpoint ID
+                        else:
+                            endpoint_id = "unknown"
+                        logger.info(f"Neon database endpoint ID: {endpoint_id}")
+                    except Exception as e:
+                        logger.warning(f"Error parsing Neon endpoint info: {str(e)}")
+                
                 with engine.connect() as conn:
                     conn.execute(text('SELECT 1'))
             else:
@@ -70,6 +102,12 @@ class DatabaseHealth:
                 if not current_app:
                     logger.warning("No Flask app context available for DB health check")
                     return False, "No application context"
+                
+                # Get database URI from application config for diagnostic purposes
+                db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'Unknown')
+                is_sqlite = 'sqlite' in db_uri.lower()
+                db_type = "SQLite" if is_sqlite else "PostgreSQL" if 'postgresql' in db_uri.lower() else "Unknown"
+                logger.info(f"Checking connection to application's {db_type} database")
                 
                 engine = current_app.extensions['sqlalchemy'].db.engine
                 with engine.connect() as conn:
@@ -81,16 +119,38 @@ class DatabaseHealth:
             return True, None
             
         except SQLAlchemyError as e:
+            error_str = str(e).lower()
             error_msg = f"Database health check failed: {str(e)}"
             
-            # Special handling for endpoint disabled errors
-            error_str = str(e).lower()
+            # Enhanced error diagnosis with more specific patterns and advice
             if 'endpoint is disabled' in error_str:
                 logger.warning("PostgreSQL endpoint is disabled. This is normal for serverless databases after periods of inactivity.")
-            elif 'connection' in error_str and ('timed out' in error_str or 'refused' in error_str):
-                logger.warning("Database connection timed out or was refused. The server may be under high load.")
+                error_msg = "PostgreSQL endpoint is disabled and needs to be woken up. This is normal for serverless databases."
+            elif 'timeout' in error_str:
+                logger.warning("Database connection timed out - server may be under high load or network issues")
+                error_msg = "Database connection timed out. The server may be under high load or experiencing network issues."
+            elif 'connection' in error_str and 'refused' in error_str:
+                logger.warning("Database connection refused - server may be down or firewall issue")
+                error_msg = "Database connection refused. The server may be down or there could be a firewall issue."
+            elif 'authentication' in error_str:
+                logger.warning("Database authentication failed - credentials may be incorrect")
+                error_msg = "Database authentication failed. Credentials may be incorrect or expired."
+            elif 'does not exist' in error_str:
+                logger.warning("Database or schema does not exist - check database name and availability")
+                error_msg = "Database or schema does not exist. Check database name and availability."
+            elif 'too many connections' in error_str:
+                logger.warning("Too many connections to database - connection pool exhausted")
+                error_msg = "Too many connections to database. The connection pool may be exhausted."
             
             logger.error(error_msg)
+            self._update_metrics(0, success=False)
+            return False, error_msg
+        
+        except Exception as e:
+            # Handle non-SQLAlchemy errors
+            error_msg = f"Unexpected error during database health check: {str(e)}"
+            logger.error(error_msg)
+            logger.error(f"Error type: {type(e).__name__}")
             self._update_metrics(0, success=False)
             return False, error_msg
 
@@ -195,23 +255,81 @@ class DatabaseHealth:
         """
         logger.info("Attempting to wake up database endpoint...")
         
-        if not uri or 'neon.tech' not in uri.lower():
-            logger.info("Not a Neon database or no URL provided")
+        if not uri:
+            logger.info("No database URI provided")
             return False
             
-        # We'll try a few times with increasing delays
+        # Check if this is a Neon database that might need special handling
+        is_neon_db = 'neon.tech' in uri.lower()
+        is_postgresql = 'postgresql' in uri.lower()
+        
+        if not (is_neon_db or is_postgresql):
+            logger.info("Not a PostgreSQL database - no wake-up needed")
+            return False
+            
+        # For Neon databases, try to contact their API to wake up the endpoint (if possible)
+        if is_neon_db:
+            # Extract the endpoint ID from the URI (for potential future API integration)
+            try:
+                from urllib.parse import urlparse
+                parsed_uri = urlparse(uri)
+                endpoint_host = parsed_uri.hostname
+                endpoint_id = endpoint_host.split('.')[0]  # First part may contain endpoint ID
+                
+                logger.info(f"Detected Neon database endpoint: {endpoint_id}")
+                
+                # In the future, we could contact the Neon API here to enable the endpoint
+                # For now, just log the detection
+            except Exception as e:
+                logger.warning(f"Error parsing Neon endpoint info: {str(e)}")
+        
+        # Enhanced wake-up procedure with better error handling and diagnostics
         for attempt in range(1, 4):
             try:
-                # Construct engine with minimal settings for connection attempt
-                engine = create_engine(
-                    uri,
-                    pool_pre_ping=True,
-                    # Small pool for wake-up attempts
-                    pool_size=1,
-                    max_overflow=0,
-                    # Use a longer timeout for wake-up
-                    connect_args={'connect_timeout': 20}
-                )
+                # For PostgreSQL connections, use psycopg2 directly with better diagnostics
+                if is_postgresql:
+                    try:
+                        # Parse the URI to extract components for direct connection
+                        from urllib.parse import urlparse
+                        parsed_uri = urlparse(uri)
+                        db_name = parsed_uri.path.lstrip('/')
+                        host = parsed_uri.hostname
+                        port = parsed_uri.port or 5432
+                        username = parsed_uri.username
+                        password = parsed_uri.password
+                        
+                        import psycopg2
+                        conn = psycopg2.connect(
+                            dbname=db_name,
+                            user=username,
+                            password=password,
+                            host=host,
+                            port=port,
+                            connect_timeout=30  # Longer timeout for wake-up
+                        )
+                        conn.close()
+                        logger.info(f"Successfully woke up PostgreSQL endpoint on attempt {attempt}")
+                        return True
+                    except psycopg2.OperationalError as e:
+                        error_str = str(e).lower()
+                        if 'endpoint is disabled' in error_str:
+                            logger.warning(f"Neon endpoint explicitly reported as disabled - attempt {attempt}")
+                            if attempt == 3:
+                                logger.error("Neon endpoint remains disabled after multiple attempts")
+                                return False
+                        raise  # Re-raise for the outer exception handler
+                
+                # Fallback to SQLAlchemy connection
+                engine_opts = {
+                    'pool_pre_ping': True,
+                    'pool_size': 1,
+                    'max_overflow': 0,
+                }
+                
+                if is_postgresql:
+                    engine_opts['connect_args'] = {'connect_timeout': 30}
+                
+                engine = create_engine(uri, **engine_opts)
                 
                 # Try to establish connection
                 with engine.connect() as conn:
@@ -221,9 +339,21 @@ class DatabaseHealth:
                 return True
                 
             except Exception as e:
-                logger.warning(f"Wake-up attempt {attempt} failed: {str(e)}")
+                error_str = str(e).lower()
+                
+                # Check for specific errors that would indicate the endpoint is offline
+                if is_neon_db and 'endpoint is disabled' in error_str:
+                    logger.warning(f"Neon endpoint reported as disabled on attempt {attempt}")
+                elif 'timeout' in error_str:
+                    logger.warning(f"Connection timeout on attempt {attempt}")
+                elif 'refused' in error_str:
+                    logger.warning(f"Connection refused on attempt {attempt}")
+                else:
+                    logger.warning(f"Wake-up attempt {attempt} failed: {str(e)}")
+                
                 # Exponential backoff with jitter
                 delay = (2 ** attempt) + (time.time() % 1)
+                logger.info(f"Waiting {delay:.2f} seconds before next attempt...")
                 time.sleep(delay)
         
         logger.error("Failed to wake up database endpoint after multiple attempts")
