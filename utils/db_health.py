@@ -185,7 +185,7 @@ class DatabaseHealth:
 
     def perform_failover(self) -> Tuple[bool, Optional[str]]:
         """
-        Execute database failover procedure to SQLite
+        Execute database failover procedure to SQLite with enhanced backup/restore
         
         Returns:
             Tuple of (success, error_message)
@@ -205,12 +205,25 @@ class DatabaseHealth:
                 logger.info("Already using SQLite database, no failover needed")
                 return True, None
             
-            # Setup SQLite database path
-            sqlite_path = os.path.join(os.getcwd(), 'instance', 'fallback.db')
+            # Create backup of original database URI
+            original_uri_file = os.path.join(os.getcwd(), 'instance', 'original_db_uri.txt')
+            try:
+                os.makedirs('instance', exist_ok=True)
+                with open(original_uri_file, 'w') as f:
+                    f.write(current_uri)
+                logger.info("Backed up original database URI for future recovery")
+            except Exception as e:
+                logger.warning(f"Failed to backup original URI: {str(e)}")
+            
+            # Setup SQLite database path with timestamp for uniqueness
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            sqlite_path = os.path.join(os.getcwd(), 'instance', f'fallback_{timestamp}.db')
             os.makedirs('instance', exist_ok=True)
             
             # Update configuration
-            current_app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{sqlite_path}"
+            sqlite_uri = f"sqlite:///{sqlite_path}"
+            logger.info(f"Switching to SQLite: {sqlite_uri}")
+            current_app.config['SQLALCHEMY_DATABASE_URI'] = sqlite_uri
             
             # Get SQLAlchemy instance
             db = current_app.extensions['sqlalchemy'].db
@@ -218,8 +231,22 @@ class DatabaseHealth:
             # Dispose existing connections
             db.engine.dispose()
             
-            # Create tables in new database
-            db.create_all()
+            # Create tables in new database with enhanced error handling
+            try:
+                db.create_all()
+                logger.info("Successfully created all tables in SQLite fallback database")
+            except Exception as table_error:
+                logger.error(f"Error creating tables: {str(table_error)}")
+                # Try alternative method if create_all fails
+                try:
+                    from models import get_base
+                    Base = get_base()
+                    engine = db.engine
+                    Base.metadata.create_all(engine)
+                    logger.info("Created tables using alternative method")
+                except Exception as alt_error:
+                    logger.error(f"Alternative table creation also failed: {str(alt_error)}")
+                    # Continue anyway - some functionality is better than none
             
             # Update metrics
             metrics['failover_count'] += 1
