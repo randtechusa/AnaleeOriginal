@@ -17,19 +17,42 @@ def login():
         return redirect(url_for('main.dashboard'))
 
     form = LoginForm()
+    
+    # Clear existing session to help with CSRF token issues
+    if request.method == 'GET':
+        session.clear()
+    
     if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data.lower()).first()
+        try:
+            user = User.query.filter_by(email=form.email.data.lower()).first()
 
-        if user and user.check_password(form.password.data):
-            if not user.is_active:
-                flash('Account is deactivated. Please contact support.', 'error')
-                return render_template('auth/login.html', form=form)
+            if user and user.check_password(form.password.data):
+                if not user.is_active:
+                    flash('Account is deactivated. Please contact support.', 'error')
+                    return render_template('auth/login.html', form=form)
 
-            login_user(user, remember=form.remember_me.data)
-            flash('Logged in successfully.', 'success')
-            return redirect(url_for('main.dashboard'))
+                # Clear the session before login to avoid carrying over stale data
+                session.clear()
+                login_user(user, remember=form.remember_me.data)
+                flash('Logged in successfully.', 'success')
+                
+                # Set some session values
+                session['user_id'] = user.id
+                session['logged_in'] = True
+                session.permanent = True
+                
+                return redirect(url_for('main.dashboard'))
+            else:
+                flash('Invalid email or password.', 'error')
+        except Exception as e:
+            logger.error(f"Login error: {str(e)}")
+            flash('An error occurred during login. Please try again.', 'error')
 
-        flash('Invalid email or password.', 'error')
+    # Always generate a fresh form with a new CSRF token on errors
+    if request.method == 'POST' and not form.validate():
+        logger.info("Form validation failed, generating new form with fresh CSRF token")
+        form = LoginForm()
+        flash('Please try logging in again.', 'warning')
 
     return render_template('auth/login.html', form=form)
 

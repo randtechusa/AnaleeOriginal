@@ -10,7 +10,9 @@ logger = logging.getLogger(__name__)
 
 class Config:
     """Base configuration"""
-    SECRET_KEY = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
+    # Use a fixed secret key for development (more consistent for debugging)
+    # In production, always set SECRET_KEY in environment variables
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-for-icountant-platform'
 
     # Database configuration with enhanced connection handling
     # Try to use PostgreSQL connection from environment variables first
