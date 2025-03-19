@@ -55,9 +55,11 @@ def init_migrations(retry_count=3, retry_delay=5):
                     current_db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
                     logger.info(f"Using database: {current_db_uri}")
                     
-                    # Attempt to connect to the database
-                    db.engine.connect()
-                    logger.info("Database connection successful")
+                    # Attempt to connect to the database with better error handling
+                    conn = db.engine.connect()
+                    result = conn.execute("SELECT 1")
+                    conn.close()
+                    logger.info("Database connection and query test successful")
                     
                     # Run migrations
                     logger.info("Starting database migrations...")
@@ -108,15 +110,35 @@ def init_migrations(retry_count=3, retry_delay=5):
                                 # Get the Base with the current model definitions
                                 Base = get_base()
                                 
-                                # Create a new engine for SQLite
-                                engine = create_engine('sqlite:///instance/dev.db')
+                                # Create a new engine for SQLite with better configuration
+                                engine = create_engine('sqlite:///instance/dev.db', 
+                                                      connect_args={'check_same_thread': False},
+                                                      pool_recycle=1800)
+                                
+                                # Drop existing tables if they exist to avoid conflicts
+                                try:
+                                    # Check if we need to drop existing tables
+                                    conn = engine.connect()
+                                    result = conn.execute(sql_text("SELECT name FROM sqlite_master WHERE type='table'"))
+                                    tables = [row[0] for row in result]
+                                    conn.close()
+                                    
+                                    if tables:
+                                        logger.info(f"Found existing tables: {', '.join(tables)}")
+                                        logger.info("Dropping existing tables to ensure clean state")
+                                        Base.metadata.drop_all(engine)
+                                except Exception as e:
+                                    logger.warning(f"Error checking existing tables: {e}")
                                 
                                 # Create all tables directly from the models
                                 Base.metadata.create_all(engine)
+                                logger.info("Created all database tables from models")
+                                
+                                # Import text for SQL execution early to avoid reference errors
+                                from sqlalchemy import text as sql_text
                                 
                                 # Create a test session to verify it works
                                 session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
-                                from sqlalchemy import text as sql_text
                                 session.execute(sql_text('SELECT 1'))
                                 session.commit()
                                 session.remove()

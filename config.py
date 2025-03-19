@@ -23,22 +23,68 @@ class Config:
 
     def test_db_connection(uri):
         from sqlalchemy import create_engine, text
+        from sqlalchemy.exc import OperationalError
+        
+        logger.info(f"Testing database connection to: {uri}")
+        
         try:
             if isinstance(uri, str) and uri.startswith('postgres://'):
                 uri = uri.replace('postgres://', 'postgresql://')
+                logger.info("Converted postgres:// to postgresql:// for compatibility")
 
-            # Create engine with appropriate parameters for the database type
-            if isinstance(uri, str) and 'postgresql://' in uri:
-                # PostgreSQL connections
-                engine = create_engine(uri, pool_pre_ping=True)
+            # Determine the database type for specialized handling
+            is_sqlite = 'sqlite://' in uri.lower() if isinstance(uri, str) else False
+            is_postgresql = 'postgresql://' in uri.lower() if isinstance(uri, str) else False
+            is_neon = 'neon.tech' in uri.lower() if isinstance(uri, str) else False
+            
+            # Log the database type for better diagnostics
+            if is_sqlite:
+                logger.info("Detected SQLite database")
+            elif is_neon:
+                logger.info("Detected Neon PostgreSQL database")
+            elif is_postgresql:
+                logger.info("Detected PostgreSQL database")
             else:
-                # SQLite or other connections
-                engine = create_engine(uri, pool_pre_ping=True)
+                logger.info(f"Unknown database type: {uri}")
+                
+            # Create engine with appropriate parameters for the database type
+            engine_opts = {'pool_pre_ping': True}
+            
+            if is_postgresql:
+                # PostgreSQL connections with better timeout settings
+                engine_opts.update({
+                    'pool_size': 5,
+                    'max_overflow': 10,
+                    'pool_timeout': 30,
+                    'pool_recycle': 1800,
+                    'connect_args': {'connect_timeout': 10}
+                })
+            
+            engine = create_engine(uri, **engine_opts)
+            
+            # Test the connection
             with engine.connect() as conn:
                 conn.execute(text('SELECT 1'))
+                
+            logger.info("Database connection test successful")
             return True, uri
+            
+        except OperationalError as e:
+            error_str = str(e).lower()
+            if 'endpoint is disabled' in error_str:
+                logger.warning("PostgreSQL endpoint is disabled. This is normal for serverless databases after periods of inactivity.")
+                # Provide more detailed error message
+                error_msg = "PostgreSQL endpoint is disabled and needs to be woken up. This is normal for serverless databases."
+            else:
+                error_msg = f"Database connection failed: {e}"
+                logger.error(error_msg)
+                
+            return False, None
+            
         except Exception as e:
-            print(f"Database connection failed: {e}")
+            error_msg = f"Unexpected error during database connection test: {e}"
+            logger.error(error_msg)
+            logger.error(f"Error type: {type(e).__name__}")
             return False, None
 
     # Try to use PostgreSQL first, fallback to SQLite if unavailable

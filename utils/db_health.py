@@ -274,9 +274,12 @@ class DatabaseHealth:
                 from urllib.parse import urlparse
                 parsed_uri = urlparse(uri)
                 endpoint_host = parsed_uri.hostname
-                endpoint_id = endpoint_host.split('.')[0]  # First part may contain endpoint ID
                 
-                logger.info(f"Detected Neon database endpoint: {endpoint_id}")
+                if endpoint_host:
+                    endpoint_id = endpoint_host.split('.')[0]  # First part may contain endpoint ID
+                    logger.info(f"Detected Neon database endpoint: {endpoint_id}")
+                else:
+                    logger.warning("Unable to extract hostname from URI")
                 
                 # In the future, we could contact the Neon API here to enable the endpoint
                 # For now, just log the detection
