@@ -155,7 +155,17 @@ def create_app(config_name=None):
         # Load configuration
         config = get_config(config_name)
         app.config.from_object(config)
-
+        
+        # Explicitly set CSRF protection (Flask-WTF)
+        app.config['WTF_CSRF_ENABLED'] = True
+        app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # 1 hour
+        app.config['WTF_CSRF_SSL_STRICT'] = False  # Allow CSRF token on HTTP
+        
+        # Ensure session cookies are secure
+        app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+        app.config['SESSION_COOKIE_HTTPONLY'] = True
+        app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
+        
         # Initialize extensions
         init_extensions(app)
 
