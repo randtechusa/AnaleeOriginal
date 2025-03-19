@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
     new Chart(ctx1, {
         type: 'line',
         data: {
-            labels: {{ monthly_labels|tojson }},
+            labels: {{ monthly_labels|default([])|tojson }},
             datasets: [{
                 label: 'Income',
                 data: {{ monthly_income|tojson }},
