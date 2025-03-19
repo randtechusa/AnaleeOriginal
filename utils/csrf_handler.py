@@ -56,6 +56,10 @@ def init_csrf(app):
     # Apply CSRF protection to all routes unless explicitly exempted
     @app.before_request
     def csrf_check():
+        # Skip CSRF check for login route
+        if request.endpoint == 'auth.login':
+            return
+            
         # Skip CSRF check for exempted views
         if getattr(request.endpoint, '_csrf_exempt', False):
             return

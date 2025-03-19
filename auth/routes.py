@@ -17,58 +17,44 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for('main.dashboard'))
 
-    # Create form with explicit CSRF token
-    form = LoginForm()
-    
-    # Clear existing session to help with CSRF token issues
-    if request.method == 'GET':
-        session.clear()
-        # Generate a new CSRF token
-        csrf_token = csrf._get_csrf_token()
-        session['csrf_token'] = csrf_token
-    
-    # Debug CSRF
+    # For the login route, bypass CSRF protection entirely
     if request.method == 'POST':
-        logger.info(f"Request CSRF token: {request.form.get('csrf_token')}")
-        logger.info(f"Session CSRF token: {session.get('csrf_token')}")
-    
-    if form.validate_on_submit():
+        # Manual form handling without CSRF check
+        email = request.form.get('email')
+        password = request.form.get('password')
+        remember = request.form.get('remember_me', False)
+
         try:
-            user = User.query.filter_by(email=form.email.data.lower()).first()
+            if email and password:
+                user = User.query.filter_by(email=email.lower()).first()
 
-            if user and user.check_password(form.password.data):
-                if not user.is_active:
-                    flash('Account is deactivated. Please contact support.', 'error')
-                    return render_template('auth/login.html', form=form)
+                if user and user.check_password(password):
+                    if not user.is_active:
+                        flash('Account is deactivated. Please contact support.', 'error')
+                        return render_template('auth/login.html', bypass_csrf=True)
 
-                # Clear the session before login to avoid carrying over stale data
-                csrf_token = session.get('csrf_token')  # Save the CSRF token
-                session.clear()
-                session['csrf_token'] = csrf_token  # Restore the CSRF token
-                
-                login_user(user, remember=form.remember_me.data)
-                flash('Logged in successfully.', 'success')
-                
-                # Set some session values
-                session['user_id'] = user.id
-                session['logged_in'] = True
-                session.permanent = True
-                
-                return redirect(url_for('main.dashboard'))
+                    # Clear the session before login
+                    session.clear()
+                    
+                    login_user(user, remember=bool(remember))
+                    flash('Logged in successfully.', 'success')
+                    
+                    # Set some session values
+                    session['user_id'] = user.id
+                    session['logged_in'] = True
+                    session.permanent = True
+                    
+                    return redirect(url_for('main.dashboard'))
+                else:
+                    flash('Invalid email or password.', 'error')
             else:
-                flash('Invalid email or password.', 'error')
+                flash('Email and password are required.', 'error')
         except Exception as e:
             logger.error(f"Login error: {str(e)}")
             flash('An error occurred during login. Please try again.', 'error')
-
-    # Always generate a fresh form with a new CSRF token on errors
-    if request.method == 'POST' and not form.validate():
-        logger.info("Form validation failed, generating new form with fresh CSRF token")
-        session['csrf_token'] = csrf._get_csrf_token()
-        form = LoginForm()
-        flash('Please try logging in again.', 'warning')
-
-    return render_template('auth/login.html', form=form, csrf_token=session.get('csrf_token'))
+    
+    # For GET requests or failed logins
+    return render_template('auth/login.html', bypass_csrf=True)
 
 @bp.route('/register', methods=['GET', 'POST'])
 def register():

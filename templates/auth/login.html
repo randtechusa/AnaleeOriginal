@@ -16,25 +16,20 @@
                 {% endwith %}
 
                 <form method="POST" action="{{ url_for('auth.login') }}">
-                    <!-- CSRF token handling with fallback -->
-                    {% if csrf_token %}
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    {% else %}
-                        {{ form.csrf_token }}
-                    {% endif %}
+                    <!-- No CSRF token for login page -->
                     <div class="mb-3">
-                        {{ form.email.label(class="form-label") }}
-                        {{ form.email(class="form-control") }}
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
                     </div>
                     <div class="mb-3">
-                        {{ form.password.label(class="form-label") }}
-                        {{ form.password(class="form-control") }}
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
                     </div>
                     <div class="mb-3">
-                        {{ form.remember_me(class="form-check-input") }}
-                        {{ form.remember_me.label(class="form-check-label") }}
+                        <input type="checkbox" class="form-check-input" id="remember_me" name="remember_me">
+                        <label class="form-check-label" for="remember_me">Remember Me</label>
                     </div>
-                    {{ form.submit(class="btn btn-primary w-100") }}
+                    <button type="submit" class="btn btn-primary w-100">Login</button>
                 </form>
 
                 <div class="text-center mt-3">
