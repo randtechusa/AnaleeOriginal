@@ -49,13 +49,13 @@ def main():
         print("\n=== Analysis Summary ===")
         summary = final_result.get_summary()
         print(f"Total issues found: {summary['total_issues']}")
-        print(f"Critical: {summary['by_severity']['critical']}")
-        print(f"High: {summary['by_severity']['high']}")
-        print(f"Medium: {summary['by_severity']['medium']}")
-        print(f"Low: {summary['by_severity']['low']}")
+        print(f"Critical: {summary['severity_counts']['critical']}")
+        print(f"High: {summary['severity_counts']['high']}")
+        print(f"Medium: {summary['severity_counts']['medium']}")
+        print(f"Low: {summary['severity_counts']['low']}")
         
         # Print critical and high issues
-        if summary['by_severity']['critical'] > 0 or summary['by_severity']['high'] > 0:
+        if summary['severity_counts']['critical'] > 0 or summary['severity_counts']['high'] > 0:
             print("\n=== Critical and High Priority Issues ===")
             for issue in final_result.issues:
                 if issue.severity in ['critical', 'high']:
