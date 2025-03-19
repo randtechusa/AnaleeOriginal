@@ -3,6 +3,97 @@ from datetime import datetime
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from extensions import db
+from sqlalchemy.ext.declarative import declarative_base
+
+# Create a base for standalone table creation during migrations
+Base = declarative_base()
+
+# Map of the SQLAlchemy models for the Base class
+_base_models = {}
+
+def get_base():
+    """Returns the SQLAlchemy Base class for direct table creation 
+    with properly mapped model definitions"""
+    # Define Base models on-demand to match Flask-SQLAlchemy models
+    if not _base_models:
+        from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, Text, ForeignKey, Numeric
+        from sqlalchemy.orm import relationship
+        from datetime import datetime
+        
+        # Define equivalent Base models for each db.Model class
+        # Simple example for key tables
+        class User(Base):
+            __tablename__ = 'users'
+            id = Column(Integer, primary_key=True)
+            username = Column(String(80), unique=True, nullable=False)
+            email = Column(String(120), unique=True, nullable=False)
+            password_hash = Column(String(128))
+            created_at = Column(DateTime, default=datetime.utcnow)
+            is_active = Column(Boolean, default=True)
+            is_admin = Column(Boolean, default=False)
+        
+        class Account(Base):
+            __tablename__ = 'accounts'
+            id = Column(Integer, primary_key=True)
+            name = Column(String(100), nullable=False)
+            type = Column(String(50), nullable=False)
+            code = Column(String(20), unique=True, nullable=False)
+            description = Column(String(200))
+            created_at = Column(DateTime, default=datetime.utcnow)
+            is_active = Column(Boolean, default=True)
+            user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+        
+        class Transaction(Base):
+            __tablename__ = 'transactions'
+            id = Column(Integer, primary_key=True)
+            user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+            date = Column(DateTime, nullable=False)
+            amount = Column(Numeric(10, 2), nullable=False)
+            description = Column(String(200))
+            account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True)
+            processed_date = Column(DateTime, nullable=True)
+            is_processed = Column(Boolean, default=False)
+            file_id = Column(Integer, ForeignKey('uploaded_files.id'), nullable=True)
+            explanation = Column(String(500))
+            explanation_confidence = Column(Float, default=0.0)
+            explanation_source = Column(String(50))
+            similar_transaction_id = Column(Integer, ForeignKey('transactions.id'))
+            created_at = Column(DateTime, default=datetime.utcnow)
+            updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+            
+        class UploadedFile(Base):
+            __tablename__ = 'uploaded_files'
+            id = Column(Integer, primary_key=True)
+            filename = Column(String(255), nullable=False)
+            file_path = Column(String(500), nullable=False)
+            upload_date = Column(DateTime, default=datetime.utcnow)
+            user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+            status = Column(String(50), default='pending')
+            
+        class CompanySettings(Base):
+            __tablename__ = 'company_settings'
+            id = Column(Integer, primary_key=True)
+            company_name = Column(String(200), nullable=False)
+            business_type = Column(String(100))
+            fiscal_year_start = Column(DateTime)
+            currency = Column(String(3), default='USD')
+            tax_id = Column(String(50))
+            contact_email = Column(String(120))
+            phone = Column(String(20))
+            address = Column(Text)
+            logo_path = Column(String(500))
+            user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+            created_at = Column(DateTime, default=datetime.utcnow)
+            updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+        
+        # Store the models in the map
+        _base_models['User'] = User
+        _base_models['Account'] = Account
+        _base_models['Transaction'] = Transaction
+        _base_models['UploadedFile'] = UploadedFile
+        _base_models['CompanySettings'] = CompanySettings
+    
+    return Base
 
 class User(UserMixin, db.Model):
     """User model for authentication and profile management"""

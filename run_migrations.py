@@ -97,16 +97,29 @@ def init_migrations(retry_count=3, retry_delay=5):
                             try:
                                 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/dev.db'
                                 
-                                # Re-initialize with the new URI but using the same application
-                                db.init_app(app)
+                                # Dispose of old engine and create a new one for SQLite
+                                db.engine.dispose()
                                 
-                                # Create all tables directly
-                                with app.app_context():
-                                    db.create_all()
-                                    # Verify it works
-                                    from sqlalchemy import text
-                                    db.session.execute(text('SELECT 1'))
-                                    db.session.commit()
+                                # Instead of reinitializing, create new SQLAlchemy instance for migration purposes only
+                                from sqlalchemy import create_engine
+                                from sqlalchemy.orm import scoped_session, sessionmaker
+                                from models import get_base
+                                
+                                # Get the Base with the current model definitions
+                                Base = get_base()
+                                
+                                # Create a new engine for SQLite
+                                engine = create_engine('sqlite:///instance/dev.db')
+                                
+                                # Create all tables directly from the models
+                                Base.metadata.create_all(engine)
+                                
+                                # Create a test session to verify it works
+                                session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
+                                from sqlalchemy import text as sql_text
+                                session.execute(sql_text('SELECT 1'))
+                                session.commit()
+                                session.remove()
                                     
                                 logger.info("SQLite tables created successfully")
                                 return True  # Exit the function with success
