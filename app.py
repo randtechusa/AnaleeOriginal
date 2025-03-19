@@ -158,13 +158,20 @@ def create_app(config_name=None):
         
         # Explicitly set CSRF protection (Flask-WTF)
         app.config['WTF_CSRF_ENABLED'] = True
-        app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # 1 hour
+        app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit for CSRF tokens
         app.config['WTF_CSRF_SSL_STRICT'] = False  # Allow CSRF token on HTTP
+        app.config['WTF_CSRF_SECRET_KEY'] = app.config['SECRET_KEY']  # Use same secret key
+        app.config['WTF_CSRF_METHODS'] = ['POST', 'PUT', 'PATCH', 'DELETE']  # Apply CSRF to these methods
         
         # Ensure session cookies are secure
         app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
         app.config['SESSION_COOKIE_HTTPONLY'] = True
+        app.config['SESSION_TYPE'] = 'filesystem'  # Use filesystem sessions
         app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
+        
+        # Initialize custom CSRF protection
+        from utils.csrf_handler import init_csrf
+        init_csrf(app)
         
         # Initialize extensions
         init_extensions(app)

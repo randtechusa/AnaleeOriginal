@@ -1,11 +1,12 @@
 """Authentication routes for login and registration"""
 import logging
-from flask import render_template, redirect, url_for, flash, request, session
+from flask import render_template, redirect, url_for, flash, request, session, current_app
 from flask_login import login_user, logout_user, current_user
 from werkzeug.security import generate_password_hash
 from models import db, User
 from forms.auth import LoginForm, RegistrationForm
 from auth import bp
+from extensions import csrf
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -16,11 +17,20 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for('main.dashboard'))
 
+    # Create form with explicit CSRF token
     form = LoginForm()
     
     # Clear existing session to help with CSRF token issues
     if request.method == 'GET':
         session.clear()
+        # Generate a new CSRF token
+        csrf_token = csrf._get_csrf_token()
+        session['csrf_token'] = csrf_token
+    
+    # Debug CSRF
+    if request.method == 'POST':
+        logger.info(f"Request CSRF token: {request.form.get('csrf_token')}")
+        logger.info(f"Session CSRF token: {session.get('csrf_token')}")
     
     if form.validate_on_submit():
         try:
@@ -32,7 +42,10 @@ def login():
                     return render_template('auth/login.html', form=form)
 
                 # Clear the session before login to avoid carrying over stale data
+                csrf_token = session.get('csrf_token')  # Save the CSRF token
                 session.clear()
+                session['csrf_token'] = csrf_token  # Restore the CSRF token
+                
                 login_user(user, remember=form.remember_me.data)
                 flash('Logged in successfully.', 'success')
                 
@@ -51,10 +64,11 @@ def login():
     # Always generate a fresh form with a new CSRF token on errors
     if request.method == 'POST' and not form.validate():
         logger.info("Form validation failed, generating new form with fresh CSRF token")
+        session['csrf_token'] = csrf._get_csrf_token()
         form = LoginForm()
         flash('Please try logging in again.', 'warning')
 
-    return render_template('auth/login.html', form=form)
+    return render_template('auth/login.html', form=form, csrf_token=session.get('csrf_token'))
 
 @bp.route('/register', methods=['GET', 'POST'])
 def register():

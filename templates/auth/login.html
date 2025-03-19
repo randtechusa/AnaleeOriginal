@@ -16,7 +16,12 @@
                 {% endwith %}
 
                 <form method="POST" action="{{ url_for('auth.login') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <!-- CSRF token handling with fallback -->
+                    {% if csrf_token %}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    {% else %}
+                        {{ form.csrf_token }}
+                    {% endif %}
                     <div class="mb-3">
                         {{ form.email.label(class="form-label") }}
                         {{ form.email(class="form-control") }}
