@@ -66,14 +66,42 @@ def restore_system():
         if database_url and 'sqlite' not in database_url.lower():
             logger.info("Attempting PostgreSQL backup")
             try:
-                backup_manager = DatabaseBackupManager(database_url)
+                # First check if the PostgreSQL endpoint is available
+                from sqlalchemy import create_engine, text
+                from sqlalchemy.exc import OperationalError
+
+                # Create a minimal connection to test the endpoint
+                try:
+                    engine = create_engine(database_url, connect_args={'connect_timeout': 10})
+                    with engine.connect() as conn:
+                        conn.execute(text('SELECT 1'))
+                    postgresql_available = True
+                    logger.info("PostgreSQL endpoint is available, proceeding with backup")
+                except OperationalError as e:
+                    error_str = str(e).lower()
+                    if 'endpoint is disabled' in error_str:
+                        logger.warning("PostgreSQL endpoint is disabled, cannot create backup")
+                        postgresql_available = False
+                    else:
+                        # Some other operational error
+                        logger.error(f"PostgreSQL connection error: {e}")
+                        postgresql_available = False
+                except Exception as e:
+                    logger.error(f"Error testing PostgreSQL connection: {e}")
+                    postgresql_available = False
                 
-                # Create a backup first
-                backup_result = backup_manager.create_backup()
-                if backup_result:
-                    logger.info(f"Created new PostgreSQL backup: {backup_result['file']}")
+                # Only attempt backup if PostgreSQL is available
+                if postgresql_available:
+                    backup_manager = DatabaseBackupManager(database_url)
+                    
+                    # Create a backup
+                    backup_result = backup_manager.create_backup()
+                    if backup_result:
+                        logger.info(f"Created new PostgreSQL backup: {backup_result['file']}")
+                    else:
+                        logger.warning("PostgreSQL backup creation failed")
                 else:
-                    logger.warning("PostgreSQL backup creation failed")
+                    logger.warning("Skipping PostgreSQL backup due to connection issues")
             except Exception as e:
                 logger.error(f"PostgreSQL backup error: {str(e)}")
 
@@ -148,8 +176,97 @@ def restore_system():
             # PostgreSQL restoration
             if not database_url:
                 logger.error("Cannot restore PostgreSQL backup - DATABASE_URL not set")
-                return False
+                logger.info("Checking for SQLite backups instead")
+                # Since we can't restore PostgreSQL, try SQLite backups directly
+                sqlite_backups = [b for b in sorted_backups if b['metadata'].get('database') == 'sqlite']
+                if sqlite_backups:
+                    # Override with latest SQLite backup
+                    latest_backup = sqlite_backups[0]
+                    backup_timestamp = latest_backup['metadata']['timestamp']
+                    logger.info(f"Found SQLite backup from {backup_timestamp}, using this instead")
+                    
+                    # Restore SQLite backup
+                    backup_file = Path(latest_backup['file'])
+                    
+                    # Make sure the instance directory exists
+                    instance_dir = Path('instance')
+                    instance_dir.mkdir(exist_ok=True)
+                    
+                    # Restore the SQLite database
+                    try:
+                        import gc
+                        gc.collect()
+                        
+                        # Copy the SQLite backup file to the instance directory
+                        shutil.copy2(backup_file, sqlite_path)
+                        logger.info(f"Successfully restored SQLite database from {backup_file}")
+                        return True
+                    except Exception as e:
+                        logger.error(f"SQLite restoration failed: {str(e)}")
+                        return False
+                else:
+                    logger.error("No SQLite backups found as fallback")
+                    return False
                 
+            # Check if PostgreSQL endpoint is available
+            from sqlalchemy import create_engine, text
+            from sqlalchemy.exc import OperationalError
+
+            # Create a minimal connection to test the endpoint
+            postgresql_available = False
+            try:
+                engine = create_engine(database_url, connect_args={'connect_timeout': 10})
+                with engine.connect() as conn:
+                    conn.execute(text('SELECT 1'))
+                postgresql_available = True
+                logger.info("PostgreSQL endpoint is available, proceeding with restoration")
+            except OperationalError as e:
+                error_str = str(e).lower()
+                if 'endpoint is disabled' in error_str:
+                    logger.warning("PostgreSQL endpoint is disabled, cannot perform restoration")
+                    postgresql_available = False
+                else:
+                    # Some other operational error
+                    logger.error(f"PostgreSQL connection error: {e}")
+                    postgresql_available = False
+            except Exception as e:
+                logger.error(f"Error testing PostgreSQL connection: {e}")
+                postgresql_available = False
+                
+            # If PostgreSQL is not available, fall back to SQLite if we have SQLite backups
+            if not postgresql_available:
+                logger.warning("PostgreSQL endpoint unavailable, checking for SQLite backups")
+                sqlite_backups = [b for b in sorted_backups if b['metadata'].get('database') == 'sqlite']
+                if sqlite_backups:
+                    # Override with latest SQLite backup
+                    latest_backup = sqlite_backups[0]
+                    backup_timestamp = latest_backup['metadata']['timestamp']
+                    logger.info(f"Found SQLite backup from {backup_timestamp}, using this instead")
+                    
+                    # Restore SQLite backup
+                    backup_file = Path(latest_backup['file'])
+                    
+                    # Make sure the instance directory exists
+                    instance_dir = Path('instance')
+                    instance_dir.mkdir(exist_ok=True)
+                    
+                    # Restore the SQLite database
+                    try:
+                        import gc
+                        gc.collect()
+                        
+                        # Copy the SQLite backup file to the instance directory
+                        shutil.copy2(backup_file, sqlite_path)
+                        logger.info(f"Successfully restored SQLite database from {backup_file}")
+                        return True
+                    except Exception as e:
+                        logger.error(f"SQLite restoration failed: {str(e)}")
+                        return False
+                else:
+                    logger.error("No SQLite backups found as fallback")
+                    return False
+                
+            # Proceed with PostgreSQL restoration
             try:
                 backup_manager = DatabaseBackupManager(database_url)
                 backup_time = datetime.strptime(backup_timestamp, '%Y%m%d_%H%M%S')
@@ -167,11 +284,50 @@ def restore_system():
                     sqlite_backups = [b for b in sorted_backups if b['metadata'].get('database') == 'sqlite']
                     if sqlite_backups:
                         logger.info("Falling back to SQLite backup restoration")
-                        # Recursively call ourselves to attempt SQLite restore
-                        return restore_system()
+                        # Get the most recent SQLite backup
+                        sqlite_backup = sqlite_backups[0]
+                        backup_file = Path(sqlite_backup['file'])
+                        
+                        # Make sure the instance directory exists
+                        instance_dir = Path('instance')
+                        instance_dir.mkdir(exist_ok=True)
+                        
+                        # Restore the SQLite database
+                        try:
+                            import gc
+                            gc.collect()
+                            
+                            # Copy the SQLite backup file to the instance directory
+                            shutil.copy2(backup_file, sqlite_path)
+                            logger.info(f"Successfully restored SQLite database from {backup_file}")
+                            return True
+                        except Exception as e:
+                            logger.error(f"SQLite restoration failed: {str(e)}")
+                            return False
                     return False
             except Exception as e:
                 logger.error(f"Error during PostgreSQL restoration: {str(e)}")
+                
+                # Try SQLite backups as a last resort
+                sqlite_backups = [b for b in sorted_backups if b['metadata'].get('database') == 'sqlite']
+                if sqlite_backups:
+                    logger.info("Error with PostgreSQL, falling back to SQLite backup restoration")
+                    # Get the most recent SQLite backup
+                    sqlite_backup = sqlite_backups[0]
+                    backup_file = Path(sqlite_backup['file'])
+                    
+                    # Restore the SQLite database
+                    try:
+                        import gc
+                        gc.collect()
+                        
+                        # Copy the SQLite backup file to the instance directory
+                        shutil.copy2(backup_file, sqlite_path)
+                        logger.info(f"Successfully restored SQLite database from {backup_file}")
+                        return True
+                    except Exception as e_sqlite:
+                        logger.error(f"SQLite restoration failed: {str(e_sqlite)}")
+                        return False
                 return False
             
     except Exception as e:

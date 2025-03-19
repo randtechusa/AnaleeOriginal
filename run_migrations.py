@@ -115,31 +115,20 @@ def init_migrations(retry_count=3, retry_delay=5):
                                                       connect_args={'check_same_thread': False},
                                                       pool_recycle=1800)
                                 
-                                # Drop existing tables if they exist to avoid conflicts
-                                try:
-                                    # Check if we need to drop existing tables
-                                    conn = engine.connect()
-                                    result = conn.execute(sql_text("SELECT name FROM sqlite_master WHERE type='table'"))
-                                    tables = [row[0] for row in result]
-                                    conn.close()
-                                    
-                                    if tables:
-                                        logger.info(f"Found existing tables: {', '.join(tables)}")
-                                        logger.info("Dropping existing tables to ensure clean state")
-                                        Base.metadata.drop_all(engine)
-                                except Exception as e:
-                                    logger.warning(f"Error checking existing tables: {e}")
+                                # Drop all tables if they exist
+                                Base.metadata.drop_all(engine)
+                                logger.info("Removed existing tables if any")
                                 
                                 # Create all tables directly from the models
                                 Base.metadata.create_all(engine)
                                 logger.info("Created all database tables from models")
                                 
-                                # Import text for SQL execution early to avoid reference errors
-                                from sqlalchemy import text as sql_text
+                                # Import text for SQL execution
+                                from sqlalchemy import text
                                 
                                 # Create a test session to verify it works
                                 session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
-                                session.execute(sql_text('SELECT 1'))
+                                session.execute(text('SELECT 1'))
                                 session.commit()
                                 session.remove()
                                     
